@@ -60,6 +60,9 @@ public class AccountService {
             if (request.sharedWithUserId() == null) {
                 throw new IllegalArgumentException("sharedWithUserId is required for SHARED accounts");
             }
+            if (request.sharedWithUserId().equals(currentUserId)) {
+                throw new IllegalArgumentException("Cannot share an account with yourself");
+            }
             User sharedUser = userRepository.findById(request.sharedWithUserId())
                     .orElseThrow(() -> new ResourceNotFoundException("Shared user not found"));
             AccountPermission otherPermission = new AccountPermission(

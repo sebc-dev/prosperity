@@ -68,8 +68,8 @@
 
 ### Infrastructure
 
-- [ ] **INFR-01**: Docker Compose deployment (PostgreSQL + Spring Boot API + SvelteKit web)
-- [ ] **INFR-02**: CI/CD pipeline: build, tests, lint on push (advanced tools added progressively)
+- [x] **INFR-01**: Docker Compose deployment (PostgreSQL + Spring Boot API + SvelteKit web)
+- [x] **INFR-02**: CI/CD pipeline: build, tests, lint on push (advanced tools added progressively)
 - [x] **INFR-03**: Security headers (CSP, HSTS, X-Frame-Options), HTTPS via Caddy
 - [x] **INFR-04**: Passwords bcrypted (12 rounds), OWASP Top 10 compliance
 - [ ] **INFR-05**: PostgreSQL backup automated (pg_dump daily, GPG encrypted)
@@ -162,8 +162,8 @@
 | PWA-01 | Phase 5 | Pending |
 | PWA-02 | Phase 5 | Pending |
 | PWA-03 | Phase 5 | Pending |
-| INFR-01 | Phase 1 | Pending |
-| INFR-02 | Phase 1 | Pending |
+| INFR-01 | Phase 1 | Complete |
+| INFR-02 | Phase 1 | Complete |
 | INFR-03 | Phase 1 | Complete |
 | INFR-04 | Phase 1 | Complete |
 | INFR-05 | Phase 6 | Pending |

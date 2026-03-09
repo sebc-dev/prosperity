@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. User can create Personal and Shared bank accounts, with Personal accounts invisible to the other user
   4. User can update display name and set preferences (theme, currency, favorite categories)
   5. Application runs via `docker compose up` with PostgreSQL, Spring Boot API, and SvelteKit web -- all accessible behind HTTPS with security headers
-**Plans:** 6/6 plans complete
+**Plans:** 7 plans (6 complete + 1 gap closure)
 
 Plans:
 - [ ] 01-01-PLAN.md — Backend scaffolding: Maven project, shared kernel, Spring Security, Liquibase migrations
@@ -40,6 +40,7 @@ Plans:
 - [ ] 01-04-PLAN.md — Backend CRUD: account management with permissions, user profile/preferences, categories
 - [ ] 01-05-PLAN.md — Accounts UI: component library, app layout, account cards, account creation
 - [ ] 01-06-PLAN.md — Settings UI: profile, preferences, security, user management pages
+- [ ] 01-07-PLAN.md — Gap closure: fix confirmPassword missing from password change POST body
 
 ### Phase 2: Transactions
 **Goal**: Users can manage their financial forecasts through manual transaction entries, with recurring generation and dual balance visibility

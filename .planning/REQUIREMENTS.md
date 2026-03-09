@@ -15,9 +15,9 @@
 
 ### Accounts
 
-- [ ] **ACCT-01**: User can create bank accounts as Personal or Shared
-- [ ] **ACCT-02**: Personal accounts visible only to owner
-- [ ] **ACCT-03**: Shared accounts accessible by both users
+- [x] **ACCT-01**: User can create bank accounts as Personal or Shared
+- [x] **ACCT-02**: Personal accounts visible only to owner
+- [x] **ACCT-03**: Shared accounts accessible by both users
 - [ ] **ACCT-04**: Admin can connect bank accounts via Plaid Link
 - [ ] **ACCT-05**: Transactions imported automatically from Plaid (source: IMPORTED)
 - [ ] **ACCT-06**: Plaid tokens encrypted AES-256 at rest
@@ -127,9 +127,9 @@
 | AUTH-03 | Phase 1 | Complete |
 | AUTH-04 | Phase 1 | Pending |
 | AUTH-05 | Phase 1 | Pending |
-| ACCT-01 | Phase 1 | Pending |
-| ACCT-02 | Phase 1 | Pending |
-| ACCT-03 | Phase 1 | Pending |
+| ACCT-01 | Phase 1 | Complete |
+| ACCT-02 | Phase 1 | Complete |
+| ACCT-03 | Phase 1 | Complete |
 | ACCT-04 | Phase 4 | Pending |
 | ACCT-05 | Phase 4 | Pending |
 | ACCT-06 | Phase 4 | Pending |

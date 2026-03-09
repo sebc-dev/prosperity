@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-03-09T06:38:12Z"
-last_activity: 2026-03-09 -- Completed 01-03 authentication (JWT, login, setup, roles)
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-03-09T06:45:52Z"
+last_activity: 2026-03-09 -- Completed 01-04 account/user management (CRUD, permissions, categories)
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 6
-  completed_plans: 3
-  percent: 50
+  completed_plans: 4
+  percent: 67
 ---
 
 # Project State
@@ -26,24 +26,24 @@ See: .planning/PROJECT.md (updated 2026-03-09)
 ## Current Position
 
 Phase: 1 of 6 (Foundation)
-Plan: 3 of 6 in current phase
+Plan: 4 of 6 in current phase
 Status: Executing
-Last activity: 2026-03-09 -- Completed 01-03 authentication (JWT, login, setup, roles)
+Last activity: 2026-03-09 -- Completed 01-04 account/user management (CRUD, permissions, categories)
 
-Progress: [█████░░░░░] 50%
+Progress: [██████░░░░] 67%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 3
+- Total plans completed: 4
 - Average duration: 4min
-- Total execution time: 0.22 hours
+- Total execution time: 0.29 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1. Foundation | 3/6 | 13min | 4min |
+| 1. Foundation | 4/6 | 17min | 4min |
 
 **Recent Trend:**
 - Last 5 plans: -
@@ -52,6 +52,7 @@ Progress: [█████░░░░░] 50%
 *Updated after each plan completion*
 | Phase 01 P02 | 5min | 2 tasks | 25 files |
 | Phase 01 P03 | 5min | 2 tasks | 31 files |
+| Phase 01 P04 | 4min | 2 tasks | 23 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,10 @@ Recent decisions affecting current work:
 - [01-03] JwtAuthenticationFilter skips public paths via shouldNotFilter
 - [01-03] Session expiry redirects to /login?expired=true for toast display
 - [01-03] Vitest uses svelte({hot:false}) with resolve.conditions: ['browser'] for Svelte 5 component testing
+- [01-04] AccountPermission as separate entity for JPQL JOIN visibility queries
+- [01-04] SHARED accounts auto-grant WRITE to other user via findFirstByIdNot
+- [01-04] Preferences stored as JSONB string, deserialized via ObjectMapper
+- [01-04] Password change resets forcePasswordChange flag
 
 ### Pending Todos
 
@@ -87,6 +92,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-09T06:38:12Z
-Stopped at: Completed 01-03-PLAN.md
+Last session: 2026-03-09T06:45:52Z
+Stopped at: Completed 01-04-PLAN.md
 Resume file: None

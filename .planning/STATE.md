@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-02-PLAN.md
-last_updated: "2026-03-09T06:30:56.535Z"
-last_activity: 2026-03-09 -- Completed 01-02 frontend scaffolding and infrastructure
+stopped_at: Completed 01-03-PLAN.md
+last_updated: "2026-03-09T06:38:12Z"
+last_activity: 2026-03-09 -- Completed 01-03 authentication (JWT, login, setup, roles)
 progress:
   total_phases: 6
   completed_phases: 0
   total_plans: 6
-  completed_plans: 2
-  percent: 33
+  completed_plans: 3
+  percent: 50
 ---
 
 # Project State
@@ -26,24 +26,24 @@ See: .planning/PROJECT.md (updated 2026-03-09)
 ## Current Position
 
 Phase: 1 of 6 (Foundation)
-Plan: 2 of 6 in current phase
+Plan: 3 of 6 in current phase
 Status: Executing
-Last activity: 2026-03-09 -- Completed 01-02 frontend scaffolding and infrastructure
+Last activity: 2026-03-09 -- Completed 01-03 authentication (JWT, login, setup, roles)
 
-Progress: [███░░░░░░░] 33%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 1
-- Average duration: 3min
-- Total execution time: 0.05 hours
+- Total plans completed: 3
+- Average duration: 4min
+- Total execution time: 0.22 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 1. Foundation | 1/6 | 3min | 3min |
+| 1. Foundation | 3/6 | 13min | 4min |
 
 **Recent Trend:**
 - Last 5 plans: -
@@ -51,6 +51,7 @@ Progress: [███░░░░░░░] 33%
 
 *Updated after each plan completion*
 | Phase 01 P02 | 5min | 2 tasks | 25 files |
+| Phase 01 P03 | 5min | 2 tasks | 31 files |
 
 ## Accumulated Context
 
@@ -70,6 +71,10 @@ Recent decisions affecting current work:
 - [Phase 01]: vite-plugin-svelte v5 for vite 6 compat
 - [Phase 01]: paraglideVitePlugin export (Paraglide JS 2.x API)
 - [Phase 01]: Production docker-compose: no exposed ports, Caddy routes all traffic
+- [01-03] Refresh tokens stored as bcrypt hashes (never raw) with rotation on each use
+- [01-03] JwtAuthenticationFilter skips public paths via shouldNotFilter
+- [01-03] Session expiry redirects to /login?expired=true for toast display
+- [01-03] Vitest uses svelte({hot:false}) with resolve.conditions: ['browser'] for Svelte 5 component testing
 
 ### Pending Todos
 
@@ -82,6 +87,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-09T06:30:56.533Z
-Stopped at: Completed 01-02-PLAN.md
+Last session: 2026-03-09T06:38:12Z
+Stopped at: Completed 01-03-PLAN.md
 Resume file: None

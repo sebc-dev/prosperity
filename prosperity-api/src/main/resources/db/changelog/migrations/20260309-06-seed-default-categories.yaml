@@ -1,0 +1,149 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260309-06-seed-default-categories
+      author: prosperity
+      changes:
+        - insert:
+            tableName: categories
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: name_key, value: "alimentation" }
+              - column: { name: icon, value: "shopping-cart" }
+              - column: { name: is_default, valueBoolean: true }
+              - column: { name: created_at, valueComputed: "NOW()" }
+              - column: { name: updated_at, valueComputed: "NOW()" }
+        - insert:
+            tableName: categories
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: name_key, value: "logement" }
+              - column: { name: icon, value: "home" }
+              - column: { name: is_default, valueBoolean: true }
+              - column: { name: created_at, valueComputed: "NOW()" }
+              - column: { name: updated_at, valueComputed: "NOW()" }
+        - insert:
+            tableName: categories
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: name_key, value: "transport" }
+              - column: { name: icon, value: "car" }
+              - column: { name: is_default, valueBoolean: true }
+              - column: { name: created_at, valueComputed: "NOW()" }
+              - column: { name: updated_at, valueComputed: "NOW()" }
+        - insert:
+            tableName: categories
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: name_key, value: "sante" }
+              - column: { name: icon, value: "heart-pulse" }
+              - column: { name: is_default, valueBoolean: true }
+              - column: { name: created_at, valueComputed: "NOW()" }
+              - column: { name: updated_at, valueComputed: "NOW()" }
+        - insert:
+            tableName: categories
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: name_key, value: "assurance" }
+              - column: { name: icon, value: "shield" }
+              - column: { name: is_default, valueBoolean: true }
+              - column: { name: created_at, valueComputed: "NOW()" }
+              - column: { name: updated_at, valueComputed: "NOW()" }
+        - insert:
+            tableName: categories
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: name_key, value: "loisirs" }
+              - column: { name: icon, value: "gamepad-2" }
+              - column: { name: is_default, valueBoolean: true }
+              - column: { name: created_at, valueComputed: "NOW()" }
+              - column: { name: updated_at, valueComputed: "NOW()" }
+        - insert:
+            tableName: categories
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: name_key, value: "restaurants" }
+              - column: { name: icon, value: "utensils" }
+              - column: { name: is_default, valueBoolean: true }
+              - column: { name: created_at, valueComputed: "NOW()" }
+              - column: { name: updated_at, valueComputed: "NOW()" }
+        - insert:
+            tableName: categories
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: name_key, value: "shopping" }
+              - column: { name: icon, value: "shopping-bag" }
+              - column: { name: is_default, valueBoolean: true }
+              - column: { name: created_at, valueComputed: "NOW()" }
+              - column: { name: updated_at, valueComputed: "NOW()" }
+        - insert:
+            tableName: categories
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: name_key, value: "abonnements" }
+              - column: { name: icon, value: "repeat" }
+              - column: { name: is_default, valueBoolean: true }
+              - column: { name: created_at, valueComputed: "NOW()" }
+              - column: { name: updated_at, valueComputed: "NOW()" }
+        - insert:
+            tableName: categories
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: name_key, value: "sport" }
+              - column: { name: icon, value: "dumbbell" }
+              - column: { name: is_default, valueBoolean: true }
+              - column: { name: created_at, valueComputed: "NOW()" }
+              - column: { name: updated_at, valueComputed: "NOW()" }
+        - insert:
+            tableName: categories
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: name_key, value: "epargne" }
+              - column: { name: icon, value: "piggy-bank" }
+              - column: { name: is_default, valueBoolean: true }
+              - column: { name: created_at, valueComputed: "NOW()" }
+              - column: { name: updated_at, valueComputed: "NOW()" }
+        - insert:
+            tableName: categories
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: name_key, value: "revenus" }
+              - column: { name: icon, value: "wallet" }
+              - column: { name: is_default, valueBoolean: true }
+              - column: { name: created_at, valueComputed: "NOW()" }
+              - column: { name: updated_at, valueComputed: "NOW()" }
+        - insert:
+            tableName: categories
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: name_key, value: "remboursement" }
+              - column: { name: icon, value: "undo" }
+              - column: { name: is_default, valueBoolean: true }
+              - column: { name: created_at, valueComputed: "NOW()" }
+              - column: { name: updated_at, valueComputed: "NOW()" }
+        - insert:
+            tableName: categories
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: name_key, value: "cadeaux" }
+              - column: { name: icon, value: "gift" }
+              - column: { name: is_default, valueBoolean: true }
+              - column: { name: created_at, valueComputed: "NOW()" }
+              - column: { name: updated_at, valueComputed: "NOW()" }
+        - insert:
+            tableName: categories
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: name_key, value: "education" }
+              - column: { name: icon, value: "graduation-cap" }
+              - column: { name: is_default, valueBoolean: true }
+              - column: { name: created_at, valueComputed: "NOW()" }
+              - column: { name: updated_at, valueComputed: "NOW()" }
+        - insert:
+            tableName: categories
+            columns:
+              - column: { name: id, valueComputed: "gen_random_uuid()" }
+              - column: { name: name_key, value: "divers" }
+              - column: { name: icon, value: "ellipsis" }
+              - column: { name: is_default, valueBoolean: true }
+              - column: { name: created_at, valueComputed: "NOW()" }
+              - column: { name: updated_at, valueComputed: "NOW()" }

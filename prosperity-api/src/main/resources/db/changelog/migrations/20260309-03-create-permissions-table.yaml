@@ -1,0 +1,44 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260309-03-create-permissions-table
+      author: prosperity
+      changes:
+        - createTable:
+            tableName: account_permissions
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: account_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: permission_level
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: account_permissions
+            baseColumnNames: account_id
+            referencedTableName: accounts
+            referencedColumnNames: id
+            constraintName: fk_permissions_account
+        - addForeignKeyConstraint:
+            baseTableName: account_permissions
+            baseColumnNames: user_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_permissions_user
+        - addUniqueConstraint:
+            tableName: account_permissions
+            columnNames: account_id, user_id
+            constraintName: uq_permissions_account_user

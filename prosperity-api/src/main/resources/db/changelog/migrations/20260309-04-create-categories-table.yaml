@@ -1,0 +1,44 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260309-04-create-categories-table
+      author: prosperity
+      changes:
+        - createTable:
+            tableName: categories
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: name_key
+                  type: varchar(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: icon
+                  type: varchar(50)
+              - column:
+                  name: is_default
+                  type: boolean
+                  defaultValueBoolean: false
+              - column:
+                  name: created_by
+                  type: uuid
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: categories
+            baseColumnNames: created_by
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_categories_created_by

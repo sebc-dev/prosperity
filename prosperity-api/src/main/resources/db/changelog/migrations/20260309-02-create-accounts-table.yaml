@@ -1,0 +1,66 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260309-02-create-accounts-table
+      author: prosperity
+      changes:
+        - createTable:
+            tableName: accounts
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: name
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: bank_name
+                  type: varchar(255)
+              - column:
+                  name: account_type
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: owner_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: currency
+                  type: varchar(3)
+                  defaultValue: EUR
+              - column:
+                  name: initial_balance
+                  type: decimal(19,4)
+                  defaultValueNumeric: 0
+              - column:
+                  name: current_balance
+                  type: decimal(19,4)
+                  defaultValueNumeric: 0
+              - column:
+                  name: color
+                  type: varchar(7)
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: bigint
+                  defaultValueNumeric: 0
+        - addForeignKeyConstraint:
+            baseTableName: accounts
+            baseColumnNames: owner_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_accounts_owner

@@ -1,0 +1,57 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260309-01-create-users-table
+      author: prosperity
+      changes:
+        - createTable:
+            tableName: users
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+              - column:
+                  name: email
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: password_hash
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: display_name
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: system_role
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+                  defaultValue: STANDARD
+              - column:
+                  name: preferences
+                  type: jsonb
+                  defaultValue: '{}'
+              - column:
+                  name: force_password_change
+                  type: boolean
+                  defaultValueBoolean: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: bigint
+                  defaultValueNumeric: 0

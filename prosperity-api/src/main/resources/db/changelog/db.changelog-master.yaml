@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - include:
+      file: db/changelog/migrations/20260309-01-create-users-table.yaml
+  - include:
+      file: db/changelog/migrations/20260309-02-create-accounts-table.yaml
+  - include:
+      file: db/changelog/migrations/20260309-03-create-permissions-table.yaml
+  - include:
+      file: db/changelog/migrations/20260309-04-create-categories-table.yaml
+  - include:
+      file: db/changelog/migrations/20260309-05-create-refresh-tokens-table.yaml
+  - include:
+      file: db/changelog/migrations/20260309-06-seed-default-categories.yaml

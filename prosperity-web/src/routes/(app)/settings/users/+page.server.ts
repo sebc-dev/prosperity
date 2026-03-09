@@ -33,6 +33,10 @@ export const load: PageServerLoad = async ({ parent, locals }) => {
 
 export const actions: Actions = {
 	default: async ({ request, locals }) => {
+		if (locals.user?.role !== 'ADMIN') {
+			return fail(403, { error: 'Forbidden' });
+		}
+
 		const form = await request.formData();
 		const email = form.get('email') as string;
 		const displayName = form.get('displayName') as string;

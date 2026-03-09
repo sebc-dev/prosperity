@@ -73,14 +73,14 @@ public class UserService {
     @Transactional
     public void changePassword(UUID userId, ChangePasswordRequest request) {
         if (!request.newPassword().equals(request.confirmPassword())) {
-            throw new IllegalArgumentException("New password and confirmation do not match");
+            throw new IllegalArgumentException("Password change failed");
         }
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         if (!passwordEncoder.matches(request.oldPassword(), user.getPasswordHash())) {
-            throw new IllegalArgumentException("Old password is incorrect");
+            throw new IllegalArgumentException("Password change failed");
         }
 
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));

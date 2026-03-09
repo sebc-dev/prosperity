@@ -25,6 +25,7 @@ import java.util.UUID;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
@@ -79,7 +80,7 @@ class AuthorizationTest {
     }
 
     @Test
-    void authenticatedEndpoint_withAdminToken_returns200orNotFound() throws Exception {
+    void authenticatedEndpoint_withAdminToken_returns200() throws Exception {
         // Create admin via setup
         SetupRequest setup = new SetupRequest("admin@test.com", "Admin", "password123");
         MvcResult result = mockMvc.perform(post("/api/setup")
@@ -91,12 +92,9 @@ class AuthorizationTest {
         AuthResponse response = objectMapper.readValue(
                 result.getResponse().getContentAsString(), AuthResponse.class);
 
-        // Access an authenticated endpoint (may return 404 since no specific endpoint exists yet,
-        // but it should NOT return 401 or 403)
         mockMvc.perform(get("/api/users/me")
                         .header("Authorization", "Bearer " + response.accessToken()))
-                .andExpect(status().is4xxClientError());
-        // At minimum, we verify it does NOT return 401 (unauthenticated)
+                .andExpect(status().isOk());
     }
 
     @Test
@@ -141,7 +139,9 @@ class AuthorizationTest {
         mockMvc.perform(post("/api/setup")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(setup)))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken").isNotEmpty())
+                .andExpect(jsonPath("$.refreshToken").isNotEmpty());
     }
 
     @Test

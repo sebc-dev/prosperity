@@ -14,6 +14,7 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.Date;
 import java.util.HexFormat;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -27,7 +28,12 @@ public class JwtService {
             @Value("${app.jwt.secret}") String secret,
             @Value("${app.jwt.access-expiry}") long accessExpirySeconds
     ) {
-        this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
+        byte[] secretBytes = secret.getBytes(StandardCharsets.UTF_8);
+        if (secretBytes.length < 32) {
+            throw new IllegalArgumentException(
+                    "JWT secret must be at least 256 bits (32 bytes), got " + secretBytes.length + " bytes");
+        }
+        this.signingKey = Keys.hmacShaKeyFor(secretBytes);
         this.accessExpirySeconds = accessExpirySeconds;
     }
 
@@ -67,12 +73,11 @@ public class JwtService {
         return UUID.fromString(claims.getSubject());
     }
 
-    public boolean isTokenValid(String token) {
+    public Optional<Claims> tryValidateToken(String token) {
         try {
-            validateToken(token);
-            return true;
+            return Optional.of(validateToken(token));
         } catch (JwtException | IllegalArgumentException e) {
-            return false;
+            return Optional.empty();
         }
     }
 }

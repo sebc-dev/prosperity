@@ -19,7 +19,10 @@ COPY --from=build /app/package.json ./
 COPY --from=build /app/package-lock.json ./
 RUN npm ci --omit=dev
 
+RUN addgroup -S app && adduser -S app -G app
+
 ENV NODE_ENV=production
 EXPOSE 3000
 
+USER app
 CMD ["node", "build"]

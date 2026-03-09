@@ -1,13 +1,11 @@
 package fr.kalifazzia.prosperity.user;
 
-import fr.kalifazzia.prosperity.auth.JwtService;
 import fr.kalifazzia.prosperity.shared.security.SecurityUtils;
 import fr.kalifazzia.prosperity.user.dto.ChangePasswordRequest;
 import fr.kalifazzia.prosperity.user.dto.CreateUserRequest;
 import fr.kalifazzia.prosperity.user.dto.UpdatePreferencesRequest;
 import fr.kalifazzia.prosperity.user.dto.UpdateProfileRequest;
 import fr.kalifazzia.prosperity.user.dto.UserDto;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -26,40 +24,35 @@ import java.util.UUID;
 public class UserController {
 
     private final UserService userService;
-    private final JwtService jwtService;
 
-    public UserController(UserService userService, JwtService jwtService) {
+    public UserController(UserService userService) {
         this.userService = userService;
-        this.jwtService = jwtService;
     }
 
     @GetMapping("/me")
-    public ResponseEntity<UserDto> getCurrentUser(HttpServletRequest request) {
-        UUID userId = SecurityUtils.extractUserId(request, jwtService);
+    public ResponseEntity<UserDto> getCurrentUser() {
+        UUID userId = SecurityUtils.extractUserId();
         return ResponseEntity.ok(userService.getCurrentUser(userId));
     }
 
     @PatchMapping("/me/profile")
     public ResponseEntity<UserDto> updateProfile(
-            @Valid @RequestBody UpdateProfileRequest profileRequest,
-            HttpServletRequest request) {
-        UUID userId = SecurityUtils.extractUserId(request, jwtService);
+            @Valid @RequestBody UpdateProfileRequest profileRequest) {
+        UUID userId = SecurityUtils.extractUserId();
         return ResponseEntity.ok(userService.updateProfile(userId, profileRequest));
     }
 
     @PatchMapping("/me/preferences")
     public ResponseEntity<UserDto> updatePreferences(
-            @RequestBody UpdatePreferencesRequest preferencesRequest,
-            HttpServletRequest request) {
-        UUID userId = SecurityUtils.extractUserId(request, jwtService);
+            @Valid @RequestBody UpdatePreferencesRequest preferencesRequest) {
+        UUID userId = SecurityUtils.extractUserId();
         return ResponseEntity.ok(userService.updatePreferences(userId, preferencesRequest));
     }
 
     @PostMapping("/me/password")
     public ResponseEntity<Void> changePassword(
-            @Valid @RequestBody ChangePasswordRequest passwordRequest,
-            HttpServletRequest request) {
-        UUID userId = SecurityUtils.extractUserId(request, jwtService);
+            @Valid @RequestBody ChangePasswordRequest passwordRequest) {
+        UUID userId = SecurityUtils.extractUserId();
         userService.changePassword(userId, passwordRequest);
         return ResponseEntity.ok().build();
     }

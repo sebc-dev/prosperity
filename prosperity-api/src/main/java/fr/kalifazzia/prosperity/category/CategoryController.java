@@ -1,9 +1,7 @@
 package fr.kalifazzia.prosperity.category;
 
-import fr.kalifazzia.prosperity.auth.JwtService;
 import fr.kalifazzia.prosperity.category.dto.CreateCategoryRequest;
 import fr.kalifazzia.prosperity.shared.security.SecurityUtils;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,16 +19,14 @@ import java.util.UUID;
 public class CategoryController {
 
     private final CategoryService categoryService;
-    private final JwtService jwtService;
 
-    public CategoryController(CategoryService categoryService, JwtService jwtService) {
+    public CategoryController(CategoryService categoryService) {
         this.categoryService = categoryService;
-        this.jwtService = jwtService;
     }
 
     @GetMapping
-    public ResponseEntity<List<CategoryDto>> getCategories(HttpServletRequest request) {
-        UUID userId = SecurityUtils.extractUserId(request, jwtService);
+    public ResponseEntity<List<CategoryDto>> getCategories() {
+        UUID userId = SecurityUtils.extractUserId();
         List<Category> categories = categoryService.getCategories(userId);
         List<CategoryDto> dtos = categories.stream()
                 .map(c -> new CategoryDto(c.getId(), c.getNameKey(), c.getIcon(), c.isDefault()))
@@ -40,9 +36,8 @@ public class CategoryController {
 
     @PostMapping
     public ResponseEntity<CategoryDto> createCategory(
-            @Valid @RequestBody CreateCategoryRequest body,
-            HttpServletRequest request) {
-        UUID userId = SecurityUtils.extractUserId(request, jwtService);
+            @Valid @RequestBody CreateCategoryRequest body) {
+        UUID userId = SecurityUtils.extractUserId();
 
         Category category = categoryService.createCategory(body.nameKey(), body.icon(), userId);
         CategoryDto dto = new CategoryDto(category.getId(), category.getNameKey(), category.getIcon(), category.isDefault());

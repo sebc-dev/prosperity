@@ -122,59 +122,59 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | — | Pending |
-| AUTH-02 | — | Pending |
-| AUTH-03 | — | Pending |
-| AUTH-04 | — | Pending |
-| AUTH-05 | — | Pending |
-| ACCT-01 | — | Pending |
-| ACCT-02 | — | Pending |
-| ACCT-03 | — | Pending |
-| ACCT-04 | — | Pending |
-| ACCT-05 | — | Pending |
-| ACCT-06 | — | Pending |
-| ACCT-07 | — | Pending |
-| TXNS-01 | — | Pending |
-| TXNS-02 | — | Pending |
-| TXNS-03 | — | Pending |
-| TXNS-04 | — | Pending |
-| TXNS-05 | — | Pending |
-| TXNS-06 | — | Pending |
-| TXNS-07 | — | Pending |
-| TXNS-08 | — | Pending |
-| TXNS-09 | — | Pending |
-| TXNS-10 | — | Pending |
-| TXNS-11 | — | Pending |
-| TXNS-12 | — | Pending |
-| BUDG-01 | — | Pending |
-| BUDG-02 | — | Pending |
-| BUDG-03 | — | Pending |
-| BUDG-04 | — | Pending |
-| BUDG-05 | — | Pending |
-| DEBT-01 | — | Pending |
-| DEBT-02 | — | Pending |
-| DEBT-03 | — | Pending |
-| DASH-01 | — | Pending |
-| DASH-02 | — | Pending |
-| DASH-03 | — | Pending |
-| DASH-04 | — | Pending |
-| DASH-05 | — | Pending |
-| PWA-01 | — | Pending |
-| PWA-02 | — | Pending |
-| PWA-03 | — | Pending |
-| INFR-01 | — | Pending |
-| INFR-02 | — | Pending |
-| INFR-03 | — | Pending |
-| INFR-04 | — | Pending |
-| INFR-05 | — | Pending |
-| INFR-06 | — | Pending |
-| INFR-07 | — | Pending |
+| AUTH-01 | Phase 1 | Pending |
+| AUTH-02 | Phase 1 | Pending |
+| AUTH-03 | Phase 1 | Pending |
+| AUTH-04 | Phase 1 | Pending |
+| AUTH-05 | Phase 1 | Pending |
+| ACCT-01 | Phase 1 | Pending |
+| ACCT-02 | Phase 1 | Pending |
+| ACCT-03 | Phase 1 | Pending |
+| ACCT-04 | Phase 4 | Pending |
+| ACCT-05 | Phase 4 | Pending |
+| ACCT-06 | Phase 4 | Pending |
+| ACCT-07 | Phase 4 | Pending |
+| TXNS-01 | Phase 2 | Pending |
+| TXNS-02 | Phase 2 | Pending |
+| TXNS-03 | Phase 2 | Pending |
+| TXNS-04 | Phase 2 | Pending |
+| TXNS-05 | Phase 4 | Pending |
+| TXNS-06 | Phase 4 | Pending |
+| TXNS-07 | Phase 4 | Pending |
+| TXNS-08 | Phase 2 | Pending |
+| TXNS-09 | Phase 2 | Pending |
+| TXNS-10 | Phase 2 | Pending |
+| TXNS-11 | Phase 2 | Pending |
+| TXNS-12 | Phase 5 | Pending |
+| BUDG-01 | Phase 3 | Pending |
+| BUDG-02 | Phase 3 | Pending |
+| BUDG-03 | Phase 3 | Pending |
+| BUDG-04 | Phase 3 | Pending |
+| BUDG-05 | Phase 3 | Pending |
+| DEBT-01 | Phase 3 | Pending |
+| DEBT-02 | Phase 3 | Pending |
+| DEBT-03 | Phase 3 | Pending |
+| DASH-01 | Phase 5 | Pending |
+| DASH-02 | Phase 5 | Pending |
+| DASH-03 | Phase 5 | Pending |
+| DASH-04 | Phase 5 | Pending |
+| DASH-05 | Phase 5 | Pending |
+| PWA-01 | Phase 5 | Pending |
+| PWA-02 | Phase 5 | Pending |
+| PWA-03 | Phase 5 | Pending |
+| INFR-01 | Phase 1 | Pending |
+| INFR-02 | Phase 1 | Pending |
+| INFR-03 | Phase 1 | Pending |
+| INFR-04 | Phase 1 | Pending |
+| INFR-05 | Phase 6 | Pending |
+| INFR-06 | Phase 6 | Pending |
+| INFR-07 | Phase 6 | Pending |
 
 **Coverage:**
 - v1 requirements: 42 total
-- Mapped to phases: 0
-- Unmapped: 42 ⚠️
+- Mapped to phases: 42
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-09*
-*Last updated: 2026-03-09 after initial definition*
+*Last updated: 2026-03-09 after roadmap creation*

@@ -1,0 +1,14 @@
+package fr.kalifazzia.prosperity;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
+
+@SpringBootApplication
+@EnableJpaAuditing
+public class ProsperityApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(ProsperityApplication.class, args);
+    }
+}

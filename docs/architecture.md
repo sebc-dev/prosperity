@@ -11,7 +11,7 @@ Ce document détaille l'architecture technique révisée de l'application "Prosp
 - **Simplicité du MVP** : Architecture évolutive commençant par les fonctionnalités essentielles
 - **Feature-First** : Organisation verticale par domaine fonctionnel plutôt que par couche technique
 - **Sécurité par Conception** : Implémentation OWASP avec audit trail complet
-- **Performance Mesurée** : Objectif < 500ms P95 (conforme au PRD, pas de sur-optimisation)
+- **Performance Mesurée** : Objectif < 200ms P95 (conforme au PRD NFR2)
 - **Expérience Offline-First** : PWA SvelteKit avec synchronisation robuste et résolution de conflits
 
 ### Changements par rapport à la v1
@@ -160,7 +160,7 @@ src/main/java/fr/kalifazzia/prosperity/
 │   ├── UserService.java
 │   ├── User.java                        # Entité JPA
 │   ├── UserRepository.java
-│   ├── SystemRole.java                  # sealed interface (Admin, StandardWithCreate, Standard)
+│   ├── SystemRole.java                  # enum (ADMIN, STANDARD)
 │   ├── UserDto.java                     # record DTO
 │   └── UserProfileDto.java             # record DTO
 │
@@ -373,9 +373,9 @@ Le schéma de données reste identique à la v1. Les entités JPA et le schéma 
 -- Utilisateurs et Rôles
 CREATE TABLE users (
     id UUID PRIMARY KEY,
-    username VARCHAR(100) UNIQUE NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
-    system_role VARCHAR(50) NOT NULL, -- SYSTEM_ADMIN, STANDARD_WITH_CREATE, STANDARD
+    system_role VARCHAR(50) NOT NULL, -- ADMIN, STANDARD
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL,
     version BIGINT NOT NULL DEFAULT 0
@@ -452,14 +452,26 @@ CREATE TABLE budgets (
     id UUID PRIMARY KEY,
     account_id UUID REFERENCES accounts(id),
     category_id UUID REFERENCES categories(id),
+    budget_type VARCHAR(20) NOT NULL DEFAULT 'ENVELOPE', -- ENVELOPE (dépenser), SAVINGS_GOAL (épargne)
     amount DECIMAL(19,4) NOT NULL,
     spent DECIMAL(19,4) NOT NULL DEFAULT 0,
     month INTEGER NOT NULL,
     year INTEGER NOT NULL,
-    alert_threshold DECIMAL(5,2) DEFAULT 80.00,
+    alert_thresholds JSONB NOT NULL DEFAULT '[75, 90, 100]', -- seuils d'alertes progressives (%)
+    template_id UUID REFERENCES budget_templates(id),
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL,
     UNIQUE(account_id, category_id, month, year)
+);
+
+-- Templates de budgets prédéfinis
+CREATE TABLE budget_templates (
+    id UUID PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    categories JSONB NOT NULL, -- [{categoryId, amount, budgetType}]
+    is_default BOOLEAN DEFAULT false,
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMP NOT NULL
 );
 
 -- Dettes internes
@@ -590,7 +602,6 @@ Spring Boot 3.2+ supporte nativement les virtual threads via `spring.threads.vir
 public class AppHealthIndicator implements HealthIndicator {
 
     private final DataSource dataSource;
-    private final PlaidService plaidService;
 
     @Override
     public Health health() {
@@ -1292,29 +1303,27 @@ Identique à la v1 : `pg_dump` quotidien chiffré GPG, rétention 7 jours local 
 
 ## 6. Plan de Migration et Phases
 
-### Phase 1 — MVP Core
+Les phases ci-dessous correspondent aux Epics du PRD (section 5).
 
-Infrastructure et authentification. Setup monorepo, Docker Compose, CI/CD basique. Authentification JWT avec système de rôles. Modèle de données PostgreSQL avec Liquibase.
+### Phase 1 — Infrastructure et Fondations (Epic 1)
 
-### Phase 2 — Comptes et Transactions
+Setup monorepo, Docker Compose (3 containers : db, api, web), CI/CD GitHub Actions. Authentification JWT avec rôles (Admin, Standard). Modèle de données PostgreSQL avec Liquibase. Pipeline de sécurité et qualité (SonarQube, SpotBugs, ArchUnit). Backup et monitoring.
 
-CRUD comptes bancaires avec permissions. Saisie manuelle des transactions. Catégorisation. Dashboard basique.
+### Phase 2 — Authentification et Gestion des Comptes (Epic 2)
 
-### Phase 3 — Dettes et Budgets
+Authentification email/mot de passe. CRUD comptes bancaires avec permissions (Personnel/Partagé). Profil et préférences utilisateur (thème clair/sombre, catégories favorites).
 
-Système de dettes internes avec calcul de soldes. Budgets mensuels avec jauges visuelles. Notifications d'alertes budgétaires.
+### Phase 3 — Transactions et Intégration Plaid (Epic 3)
 
-### Phase 4 — Plaid et Import
+Saisie manuelle des transactions. Catégorisation. Intégration Plaid Link avec import automatique. Déduplication Plaid (correspondance exacte). Quick-add mobile (≤ 3 taps).
 
-Intégration Plaid Link. Import automatique des transactions. Déduplication et enrichissement. Webhooks.
+### Phase 4 — Budgets et Dettes (Epic 4)
 
-### Phase 5 — PWA et Offline
+Budgets mensuels par catégorie avec modes enveloppe/objectif. Templates prédéfinis. Alertes visuelles in-app progressives (75%, 90%, 100%). Système de dettes internes avec calcul de soldes et suggestions d'équilibrage.
 
-Service Worker avec cache stratégique. IndexedDB pour la queue offline. Synchronisation différée. Quick-add mobile.
+### Phase 5 — Dashboard et PWA (Epic 5)
 
-### Phase 6 — Conflits et Polish
-
-Détection et résolution des conflits de synchronisation. Tests utilisateurs avec la compagne. Audit accessibilité complet. Documentation de déploiement.
+Dashboard principal (soldes, budgets, dettes, transactions récentes). Service Worker avec cache stratégique. IndexedDB pour la queue offline. Synchronisation différée. Détection et résolution des conflits (montant ±10%, fenêtre 5 min). Tests utilisateurs. Audit accessibilité complet. Documentation de déploiement.
 
 ### Post-MVP — IA et Analyses
 

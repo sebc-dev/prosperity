@@ -18,7 +18,7 @@ Prosperity sera une application web auto-hébergée moderne, conçue initialemen
     
 - **Suivi Intégré des Dettes Internes** : Fonctionnalité native pour enregistrer, suivre et équilibrer automatiquement les avances et remboursements entre conjoints, intégrée directement dans le dashboard principal avec notifications et rappels.
     
-- **Expérience Utilisateur et IA Modernes** : Interface React contemporaine optimisée pour les tableaux de bord financiers, avec saisie mobile via PWA offline-first. Intégration d'un serveur MCP pour l'analyse intelligente des dépenses, conseils budgétaires personnalisés et rapports automatisés.
+- **Expérience Utilisateur et IA Modernes** : Interface Svelte 5 contemporaine optimisée pour les tableaux de bord financiers, avec saisie mobile via PWA offline-first. Intégration d'un serveur MCP pour l'analyse intelligente des dépenses, conseils budgétaires personnalisés et rapports automatisés.
     
 
 ## Utilisateurs Cibles
@@ -34,8 +34,8 @@ L'application est conçue pour un usage conjugal privé, avec deux utilisateurs 
 
 ### Contexte Technique : "Le Développeur-Utilisateur"
 
-- **Profil** : Développeur expérimenté utilisant ce projet comme terrain d'apprentissage pour Java/Spring moderne, React, et expérimentation MCP/IA.
-- **Objectifs Techniques** : Mise en pratique de Spring Boot, architecture clean, intégration de technologies émergentes (MCP), optimisation UX avec focus sur les dashboards financiers.
+- **Profil** : Développeur expérimenté utilisant ce projet comme terrain d'apprentissage pour Java/Spring moderne, Svelte 5/SvelteKit, et expérimentation MCP/IA.
+- **Objectifs Techniques** : Mise en pratique de Spring Boot, architecture clean, intégration de technologies émergentes (MCP), optimisation UX avec focus sur les dashboards financiers. Montée en compétence sur Svelte 5 (runes, réactivité fine-grained) et SvelteKit 2 (routing, data loading, SSR/SPA).
 
 Cette approche élimine la complexité des rôles granulaires familiaux au profit d'un focus sur la collaboration conjugale et l'excellence technique.
 
@@ -63,31 +63,38 @@ Cette approche élimine la complexité des rôles granulaires familiaux au profi
 
 **Backend :**
 
-- Java 21+ avec Spring Boot 3.x
+- Java 21+ avec Spring Boot 3.3+
 - Spring Security pour l'authentification
 - Spring Data JPA avec PostgreSQL
-- Architecture en couches (Controller/Service/Repository)
+- Architecture Vertical Slice avec Domain Kernel (organisation par feature métier)
 - API REST avec validation Bean Validation
 
 **Frontend :**
 
-- React 18+ avec TypeScript
-- Vite pour le build et développement
-- TanStack Query pour la gestion d'état serveur
+- Svelte 5 avec SvelteKit 2 et TypeScript
+- Runes Svelte 5 ($state, $derived, $effect) pour la réactivité fine-grained
+- Fonctions load SvelteKit pour le data fetching côté serveur et client
 - Tailwind CSS pour le styling
-- PWA avec Service Workers et IndexedDB
+- SvelteKit avec adapter-node, déployé comme container Node dédié derrière Caddy
+- PWA avec Service Workers natifs SvelteKit et IndexedDB
 
 **Infrastructure :**
 
 - Docker & docker-compose pour le déploiement
 - PostgreSQL pour la persistance
-- Redis pour le cache (post-MVP)
-- Traefik pour le reverse proxy et SSL
+- Redis pour le cache (optionnel post-MVP, si les métriques l'exigent)
+- Caddy pour le reverse proxy et SSL
 
 **Intégrations :**
 
 - Plaid Link pour l'import bancaire automatisé
 - Serveur MCP pour les analyses IA (Phase 2)
+
+### Architecture Frontend SvelteKit
+
+Le frontend SvelteKit sera déployé via `adapter-node`, produisant un serveur Node dédié dans son propre container Docker. Caddy (déjà en place sur le serveur) sert de reverse proxy avec HTTPS automatique. SvelteKit gère le routing basé fichiers, les fonctions `load` pour le data fetching, et les form actions pour les mutations côté serveur (progressive enhancement). Spring Boot reste la source de vérité pour toutes les données via son API REST.
+
+Les runes Svelte 5 assureront une réactivité fine-grained sans virtual DOM, ce qui est particulièrement adapté aux dashboards financiers avec de nombreuses valeurs dynamiques.
 
 ### Modèle de Données Simplifié
 
@@ -105,13 +112,14 @@ Cette approche élimine la complexité des rôles granulaires familiaux au profi
 #### Objectifs d'Apprentissage Technique
 
 - **Maîtriser Spring Boot moderne :** Mise en pratique de Java 21/25, Spring Security, Spring Data JPA, architecture layered clean
+- **Maîtriser Svelte 5 et SvelteKit 2 :** Apprentissage des runes ($state, $derived, $effect, $props), composants Svelte 5, routing SvelteKit, fonctions load, gestion d'erreurs, et patterns d'état avancés (stores, context)
 - **Implémenter un serveur MCP fonctionnel :** Intégration réussie pour l'analyse IA des dépenses et conseils budgétaires automatisés
-- **Créer une PWA offline-first performante :** Service Workers, IndexedDB, synchronisation différée, UX mobile fluide
+- **Créer une PWA offline-first performante :** Service Workers SvelteKit, IndexedDB, synchronisation différée, UX mobile fluide
 - **Optimiser l'utilisation de l'IA générative :** Trouver l'équilibre optimal entre code généré et maîtrise manuelle du développement
 
 #### Success Criteria Techniques
 
-- **Performance :** Temps de réponse API <200ms, chargement initial <2s
+- **Performance :** Temps de réponse API <200ms, chargement initial <2s (Svelte 5 produit des bundles significativement plus légers qu'un équivalent React, facilitant cet objectif)
 - **Infrastructure :** Pipeline CI/CD opérationnel, déploiement Docker reproductible
 - **Qualité Code :** Couverture de tests maximale, architecture maintenable, code review IA systématique
 - **Intégrations :** Plaid Link fonctionnel, serveur MCP opérationnel, PWA offline sans perte de données
@@ -120,7 +128,7 @@ Cette approche élimine la complexité des rôles granulaires familiaux au profi
 
 Le succès pour notre couple sera atteint quand :
 
-- **Transparence financière :** Ma compagne et moi disposont d'une vision claire et actualisée de nos budgets, possibilités et restrictions
+- **Transparence financière :** Ma compagne et moi disposons d'une vision claire et actualisée de nos budgets, possibilités et restrictions
 - **Automatisation des dettes :** Élimination des approximations et disputes sur "qui doit combien" grâce au suivi automatisé des remboursements
 - **Abandon des outils actuels :** Remplacement complet de notre système actuel (apps bancaires + tableurs + notes mentales)
 
@@ -156,7 +164,7 @@ Le succès pour notre couple sera atteint quand :
     - Soldes des dettes internes
 - **PWA Mobile Offline-First :**
     - Saisie rapide des transactions
-    - Synchronisation différée via Service Workers
+    - Synchronisation différée via Service Workers SvelteKit
 - **Infrastructure de Déploiement :**
     - Stack complète déployable via Docker/docker-compose
 
@@ -164,7 +172,7 @@ Le succès pour notre couple sera atteint quand :
 
 - Intégration MCP/IA (V2 prioritaire)
 - Projections financières complexes
-- Notifications/rappels automatisés
+- Notifications/rappels automatisés (push, email). Note : les alertes visuelles in-app pour les budgets (75%, 90%, 100%) sont incluses dans le MVP.
 
 ## Planning et Feuille de Route
 
@@ -172,8 +180,8 @@ Le succès pour notre couple sera atteint quand :
 
 **Infrastructure & Architecture**
 
-- Setup projet Spring Boot + React
-- Configuration Docker/docker-compose
+- Setup projet Spring Boot + SvelteKit (monorepo ou workspaces)
+- Configuration Docker/docker-compose (build SvelteKit statique + Spring Boot)
 - Pipeline CI/CD basique
 - Modèle de données PostgreSQL
 
@@ -181,7 +189,7 @@ Le succès pour notre couple sera atteint quand :
 
 - Système d'authentification Spring Security
 - Gestion des comptes conjugaux
-- Interface de connexion/profil
+- Interface de connexion/profil en Svelte 5
 
 **Gestion des Comptes & Transactions**
 
@@ -197,19 +205,19 @@ Le succès pour notre couple sera atteint quand :
 
 **Dashboard Principal**
 
-- Interface React du dashboard
-- Visualisations des données financières
+- Interface Svelte 5 du dashboard avec composants réactifs (runes)
+- Visualisations des données financières (Layerchart ou Chart.js)
 - UX responsive desktop/mobile
 
 **PWA & Finalisation**
 
-- Service Workers et mode offline
-- Tests d'intégration complets
+- Service Workers SvelteKit et mode offline
+- Tests (Vitest pour les composants Svelte, Playwright pour l'E2E)
 - Documentation de déploiement
 
 ### Phase 2 : IA & Analyses
 
-**Intégration MCP :** Serveur MCP fonctionnel, analyses automatisées **Categorisation IA :** Auto-catégorisation des transactions **Rapports Intelligents :** Insights financiers personnalisés
+**Intégration MCP :** Serveur MCP fonctionnel, analyses automatisées **Catégorisation IA :** Auto-catégorisation des transactions **Rapports Intelligents :** Insights financiers personnalisés
 
 ## Évaluation des Risques
 
@@ -223,7 +231,12 @@ Le succès pour notre couple sera atteint quand :
 **Performance PWA offline-first :**
 
 - _Impact_ : Élevé - _Probabilité_ : Moyen
-- _Mitigation_ : Prototypage early, tests sur vraies conditions réseau, architecture de sync robuste
+- _Mitigation_ : Prototypage early, tests sur vraies conditions réseau, architecture de sync robuste. SvelteKit offre un support natif des Service Workers via `src/service-worker.ts` facilitant l'implémentation.
+
+**Courbe d'apprentissage Svelte 5 / SvelteKit :**
+
+- _Impact_ : Moyen - _Probabilité_ : Moyen
+- _Mitigation_ : Knowledge base Svelte 5/SvelteKit déjà constituée pour Claude Code, documentation officielle excellente, migration progressive des concepts connus (Vue.js). Les runes Svelte 5 introduisent un modèle mental différent mais la surface d'API est réduite comparée à React.
 
 **Courbe d'apprentissage Spring moderne :**
 
@@ -250,7 +263,7 @@ Le succès pour notre couple sera atteint quand :
 
 ### Privacy by Design
 
-**Principe de Minimisation :** Collecte uniquement des données nécessaires au fonctionnement **Contrôle Utilisateur :** Export/suppression complète des données à tout moment **Hébergement Privé :** Aucune donnée n'quitte l'infrastructure personnelle
+**Principe de Minimisation :** Collecte uniquement des données nécessaires au fonctionnement **Contrôle Utilisateur :** Export/suppression complète des données à tout moment **Hébergement Privé :** Aucune donnée ne quitte l'infrastructure personnelle
 
 ### Intégrations Externes
 
@@ -261,7 +274,7 @@ Le succès pour notre couple sera atteint quand :
 ### Performance
 
 - **Temps de Réponse API :** <200ms pour 95% des requêtes
-- **Chargement Initial :** <2s sur connexion 4G
+- **Chargement Initial :** <2s sur connexion 4G (facilité par les bundles légers de Svelte 5, pas de virtual DOM)
 - **Synchronisation Offline :** <5s après reconnexion réseau
 
 ### Scalabilité
@@ -279,7 +292,7 @@ Le succès pour notre couple sera atteint quand :
 ### Maintenabilité
 
 - **Documentation :** README complet, documentation API, guides de déploiement
-- **Tests :** Couverture >80%, tests d'intégration automatisés
+- **Tests :** Couverture >80%, tests unitaires Vitest, tests E2E Playwright
 - **Monitoring :** Logs structurés, métriques applicatives, alertes proactives
 
 ## Exigences en Ressources
@@ -328,4 +341,4 @@ Améliorations envisagées si le projet personnel évolue :
 
 - **Extensions d'Analyse :** Intégration d'APIs externes pour comparaisons sectorielles, taux d'intérêt, inflation
 - **Automatisation Avancée :** Règles personnalisées pour transactions récurrentes, budgets auto-ajustables
-- **Expérience Mobile Native :** Retour éventuel vers Tauri si les limitations PWA deviennent bloquantes dans l'usage quotidien
+- **Expérience Mobile Native :** Retour éventuel vers Tauri v2 si les limitations PWA deviennent bloquantes dans l'usage quotidien (stack Svelte 5 + Tauri v2 directement compatible)

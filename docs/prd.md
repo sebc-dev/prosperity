@@ -96,7 +96,7 @@ Les solutions existantes ne repondent pas au besoin specifique d'une gestion mul
 
 7. **NFR7 : Gestion des Conflits de Synchronisation :**
    Detection et resolution des conflits lors de la synchronisation offline/online :
-   * Detection automatique des doublons potentiels (meme montant +/- 5min)
+   * Detection automatique des doublons potentiels (meme montant +/- 10% dans une fenetre de 5 min)
    * Interface simple de resolution
    * Option "Ce sont deux transactions differentes"
    * Annulation des resolutions pendant 24h
@@ -247,7 +247,7 @@ Pyramide de tests equilibree :
 **Criteres d'Acceptation :**
 
 1. Deux roles : Admin et Standard
-2. Login avec email/mot de passe
+2. Login avec identifiant (email) et mot de passe
 3. Sessions persistantes via JWT
 4. Page de login accessible et responsive
 
@@ -296,7 +296,7 @@ Pyramide de tests equilibree :
 1. Configuration Plaid par l'admin (cles API)
 2. Connexion de comptes bancaires via Plaid Link
 3. Import automatique des transactions
-4. Deduplication (date + montant + merchant + compte)
+4. Deduplication Plaid (correspondance exacte : date + montant + merchant + compte). Note : la detection de conflits offline/online (NFR7, Story 5.3) utilise des criteres plus souples (montant +/- 10%, fenetre de 5 min).
 5. Chiffrement AES-256 des tokens Plaid au repos
 6. Gestion des erreurs : token expire, institution indisponible, mode degrade (saisie manuelle)
 

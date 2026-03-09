@@ -11,7 +11,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.HexFormat;
 import java.util.UUID;
 
 @Service
@@ -54,12 +58,8 @@ public class AuthService {
 
     @Transactional
     public AuthResponse refreshToken(RefreshRequest request) {
-        String tokenHash = passwordEncoder.encode(request.refreshToken());
-
-        // Find by iterating stored tokens and matching (bcrypt cannot be looked up by hash)
-        RefreshToken storedToken = refreshTokenRepository.findAll().stream()
-                .filter(rt -> passwordEncoder.matches(request.refreshToken(), rt.getTokenHash()))
-                .findFirst()
+        String refreshHash = hashRefreshToken(request.refreshToken());
+        RefreshToken storedToken = refreshTokenRepository.findByTokenHash(refreshHash)
                 .orElseThrow(() -> new BadCredentialsException("Invalid refresh token"));
 
         if (storedToken.isExpired()) {
@@ -76,10 +76,10 @@ public class AuthService {
         return generateTokens(user);
     }
 
-    public AuthResponse generateTokens(User user) {
+    AuthResponse generateTokens(User user) {
         String accessToken = jwtService.generateAccessToken(user);
         String rawRefreshToken = jwtService.generateRefreshToken();
-        String refreshHash = passwordEncoder.encode(rawRefreshToken);
+        String refreshHash = hashRefreshToken(rawRefreshToken);
 
         RefreshToken refreshToken = new RefreshToken(
                 UUID.randomUUID(),
@@ -90,5 +90,15 @@ public class AuthService {
         refreshTokenRepository.save(refreshToken);
 
         return new AuthResponse(accessToken, rawRefreshToken);
+    }
+
+    private String hashRefreshToken(String rawToken) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(rawToken.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 algorithm not available", e);
+        }
     }
 }

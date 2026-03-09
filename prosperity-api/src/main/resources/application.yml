@@ -36,6 +36,8 @@ spring:
       fail-on-unknown-properties: false
 
 app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173}
   jwt:
     secret: ${JWT_SECRET}
     access-expiry: 900

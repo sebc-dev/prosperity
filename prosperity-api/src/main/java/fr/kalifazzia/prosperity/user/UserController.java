@@ -1,6 +1,7 @@
 package fr.kalifazzia.prosperity.user;
 
 import fr.kalifazzia.prosperity.auth.JwtService;
+import fr.kalifazzia.prosperity.shared.security.SecurityUtils;
 import fr.kalifazzia.prosperity.user.dto.ChangePasswordRequest;
 import fr.kalifazzia.prosperity.user.dto.CreateUserRequest;
 import fr.kalifazzia.prosperity.user.dto.UpdatePreferencesRequest;
@@ -34,7 +35,7 @@ public class UserController {
 
     @GetMapping("/me")
     public ResponseEntity<UserDto> getCurrentUser(HttpServletRequest request) {
-        UUID userId = extractUserId(request);
+        UUID userId = SecurityUtils.extractUserId(request, jwtService);
         return ResponseEntity.ok(userService.getCurrentUser(userId));
     }
 
@@ -42,7 +43,7 @@ public class UserController {
     public ResponseEntity<UserDto> updateProfile(
             @Valid @RequestBody UpdateProfileRequest profileRequest,
             HttpServletRequest request) {
-        UUID userId = extractUserId(request);
+        UUID userId = SecurityUtils.extractUserId(request, jwtService);
         return ResponseEntity.ok(userService.updateProfile(userId, profileRequest));
     }
 
@@ -50,7 +51,7 @@ public class UserController {
     public ResponseEntity<UserDto> updatePreferences(
             @RequestBody UpdatePreferencesRequest preferencesRequest,
             HttpServletRequest request) {
-        UUID userId = extractUserId(request);
+        UUID userId = SecurityUtils.extractUserId(request, jwtService);
         return ResponseEntity.ok(userService.updatePreferences(userId, preferencesRequest));
     }
 
@@ -58,7 +59,7 @@ public class UserController {
     public ResponseEntity<Void> changePassword(
             @Valid @RequestBody ChangePasswordRequest passwordRequest,
             HttpServletRequest request) {
-        UUID userId = extractUserId(request);
+        UUID userId = SecurityUtils.extractUserId(request, jwtService);
         userService.changePassword(userId, passwordRequest);
         return ResponseEntity.ok().build();
     }
@@ -74,12 +75,4 @@ public class UserController {
         return ResponseEntity.status(HttpStatus.CREATED).body(user);
     }
 
-    private UUID extractUserId(HttpServletRequest request) {
-        String authHeader = request.getHeader("Authorization");
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            throw new IllegalStateException("Missing Authorization header");
-        }
-        String token = authHeader.substring(7);
-        return jwtService.getUserIdFromToken(token);
-    }
 }

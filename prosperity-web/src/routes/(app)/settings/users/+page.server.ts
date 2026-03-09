@@ -1,4 +1,4 @@
-import { fail, redirect } from '@sveltejs/kit';
+import { error, fail, isHttpError, isRedirect, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { apiClient } from '$lib/api/client';
 
@@ -10,19 +10,25 @@ export const load: PageServerLoad = async ({ parent, locals }) => {
 		redirect(303, '/settings/profile');
 	}
 
-	const api = apiClient(locals.accessToken);
-	let users: Array<{ id: string; email: string; displayName: string; role: string }> = [];
-
 	try {
+		const api = apiClient(locals.accessToken);
 		const res = await api.get('/api/users');
-		if (res.ok) {
-			users = await res.json();
-		}
-	} catch {
-		// API error -- show empty list
-	}
 
-	return { users };
+		if (!res.ok) {
+			if (res.status === 401) {
+				redirect(303, '/login');
+			}
+			error(res.status, 'Failed to load users');
+		}
+
+		const users = await res.json();
+		return { users };
+	} catch (e) {
+		if (isRedirect(e) || isHttpError(e)) {
+			throw e;
+		}
+		error(503, 'Service temporarily unavailable');
+	}
 };
 
 export const actions: Actions = {

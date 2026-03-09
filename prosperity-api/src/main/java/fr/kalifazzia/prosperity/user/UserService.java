@@ -3,6 +3,8 @@ package fr.kalifazzia.prosperity.user;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.uuid.Generators;
+import fr.kalifazzia.prosperity.shared.exception.BusinessRuleException;
+import fr.kalifazzia.prosperity.shared.exception.ResourceNotFoundException;
 import fr.kalifazzia.prosperity.user.dto.ChangePasswordRequest;
 import fr.kalifazzia.prosperity.user.dto.CreateUserRequest;
 import fr.kalifazzia.prosperity.user.dto.UpdatePreferencesRequest;
@@ -34,14 +36,14 @@ public class UserService {
     @Transactional(readOnly = true)
     public UserDto getCurrentUser(UUID userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         return toDto(user);
     }
 
     @Transactional
     public UserDto updateProfile(UUID userId, UpdateProfileRequest request) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         user.setDisplayName(request.displayName());
         userRepository.save(user);
         return toDto(user);
@@ -50,7 +52,7 @@ public class UserService {
     @Transactional
     public UserDto updatePreferences(UUID userId, UpdatePreferencesRequest request) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         try {
             Map<String, Object> prefs = Map.of(
@@ -75,7 +77,7 @@ public class UserService {
         }
 
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         if (!passwordEncoder.matches(request.oldPassword(), user.getPasswordHash())) {
             throw new IllegalArgumentException("Old password is incorrect");
@@ -90,7 +92,7 @@ public class UserService {
     @Transactional
     public UserDto createUser(CreateUserRequest request) {
         if (userRepository.findByEmail(request.email()).isPresent()) {
-            throw new IllegalArgumentException("Email already in use");
+            throw new BusinessRuleException("Email already in use");
         }
 
         User user = new User(

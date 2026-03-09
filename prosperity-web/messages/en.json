@@ -80,5 +80,6 @@
 	"accounts_form_color": "Color",
 	"accounts_form_submit": "Create account",
 	"accounts_form_error": "Unable to create account. Please try again.",
-	"common_back": "Back"
+	"common_back": "Back",
+	"setup_error_admin_exists": "An administrator already exists."
 }

@@ -113,11 +113,9 @@ class AuthorizationTest {
 
         String token = jwtService.generateAccessToken(standardUser);
 
-        // Any admin-protected endpoint would return 403 for standard users
-        // For now, test that auth works by accessing a generic authenticated endpoint
-        mockMvc.perform(get("/api/users/me")
+        mockMvc.perform(get("/api/users")
                         .header("Authorization", "Bearer " + token))
-                .andExpect(status().is4xxClientError());
+                .andExpect(status().isForbidden());
     }
 
     @Test

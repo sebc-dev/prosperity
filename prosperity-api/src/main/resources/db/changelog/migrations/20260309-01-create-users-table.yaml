@@ -55,3 +55,9 @@ databaseChangeLog:
                   name: version
                   type: bigint
                   defaultValueNumeric: 0
+  - changeSet:
+      id: 20260309-01-add-unique-admin-constraint
+      author: prosperity
+      changes:
+        - sql:
+            sql: CREATE UNIQUE INDEX idx_unique_admin ON users(system_role) WHERE system_role = 'ADMIN'

@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 public record CreateAccountRequest(
         @NotBlank @Size(max = 255) String name,
@@ -13,6 +14,7 @@ public record CreateAccountRequest(
         @NotNull AccountType accountType,
         String currency,
         BigDecimal initialBalance,
-        String color
+        String color,
+        UUID sharedWithUserId
 ) {
 }

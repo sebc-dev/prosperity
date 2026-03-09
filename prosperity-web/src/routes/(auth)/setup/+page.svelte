@@ -26,19 +26,19 @@
 		<div
 			class="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
 		>
-			Passwords do not match.
+			{m.security_password_mismatch()}
 		</div>
 	{:else if form?.error === 'password_too_short'}
 		<div
 			class="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
 		>
-			Password must be at least 8 characters.
+			{m.security_password_too_short()}
 		</div>
 	{:else if form?.error === 'admin_exists'}
 		<div
 			class="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200"
 		>
-			An administrator already exists.
+			{m.setup_error_admin_exists()}
 		</div>
 	{:else if form?.error}
 		<div
@@ -112,7 +112,7 @@
 			/>
 			{#if !passwordLongEnough}
 				<p class="mt-1 text-xs text-red-600 dark:text-red-400">
-					Password must be at least 8 characters.
+					{m.security_password_too_short()}
 				</p>
 			{/if}
 		</div>
@@ -136,7 +136,7 @@
 				class:border-red-500={!passwordsMatch}
 			/>
 			{#if !passwordsMatch}
-				<p class="mt-1 text-xs text-red-600 dark:text-red-400">Passwords do not match.</p>
+				<p class="mt-1 text-xs text-red-600 dark:text-red-400">{m.security_password_mismatch()}</p>
 			{/if}
 		</div>
 

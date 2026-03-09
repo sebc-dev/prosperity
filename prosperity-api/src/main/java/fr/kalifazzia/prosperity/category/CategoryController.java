@@ -1,7 +1,10 @@
 package fr.kalifazzia.prosperity.category;
 
 import fr.kalifazzia.prosperity.auth.JwtService;
+import fr.kalifazzia.prosperity.category.dto.CreateCategoryRequest;
+import fr.kalifazzia.prosperity.shared.security.SecurityUtils;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -11,7 +14,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -28,7 +30,7 @@ public class CategoryController {
 
     @GetMapping
     public ResponseEntity<List<CategoryDto>> getCategories(HttpServletRequest request) {
-        UUID userId = extractUserId(request);
+        UUID userId = SecurityUtils.extractUserId(request, jwtService);
         List<Category> categories = categoryService.getCategories(userId);
         List<CategoryDto> dtos = categories.stream()
                 .map(c -> new CategoryDto(c.getId(), c.getNameKey(), c.getIcon(), c.isDefault()))
@@ -38,28 +40,13 @@ public class CategoryController {
 
     @PostMapping
     public ResponseEntity<CategoryDto> createCategory(
-            @RequestBody Map<String, String> body,
+            @Valid @RequestBody CreateCategoryRequest body,
             HttpServletRequest request) {
-        UUID userId = extractUserId(request);
-        String nameKey = body.get("nameKey");
-        String icon = body.get("icon");
+        UUID userId = SecurityUtils.extractUserId(request, jwtService);
 
-        if (nameKey == null || nameKey.isBlank()) {
-            throw new IllegalArgumentException("nameKey is required");
-        }
-
-        Category category = categoryService.createCategory(nameKey, icon, userId);
+        Category category = categoryService.createCategory(body.nameKey(), body.icon(), userId);
         CategoryDto dto = new CategoryDto(category.getId(), category.getNameKey(), category.getIcon(), category.isDefault());
         return ResponseEntity.status(HttpStatus.CREATED).body(dto);
-    }
-
-    private UUID extractUserId(HttpServletRequest request) {
-        String authHeader = request.getHeader("Authorization");
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            throw new IllegalStateException("Missing Authorization header");
-        }
-        String token = authHeader.substring(7);
-        return jwtService.getUserIdFromToken(token);
     }
 
     record CategoryDto(UUID id, String nameKey, String icon, boolean isDefault) {

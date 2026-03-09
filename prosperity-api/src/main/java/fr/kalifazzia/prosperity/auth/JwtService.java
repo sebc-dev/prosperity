@@ -34,6 +34,8 @@ public class JwtService {
     public String generateAccessToken(User user) {
         Instant now = Instant.now();
         return Jwts.builder()
+                .issuer("prosperity-api")
+                .audience().add("prosperity-api").and()
                 .subject(user.getId().toString())
                 .claim("email", user.getEmail())
                 .claim("role", user.getSystemRole().name())
@@ -52,6 +54,8 @@ public class JwtService {
 
     public Claims validateToken(String token) {
         return Jwts.parser()
+                .requireIssuer("prosperity-api")
+                .requireAudience("prosperity-api")
                 .verifyWith(signingKey)
                 .build()
                 .parseSignedClaims(token)

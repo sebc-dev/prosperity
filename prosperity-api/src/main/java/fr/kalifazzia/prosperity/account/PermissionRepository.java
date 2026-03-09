@@ -13,4 +13,6 @@ public interface PermissionRepository extends JpaRepository<AccountPermission, U
     Optional<AccountPermission> findByAccountIdAndUserId(UUID accountId, UUID userId);
 
     List<AccountPermission> findAllByAccountId(UUID accountId);
+
+    List<AccountPermission> findAllByUserId(UUID userId);
 }

@@ -80,5 +80,6 @@
 	"accounts_form_color": "Couleur",
 	"accounts_form_submit": "Creer le compte",
 	"accounts_form_error": "Impossible de creer le compte. Veuillez reessayer.",
-	"common_back": "Retour"
+	"common_back": "Retour",
+	"setup_error_admin_exists": "Un administrateur existe deja."
 }

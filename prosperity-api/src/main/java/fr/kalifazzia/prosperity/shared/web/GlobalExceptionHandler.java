@@ -1,5 +1,8 @@
 package fr.kalifazzia.prosperity.shared.web;
 
+import fr.kalifazzia.prosperity.shared.exception.BusinessRuleException;
+import fr.kalifazzia.prosperity.shared.exception.ResourceNotFoundException;
+import fr.kalifazzia.prosperity.shared.security.UnauthenticatedUserException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -29,11 +32,32 @@ public class GlobalExceptionHandler {
                 .body(new ErrorResponse("Validation failed", details));
     }
 
+    @ExceptionHandler(UnauthenticatedUserException.class)
+    public ResponseEntity<ErrorResponse> handleUnauthenticatedUser(UnauthenticatedUserException ex) {
+        return ResponseEntity
+                .status(HttpStatus.UNAUTHORIZED)
+                .body(new ErrorResponse(ex.getMessage(), Map.of()));
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex) {
         return ResponseEntity
                 .status(HttpStatus.FORBIDDEN)
                 .body(new ErrorResponse("Access denied", Map.of()));
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleResourceNotFound(ResourceNotFoundException ex) {
+        return ResponseEntity
+                .status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse(ex.getMessage(), Map.of()));
+    }
+
+    @ExceptionHandler(BusinessRuleException.class)
+    public ResponseEntity<ErrorResponse> handleBusinessRule(BusinessRuleException ex) {
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(new ErrorResponse(ex.getMessage(), Map.of()));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

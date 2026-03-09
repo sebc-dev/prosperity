@@ -112,7 +112,7 @@ class AccountControllerTest {
     void createPersonalAccount_onlyOwnerCanSee() throws Exception {
         CreateAccountRequest request = new CreateAccountRequest(
                 "Mon Compte Courant", "BNP Paribas", AccountType.PERSONAL,
-                "EUR", BigDecimal.valueOf(1500.00), "#3B82F6"
+                "EUR", BigDecimal.valueOf(1500.00), "#3B82F6", null
         );
 
         // Admin creates a personal account
@@ -145,7 +145,7 @@ class AccountControllerTest {
     void createSharedAccount_bothUsersSeeIt() throws Exception {
         CreateAccountRequest request = new CreateAccountRequest(
                 "Compte Joint", "Societe Generale", AccountType.SHARED,
-                "EUR", BigDecimal.valueOf(3000.00), "#10B981"
+                "EUR", BigDecimal.valueOf(3000.00), "#10B981", standardUser.getId()
         );
 
         // Admin creates a shared account
@@ -178,7 +178,7 @@ class AccountControllerTest {
         // Admin creates personal account
         CreateAccountRequest adminAccount = new CreateAccountRequest(
                 "Admin Personal", "BNP", AccountType.PERSONAL,
-                "EUR", BigDecimal.valueOf(1000.00), "#EF4444"
+                "EUR", BigDecimal.valueOf(1000.00), "#EF4444", null
         );
         mockMvc.perform(post("/api/accounts")
                         .header("Authorization", "Bearer " + adminToken)
@@ -189,7 +189,7 @@ class AccountControllerTest {
         // Standard user creates personal account
         CreateAccountRequest standardAccount = new CreateAccountRequest(
                 "Standard Personal", "SG", AccountType.PERSONAL,
-                "EUR", BigDecimal.valueOf(500.00), "#8B5CF6"
+                "EUR", BigDecimal.valueOf(500.00), "#8B5CF6", null
         );
         mockMvc.perform(post("/api/accounts")
                         .header("Authorization", "Bearer " + standardToken)
@@ -216,7 +216,7 @@ class AccountControllerTest {
     void createAccount_withoutAuth_returns401() throws Exception {
         CreateAccountRequest request = new CreateAccountRequest(
                 "Test Account", "BNP", AccountType.PERSONAL,
-                "EUR", BigDecimal.ZERO, "#000000"
+                "EUR", BigDecimal.ZERO, "#000000", null
         );
 
         mockMvc.perform(post("/api/accounts")

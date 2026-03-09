@@ -11,6 +11,7 @@ export const actions: Actions = {
 		const currency = form.get('currency') as string;
 		const initialBalance = form.get('initialBalance') as string;
 		const color = form.get('color') as string;
+		const sharedWithUserId = form.get('sharedWithUserId') as string;
 
 		if (!name || !accountType) {
 			return fail(400, {
@@ -33,7 +34,8 @@ export const actions: Actions = {
 				accountType,
 				currency: currency || 'EUR',
 				initialBalance: parseFloat(initialBalance || '0'),
-				color: color || '#3B82F6'
+				color: color || '#3B82F6',
+				sharedWithUserId: sharedWithUserId || null
 			});
 
 			if (!res.ok) {

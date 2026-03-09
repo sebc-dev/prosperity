@@ -2,7 +2,7 @@
 
 ## What This Is
 
-Application web auto-hébergée de gestion financière conçue pour un couple. Prosperity centralise comptes personnels et partagés, budgets, transactions (manuelles et importées via Plaid), et suivi des dettes internes entre conjoints — le tout dans une interface moderne Svelte 5 accessible en PWA offline-first. Open source, déployable via Docker sur infrastructure privée.
+Application web auto-hébergée de gestion financière conçue pour un couple. Prosperity centralise comptes personnels et partagés, budgets, transactions prévisionnelles (saisies manuelles, potentiellement récurrentes) et importées (Plaid) avec rapprochement (pointage), et suivi des dettes internes entre conjoints — le tout dans une interface moderne Svelte 5 accessible en PWA. Open source, déployable via Docker sur infrastructure privée.
 
 ## Core Value
 
@@ -21,13 +21,12 @@ Le couple dispose d'une vision financière claire, partagée et actualisée — 
 - [ ] Système multi-utilisateurs conjugal (2 rôles : Admin/Standard, comptes personnels et partagés)
 - [ ] Authentification sécurisée (JWT + Refresh Tokens, bcrypt 12 rounds)
 - [ ] CRUD comptes bancaires avec permissions granulaires (Personnel/Partagé)
-- [ ] Saisie manuelle des transactions avec catégorisation
-- [ ] Import automatique des transactions via Plaid Link
+- [ ] Modèle transactionnel prévisionnel + rapprochement : saisies manuelles (prévisions, récurrentes) et importées (Plaid), pointage entre les deux, double solde réel/projeté
 - [ ] Saisie rapide mobile (quick-add en 3 taps max)
 - [ ] Budgets mensuels par catégorie (modes enveloppe et objectif, alertes progressives)
-- [ ] Suivi des dettes internes (avances, soldes nets, suggestions d'équilibrage)
-- [ ] Dashboard principal (soldes, budgets, dettes, transactions récentes)
-- [ ] PWA offline-first (Service Worker, IndexedDB, sync différée, résolution de conflits)
+- [ ] Suivi des dettes internes (avances, soldes nets)
+- [ ] Dashboard principal (soldes réel + projeté, budgets, dettes, transactions récentes)
+- [ ] PWA installable avec cache assets (offline complet en phase ultérieure)
 - [ ] Profil et préférences (thème clair/sombre, catégories favorites, devise)
 - [ ] Infrastructure Docker (db + api + web) avec déploiement reproductible
 - [ ] Pipeline CI/CD progressif (build + tests + lint d'abord, outils avancés ajoutés ensuite — tout exécutable en local)
@@ -80,7 +79,8 @@ Le couple dispose d'une vision financière claire, partagée et actualisée — 
 | Caddy existant plutôt que Nginx en container | Déjà en place sur le serveur, HTTPS automatique, un container de moins | — Pending |
 | Pipeline CI progressif | Commencer léger (build/tests/lint), ajouter outils avancés graduellement, tout exécutable en local | — Pending |
 | Plaid dans le MVP | Import bancaire automatisé dès la v1, fallback saisie manuelle si erreur | — Pending |
-| PWA complète au MVP | Offline-first avec sync différée et résolution de conflits dès la v1 | — Pending |
+| PWA progressive | Installable + cache assets d'abord, offline/sync dans phase dédiée ultérieure | — Pending |
+| Modèle prévisionnel + rapprochement | Saisies = prévisions (récurrentes possibles), importées = réel, pointage entre les deux. Double solde réel/projeté. | — Pending |
 
 ---
-*Last updated: 2026-03-09 after initialization*
+*Last updated: 2026-03-09 after transaction model revision (prévisionnel + rapprochement)*

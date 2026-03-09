@@ -38,13 +38,19 @@ Les solutions existantes ne repondent pas au besoin specifique d'une gestion mul
 
 2. **FR2 : Importation Automatisee :** Le systeme doit permettre l'importation securisee et automatique des transactions bancaires via l'integration Plaid Link (banques francaises/europeennes supportees).
 
-3. **FR3 : Gestion Manuelle des Transactions :** Les utilisateurs doivent pouvoir saisir, categoriser et rapprocher manuellement les transactions.
+3. **FR3 : Gestion des Transactions (modele previsionnel + rapprochement) :**
+   Le systeme gere deux types de transactions :
+   - **Saisies (previsions)** : transactions saisies manuellement, potentiellement recurrentes (loyer, abonnements). Elles representent des depenses prevues et permettent de visualiser le budget restant avant que les operations bancaires ne soient importees.
+   - **Importees (reelles)** : transactions provenant de Plaid Link, representant les operations bancaires effectives.
+   - **Pointage (rapprochement)** : lorsqu'une transaction importee correspond a une saisie, l'utilisateur les associe. La saisie passe de "prevue" a "pointee". Les saisies non pointees restent visibles comme depenses attendues.
+   - **Double solde** : chaque compte affiche un solde reel (banque) et un solde projete (reel + previsions non pointees).
+   - Les utilisateurs doivent pouvoir saisir, categoriser et rapprocher les transactions.
 
 4. **FR4 : Suivi des Dettes Internes :** Le systeme doit permettre d'enregistrer, suivre, calculer les soldes et suggerer des equilibrages pour les avances et remboursements entre les deux utilisateurs. Widget dashboard avec solde net visible en permanence.
 
 5. **FR5 : Budgetisation :** Les utilisateurs doivent pouvoir definir et suivre des budgets mensuels par categorie de depenses, individuels et communs.
 
-6. **FR6 : Tableau de Bord :** L'interface principale doit presenter une vue claire incluant les soldes des comptes (actuel et avec depenses recurrentes), l'etat des budgets avec indicateurs visuels, les dernieres transactions et le solde des dettes internes.
+6. **FR6 : Tableau de Bord :** L'interface principale doit presenter une vue claire incluant les soldes des comptes (reel et projete avec previsions non pointees), l'etat des budgets avec indicateurs visuels, les dernieres transactions et le solde des dettes internes.
 
 7. **FR7 : Saisie Mobile Offline-First :** L'application doit fonctionner comme une PWA permettant la saisie rapide de transactions en mode hors-ligne, avec synchronisation differee.
 
@@ -276,29 +282,34 @@ Pyramide de tests equilibree :
 
 **Objectif :** Gerer les transactions manuelles et automatiser l'import bancaire.
 
-#### Story 3.1 : Saisie Manuelle des Transactions
+#### Story 3.1 : Saisie des Transactions (Previsions)
 
-**En tant que** utilisateur, **je veux** saisir mes depenses manuellement.
+**En tant que** utilisateur, **je veux** saisir mes depenses prevues manuellement, **afin de** visualiser mon budget restant avant que les operations bancaires ne soient importees.
 
 **Criteres d'Acceptation :**
 
 1. Formulaire de saisie : montant, description, date, categorie, compte
-2. Edition et suppression des transactions
+2. Edition et suppression des saisies
 3. Categorisation manuelle
-4. Historique des transactions avec filtres (date, categorie, compte)
+4. Possibilite de marquer une saisie comme recurrente (mensuelle) pour les depenses fixes (loyer, abonnements)
+5. Generation automatique des saisies recurrentes en debut de mois
+6. Les saisies non pointees apparaissent comme depenses prevues dans le solde projete
+7. Historique des transactions avec filtres (date, categorie, compte, statut : prevue/pointee/importee)
 
-#### Story 3.2 : Integration Plaid
+#### Story 3.2 : Integration Plaid et Pointage
 
-**En tant que** utilisateur, **je veux** connecter mes comptes bancaires, **afin d'** automatiser l'import.
+**En tant que** utilisateur, **je veux** connecter mes comptes bancaires et rapprocher les imports avec mes saisies, **afin de** maintenir une vue financiere fiable.
 
 **Criteres d'Acceptation :**
 
 1. Configuration Plaid par l'admin (cles API)
 2. Connexion de comptes bancaires via Plaid Link
-3. Import automatique des transactions
-4. Deduplication Plaid (correspondance exacte : date + montant + merchant + compte). Note : la detection de conflits offline/online (NFR7, Story 5.3) utilise des criteres plus souples (montant +/- 10%, fenetre de 5 min).
-5. Chiffrement AES-256 des tokens Plaid au repos
-6. Gestion des erreurs : token expire, institution indisponible, mode degrade (saisie manuelle)
+3. Import automatique des transactions (type "importee")
+4. Pointage : l'utilisateur peut associer une transaction importee a une saisie existante (la saisie passe de "prevue" a "pointee")
+5. Suggestion automatique de rapprochement (meme montant +/- tolerance, dates proches)
+6. Les transactions importees sans saisie correspondante restent autonomes
+7. Chiffrement AES-256 des tokens Plaid au repos
+8. Gestion des erreurs : token expire, institution indisponible, mode degrade (saisie manuelle)
 
 #### Story 3.3 : Saisie Rapide Mobile
 
@@ -350,7 +361,7 @@ Pyramide de tests equilibree :
 
 **Criteres d'Acceptation :**
 
-1. Soldes des comptes (actuel et avec recurrences)
+1. Soldes des comptes (reel et projete avec previsions non pointees)
 2. Etat des budgets avec jauges visuelles
 3. 5 dernieres transactions
 4. Solde des dettes internes avec action rapide

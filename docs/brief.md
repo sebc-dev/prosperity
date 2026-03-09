@@ -102,7 +102,8 @@ Les runes Svelte 5 assureront une réactivité fine-grained sans virtual DOM, ce
 
 - **Users** : Gestion des comptes conjugaux (2 utilisateurs)
 - **Accounts** : Comptes bancaires personnels et partagés
-- **Transactions** : Opérations financières importées ou saisies
+- **Transactions** : Deux types — saisies (prévisions manuelles, potentiellement récurrentes) et importées (Plaid). Rapprochement (pointage) entre saisie et importée.
+- **RecurrenceRules** : Règles de récurrence pour générer automatiquement les saisies périodiques (loyer, abonnements)
 - **Categories** : Catégorisation des dépenses
 - **Budgets** : Budgets mensuels par catégorie
 - **InternalDebts** : Suivi des avances entre conjoints
@@ -146,11 +147,15 @@ Le succès pour notre couple sera atteint quand :
 - **Système Multi-Utilisateurs Conjugal :**
     - Gestion de 2 utilisateurs avec accès aux comptes personnels et partagés
     - Permissions configurables par compte
-- **Gestion des Transactions :**
+- **Gestion des Transactions (modèle prévisionnel + rapprochement) :**
+    - Deux types de transactions : **saisies** (prévisions manuelles, potentiellement récurrentes) et **importées** (réelles, via Plaid Link)
+    - Saisie manuelle en avance pour prévoir les dépenses et visualiser le reste disponible
+    - Transactions récurrentes (loyer, abonnements) générées automatiquement chaque mois
     - Importation automatique via Plaid Link
-    - Saisie manuelle des transactions
+    - Pointage (rapprochement) : une transaction importée est associée à sa saisie correspondante
+    - Les saisies non pointées restent visibles comme dépenses prévues
+    - Double affichage des soldes : réel (banque) et projeté (réel + prévisions non pointées)
     - Catégorisation manuelle des transactions
-    - Rapprochement manuel (Plaid vs saisies)
 - **Suivi des Dettes Internes :**
     - Enregistrement et suivi des avances entre conjoints
     - Calcul automatique des soldes nets

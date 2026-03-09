@@ -178,15 +178,19 @@ src/main/java/fr/kalifazzia/prosperity/
 │   └── PermissionDto.java               # record DTO
 │
 ├── transaction/                         # Feature : Transactions financières
-│   ├── TransactionController.java       # CRUD transactions + filtres
+│   ├── TransactionController.java       # CRUD transactions + filtres + pointage
 │   ├── TransactionService.java          # Logique métier transactions
-│   ├── Transaction.java                 # Entité JPA
+│   ├── Transaction.java                 # Entité JPA (saisie ou importée)
 │   ├── TransactionRepository.java
 │   ├── Category.java                    # Entité JPA
 │   ├── CategoryRepository.java
-│   ├── SyncStatus.java                  # enum SYNCED, PENDING, CONFLICT
+│   ├── TransactionSource.java           # enum MANUAL, IMPORTED
+│   ├── ReconciliationStatus.java        # enum FORECAST, RECONCILED, STANDALONE
+│   ├── RecurrenceRule.java              # Entité JPA (règles de récurrence)
+│   ├── RecurrenceRepository.java
 │   ├── TransactionDto.java              # record DTO
-│   ├── CreateTransactionRequest.java    # record DTO
+│   ├── CreateEntryRequest.java          # record DTO (saisie manuelle/prévision)
+│   ├── ReconcileRequest.java            # record DTO (pointage saisie ↔ importée)
 │   └── QuickAddRequest.java             # record DTO (saisie rapide mobile)
 │
 ├── debt/                                # Feature : Dettes internes
@@ -429,22 +433,40 @@ CREATE TABLE categories (
     created_at TIMESTAMP NOT NULL
 );
 
--- Transactions
+-- Transactions (saisies manuelles et importées Plaid)
 CREATE TABLE transactions (
     id UUID PRIMARY KEY,
     account_id UUID REFERENCES accounts(id),
+    source VARCHAR(20) NOT NULL, -- MANUAL (saisie/prévision), IMPORTED (Plaid)
+    reconciliation_status VARCHAR(20) NOT NULL DEFAULT 'FORECAST', -- FORECAST (prévue), RECONCILED (pointée), STANDALONE (importée sans saisie)
+    reconciled_with_id UUID REFERENCES transactions(id), -- pointage : saisie ↔ importée
     plaid_transaction_id VARCHAR(255) UNIQUE,
     date DATE NOT NULL,
     amount DECIMAL(19,4) NOT NULL,
     description TEXT,
     category_id UUID REFERENCES categories(id),
     is_pending BOOLEAN DEFAULT false,
-    sync_status VARCHAR(20) DEFAULT 'SYNCED',
-    conflict_data JSONB,
+    recurrence_id UUID REFERENCES recurrence_rules(id), -- lien vers règle de récurrence
     created_by UUID REFERENCES users(id),
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP NOT NULL,
     version BIGINT NOT NULL DEFAULT 0
+);
+
+-- Règles de récurrence pour saisies automatiques
+CREATE TABLE recurrence_rules (
+    id UUID PRIMARY KEY,
+    account_id UUID REFERENCES accounts(id),
+    amount DECIMAL(19,4) NOT NULL,
+    description TEXT,
+    category_id UUID REFERENCES categories(id),
+    frequency VARCHAR(20) NOT NULL DEFAULT 'MONTHLY', -- MONTHLY, WEEKLY, etc.
+    day_of_month INTEGER, -- jour du mois pour MONTHLY
+    next_occurrence DATE NOT NULL,
+    is_active BOOLEAN DEFAULT true,
+    created_by UUID REFERENCES users(id),
+    created_at TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP NOT NULL
 );
 
 -- Budgets mensuels
@@ -516,7 +538,9 @@ CREATE TABLE audit_log (
 
 -- Index pour performance
 CREATE INDEX idx_transactions_account_date ON transactions(account_id, date DESC);
-CREATE INDEX idx_transactions_sync_status ON transactions(sync_status) WHERE sync_status != 'SYNCED';
+CREATE INDEX idx_transactions_source ON transactions(source);
+CREATE INDEX idx_transactions_reconciliation ON transactions(reconciliation_status) WHERE reconciliation_status = 'FORECAST';
+CREATE INDEX idx_recurrence_next ON recurrence_rules(next_occurrence, is_active) WHERE is_active = true;
 CREATE INDEX idx_audit_log_entity ON audit_log(entity_type, entity_id, performed_at DESC);
 CREATE INDEX idx_permissions_user_account ON permissions(user_id, account_id);
 CREATE INDEX idx_debts_users ON debts(creditor_user_id, debtor_user_id, status);
@@ -762,10 +786,10 @@ import type { PageLoad } from './$types';
 export const load: PageLoad = async ({ fetch }) => {
     // Chargement parallèle de toutes les données du dashboard
     const [accounts, budgets, debts, recentTransactions] = await Promise.all([
-        fetch('/api/accounts').then(r => r.json()),
+        fetch('/api/accounts').then(r => r.json()), // includes real + projected balances
         fetch('/api/budgets/current').then(r => r.json()),
         fetch('/api/debts/balance').then(r => r.json()),
-        fetch('/api/transactions?limit=5').then(r => r.json()),
+        fetch('/api/transactions?limit=5').then(r => r.json()), // includes source + reconciliation status
     ]);
 
     return { accounts, budgets, debts, recentTransactions };
@@ -1315,7 +1339,7 @@ Authentification email/mot de passe. CRUD comptes bancaires avec permissions (Pe
 
 ### Phase 3 — Transactions et Intégration Plaid (Epic 3)
 
-Saisie manuelle des transactions. Catégorisation. Intégration Plaid Link avec import automatique. Déduplication Plaid (correspondance exacte). Quick-add mobile (≤ 3 taps).
+Modèle prévisionnel + rapprochement : saisie manuelle des transactions comme prévisions (potentiellement récurrentes), import automatique via Plaid Link, pointage (rapprochement) entre saisies et importées. Catégorisation. Double affichage des soldes : réel et projeté. Quick-add mobile (≤ 3 taps).
 
 ### Phase 4 — Budgets et Dettes (Epic 4)
 

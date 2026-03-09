@@ -12,7 +12,7 @@ Prosperity delivers a self-hosted financial management app for a couple, built i
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation** - Infrastructure, authentication, and account management
+- [x] **Phase 1: Foundation** - Infrastructure, authentication, and account management (completed 2026-03-09)
 - [ ] **Phase 2: Transactions** - Manual entries, forecasts, recurring transactions, and history
 - [ ] **Phase 3: Budgets and Debts** - Monthly budgets by category and internal debt tracking
 - [ ] **Phase 4: Bank Sync** - Plaid integration, imported transactions, and reconciliation
@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. User can create Personal and Shared bank accounts, with Personal accounts invisible to the other user
   4. User can update display name and set preferences (theme, currency, favorite categories)
   5. Application runs via `docker compose up` with PostgreSQL, Spring Boot API, and SvelteKit web -- all accessible behind HTTPS with security headers
-**Plans:** 4/6 plans executed
+**Plans:** 6/6 plans complete
 
 Plans:
 - [ ] 01-01-PLAN.md — Backend scaffolding: Maven project, shared kernel, Spring Security, Liquibase migrations
@@ -130,7 +130,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 4/6 | In Progress|  |
+| 1. Foundation | 6/6 | Complete   | 2026-03-09 |
 | 2. Transactions | 0/3 | Not started | - |
 | 3. Budgets and Debts | 0/3 | Not started | - |
 | 4. Bank Sync | 0/3 | Not started | - |

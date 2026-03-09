@@ -25,7 +25,8 @@ export const actions: Actions = {
 			const api = apiClient(locals.accessToken);
 			const res = await api.post('/api/users/me/password', {
 				oldPassword,
-				newPassword
+				newPassword,
+				confirmPassword
 			});
 
 			if (!res.ok) {

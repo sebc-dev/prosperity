@@ -31,12 +31,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. User can create Personal and Shared bank accounts, with Personal accounts invisible to the other user
   4. User can update display name and set preferences (theme, currency, favorite categories)
   5. Application runs via `docker compose up` with PostgreSQL, Spring Boot API, and SvelteKit web -- all accessible behind HTTPS with security headers
-**Plans**: TBD
+**Plans:** 3 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
-- [ ] 01-03: TBD
+- [ ] 01-01-PLAN.md — Project scaffolding: monorepo, Docker Compose, DB schema, shared kernel, CI/CD
+- [ ] 01-02-PLAN.md — Authentication: login, JWT refresh, setup wizard, role enforcement
+- [ ] 01-03-PLAN.md — Accounts + Settings: bank account CRUD with permissions, profile, preferences, Settings UI
 
 ### Phase 2: Transactions
 **Goal**: Users can manage their financial forecasts through manual transaction entries, with recurring generation and dual balance visibility
@@ -127,7 +127,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 0/3 | Not started | - |
+| 1. Foundation | 0/3 | Planning complete | - |
 | 2. Transactions | 0/3 | Not started | - |
 | 3. Budgets and Debts | 0/3 | Not started | - |
 | 4. Bank Sync | 0/3 | Not started | - |

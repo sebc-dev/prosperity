@@ -56,9 +56,12 @@ const tokenRefresh: Handle = async ({ event, resolve }) => {
 				});
 				event.locals.accessToken = data.accessToken;
 			} else {
-				// Refresh failed -- clear cookies
+				// Refresh failed -- clear cookies and redirect with expired flag
 				event.cookies.delete('access_token', { path: '/' });
 				event.cookies.delete('refresh_token', { path: '/' });
+				if (!isPublicPath(event.url.pathname)) {
+					redirect(303, '/login?expired=true');
+				}
 			}
 		} catch {
 			// API unreachable -- clear cookies silently

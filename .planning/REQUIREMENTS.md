@@ -11,7 +11,7 @@
 - [x] **AUTH-02**: User session persists via JWT + Refresh Tokens with automatic rotation
 - [x] **AUTH-03**: Two roles enforced: Admin (config, Plaid, system) and Standard (daily use)
 - [x] **AUTH-04**: User can update profile (display name)
-- [ ] **AUTH-05**: User can set preferences (theme light/dark, default currency, favorite categories)
+- [x] **AUTH-05**: User can set preferences (theme light/dark, default currency, favorite categories)
 
 ### Accounts
 
@@ -126,7 +126,7 @@
 | AUTH-02 | Phase 1 | Complete |
 | AUTH-03 | Phase 1 | Complete |
 | AUTH-04 | Phase 1 | Complete |
-| AUTH-05 | Phase 1 | Pending |
+| AUTH-05 | Phase 1 | Complete |
 | ACCT-01 | Phase 1 | Complete |
 | ACCT-02 | Phase 1 | Complete |
 | ACCT-03 | Phase 1 | Complete |

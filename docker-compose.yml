@@ -1,0 +1,44 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: prosperity
+      POSTGRES_USER: prosperity
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prosperity"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./prosperity-api
+      dockerfile: Dockerfile
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/prosperity
+      SPRING_DATASOURCE_USERNAME: prosperity
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      SPRING_THREADS_VIRTUAL_ENABLED: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./prosperity-web
+      dockerfile: Dockerfile
+    environment:
+      API_URL: http://api:8080
+      ORIGIN: ${APP_ORIGIN}
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:

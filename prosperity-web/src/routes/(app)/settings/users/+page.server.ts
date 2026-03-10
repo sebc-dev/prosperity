@@ -33,7 +33,9 @@ export const load: PageServerLoad = async ({ parent, locals }) => {
 
 export const actions: Actions = {
 	default: async ({ request, locals }) => {
-		if (locals.user?.role !== 'ADMIN') {
+		const api = apiClient(locals.accessToken);
+		const meRes = await api.get('/api/users/me');
+		if (!meRes.ok || (await meRes.json()).role !== 'ADMIN') {
 			return fail(403, { error: 'Forbidden' });
 		}
 
@@ -51,7 +53,6 @@ export const actions: Actions = {
 		}
 
 		try {
-			const api = apiClient(locals.accessToken);
 			const res = await api.post('/api/users', {
 				email: email.trim(),
 				displayName: displayName.trim(),

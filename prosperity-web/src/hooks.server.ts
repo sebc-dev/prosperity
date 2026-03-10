@@ -10,22 +10,6 @@ function isPublicPath(pathname: string): boolean {
 	return PUBLIC_PATHS.some((p) => pathname.startsWith(p));
 }
 
-function decodeJwtPayload(token: string): App.Locals['user'] | undefined {
-	try {
-		const parts = token.split('.');
-		if (parts.length !== 3) return undefined;
-		const payload = JSON.parse(atob(parts[1]));
-		return {
-			id: payload.sub,
-			email: payload.email,
-			role: payload.role,
-			displayName: payload.displayName
-		};
-	} catch {
-		return undefined;
-	}
-}
-
 const tokenRefresh: Handle = async ({ event, resolve }) => {
 	const accessToken = event.cookies.get('access_token');
 	const refreshToken = event.cookies.get('refresh_token');
@@ -82,7 +66,6 @@ const authGuard: Handle = async ({ event, resolve }) => {
 
 	if (accessToken) {
 		event.locals.accessToken = accessToken;
-		event.locals.user = decodeJwtPayload(accessToken);
 	}
 
 	return resolve(event);

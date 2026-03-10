@@ -109,17 +109,19 @@ class AccountControllerTest {
     }
 
     @Test
-    void createPersonalAccount_onlyOwnerCanSee() throws Exception {
+    void scenario_personal_account_is_created_then_only_visible_by_owner() throws Exception {
+        // Arrange
         CreateAccountRequest request = new CreateAccountRequest(
                 "Mon Compte Courant", "BNP Paribas", AccountType.PERSONAL,
                 "EUR", BigDecimal.valueOf(1500.00), "#3B82F6", null
         );
 
-        // Admin creates a personal account
+        // Act 1 - Admin creates a personal account
         mockMvc.perform(post("/api/accounts")
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
+                // Assert 1 - Account is created with correct attributes
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.name").value("Mon Compte Courant"))
                 .andExpect(jsonPath("$.bankName").value("BNP Paribas"))
@@ -127,46 +129,52 @@ class AccountControllerTest {
                 .andExpect(jsonPath("$.currency").value("EUR"))
                 .andExpect(jsonPath("$.permissionLevel").value("MANAGE"));
 
-        // Admin can see it
+        // Act 2 - Admin lists their accounts
         mockMvc.perform(get("/api/accounts")
                         .header("Authorization", "Bearer " + adminToken))
+                // Assert 2 - Admin can see the account
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].name").value("Mon Compte Courant"));
 
-        // Standard user cannot see admin's personal account
+        // Act 3 - Standard user lists their accounts
         mockMvc.perform(get("/api/accounts")
                         .header("Authorization", "Bearer " + standardToken))
+                // Assert 3 - Standard user cannot see admin's personal account
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(0));
     }
 
     @Test
-    void createSharedAccount_bothUsersSeeIt() throws Exception {
+    void scenario_shared_account_is_created_then_visible_by_both_users() throws Exception {
+        // Arrange
         CreateAccountRequest request = new CreateAccountRequest(
                 "Compte Joint", "Societe Generale", AccountType.SHARED,
                 "EUR", BigDecimal.valueOf(3000.00), "#10B981", standardUser.getId()
         );
 
-        // Admin creates a shared account
+        // Act 1 - Admin creates a shared account
         mockMvc.perform(post("/api/accounts")
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
+                // Assert 1 - Account is created as shared with MANAGE permission
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.accountType").value("SHARED"))
                 .andExpect(jsonPath("$.permissionLevel").value("MANAGE"));
 
-        // Admin sees it
+        // Act 2 - Admin lists their accounts
         mockMvc.perform(get("/api/accounts")
                         .header("Authorization", "Bearer " + adminToken))
+                // Assert 2 - Admin sees the shared account
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].name").value("Compte Joint"));
 
-        // Standard user also sees it
+        // Act 3 - Standard user lists their accounts
         mockMvc.perform(get("/api/accounts")
                         .header("Authorization", "Bearer " + standardToken))
+                // Assert 3 - Standard user sees the shared account with WRITE permission
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].name").value("Compte Joint"))
@@ -174,39 +182,43 @@ class AccountControllerTest {
     }
 
     @Test
-    void visibilityIsolation_userACannotSeeUserBPersonalAccounts() throws Exception {
-        // Admin creates personal account
+    void scenario_two_users_create_personal_accounts_then_each_sees_only_their_own() throws Exception {
+        // Arrange
         CreateAccountRequest adminAccount = new CreateAccountRequest(
                 "Admin Personal", "BNP", AccountType.PERSONAL,
                 "EUR", BigDecimal.valueOf(1000.00), "#EF4444", null
         );
+        CreateAccountRequest standardAccount = new CreateAccountRequest(
+                "Standard Personal", "SG", AccountType.PERSONAL,
+                "EUR", BigDecimal.valueOf(500.00), "#8B5CF6", null
+        );
+
+        // Act 1 - Admin creates personal account
         mockMvc.perform(post("/api/accounts")
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(adminAccount)))
                 .andExpect(status().isCreated());
 
-        // Standard user creates personal account
-        CreateAccountRequest standardAccount = new CreateAccountRequest(
-                "Standard Personal", "SG", AccountType.PERSONAL,
-                "EUR", BigDecimal.valueOf(500.00), "#8B5CF6", null
-        );
+        // Act 2 - Standard user creates personal account
         mockMvc.perform(post("/api/accounts")
                         .header("Authorization", "Bearer " + standardToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(standardAccount)))
                 .andExpect(status().isCreated());
 
-        // Admin only sees their personal account
+        // Act 3 - Admin lists their accounts
         mockMvc.perform(get("/api/accounts")
                         .header("Authorization", "Bearer " + adminToken))
+                // Assert 3 - Admin only sees their personal account
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].name").value("Admin Personal"));
 
-        // Standard user only sees their personal account
+        // Act 4 - Standard user lists their accounts
         mockMvc.perform(get("/api/accounts")
                         .header("Authorization", "Bearer " + standardToken))
+                // Assert 4 - Standard user only sees their personal account
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].name").value("Standard Personal"));

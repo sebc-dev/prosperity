@@ -1,0 +1,1209 @@
+{
+  "type": "followup",
+  "round": 2,
+  "branch": "gsd/phase-01-foundation",
+  "base": "main",
+  "merge_base": "69aca0e3f8c95d8ad421f78665b8f832f92a1b53",
+  "previous_head": "c3f71de71e748129199064125c0a1564b5a30492",
+  "previous_session": ".claude/review/sessions/phase-01-foundation.json",
+  "created_at": "2026-03-09T20:29:00Z",
+  "status": "completed",
+  "summary": {
+    "total_files": 36,
+    "completed": 13,
+    "resolved": 10,
+    "partially_resolved": 0,
+    "unresolved": 3,
+    "new_green": 0,
+    "new_yellow": 0,
+    "new_red": 0
+  },
+  "files": [
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/auth/AuthService.java",
+      "category": "business-logic",
+      "review_type": "correction",
+      "original_note": "Securite critique sur le refresh token flow + code mort + visibilite trop large",
+      "original_blocking": 1,
+      "original_green": 0,
+      "original_yellow": 3,
+      "original_red": 1,
+      "original_observations": [
+        {
+          "criterion": "performance",
+          "severity": "bloquant",
+          "level": "red",
+          "text": "refreshToken() charge TOUS les tokens + itere avec bcrypt — O(n) x 100ms, vecteur DoS",
+          "detail": "La methode refreshToken() appelle findAll() puis itere avec passwordEncoder.matches() (bcrypt ~100ms par token). Avec 1000 tokens, cela represente ~100 secondes. C'est aussi un vecteur de deni de service car un attaquant peut envoyer des requetes de refresh en boucle.",
+          "location": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/auth/AuthService.java:59",
+          "suggestion": "Utiliser SHA-256 au lieu de bcrypt pour les refresh tokens. Le token opaque de 32 octets a haute entropie ne necessite pas bcrypt. Stocker SHA-256(token) en base avec index unique et faire un lookup direct.",
+          "fix_prompt": {
+            "file": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/auth/AuthService.java",
+            "line": "55-70",
+            "action": "refactor",
+            "description": "Remplacer bcrypt par SHA-256 pour le hachage des refresh tokens, ajouter lookup par hash indexe au lieu de findAll()+iterate"
+          },
+          "validation": {
+            "decision": "escalate",
+            "confidence": 0.92,
+            "reason": "Probleme reel confirme (findAll + bcrypt iteration) mais le fix propose (migration SHA-256) implique changement de strategie de hashing et modification du schema de stockage."
+          }
+        },
+        {
+          "criterion": "architecture",
+          "severity": "suggestion",
+          "level": "yellow",
+          "text": "Variable tokenHash calculee (bcrypt ~100ms) mais jamais utilisee — code mort",
+          "detail": "La ligne 58 calcule passwordEncoder.encode(request.refreshToken()) et stocke le resultat dans tokenHash, mais cette variable n'est jamais referenceee ensuite. Cela gaspille ~100ms de CPU par requete de refresh.",
+          "location": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/auth/AuthService.java:58",
+          "suggestion": "Supprimer la ligne String tokenHash = passwordEncoder.encode(request.refreshToken());",
+          "fix_prompt": {
+            "file": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/auth/AuthService.java",
+            "line": "58",
+            "action": "remove",
+            "description": "Supprimer la ligne inutilisee String tokenHash = passwordEncoder.encode(request.refreshToken())"
+          },
+          "validation": {
+            "decision": "apply",
+            "confidence": 0.97,
+            "reason": "Variable tokenHash calculee ligne 57 jamais utilisee -- code mort confirme, suppression une seule ligne."
+          }
+        },
+        {
+          "criterion": "conventions",
+          "severity": "suggestion",
+          "level": "yellow",
+          "text": "generateTokens() est public mais ne devrait etre que package-private",
+          "detail": "generateTokens() n'est appelee que par AuthService et SetupService (meme package). L'exposer publiquement permet a n'importe quel composant de generer des tokens sans authentification.",
+          "location": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/auth/AuthService.java:79",
+          "suggestion": "Reduire la visibilite a package-private (retirer le modificateur public).",
+          "fix_prompt": {
+            "file": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/auth/AuthService.java",
+            "line": "79",
+            "action": "replace",
+            "description": "Remplacer public AuthResponse generateTokens par AuthResponse generateTokens"
+          },
+          "validation": {
+            "decision": "apply",
+            "confidence": 0.95,
+            "reason": "generateTokens() appele que depuis le meme package, reduction a package-private sans risque."
+          }
+        }
+      ],
+      "original_comments": [],
+      "status": "completed",
+      "resolution": "resolved",
+      "green": 2,
+      "yellow": 2,
+      "red": 0,
+      "note": "Corrections appliquees, 2 suggestions mineures",
+      "index": 1
+    },
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/auth/dto/SetupRequest.java",
+      "category": "domain-models",
+      "review_type": "correction",
+      "original_note": "Validation mot de passe manquante sur le DTO de setup",
+      "original_blocking": 1,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 1,
+      "original_observations": [
+        {
+          "criterion": "security",
+          "severity": "bloquant",
+          "level": "red",
+          "text": "Pas de validation longueur/complexite mot de passe — 1 caractere accepte pour l'admin",
+          "detail": "@NotBlank seul accepte un mot de passe d'1 caractere pour le compte administrateur. L'absence de longueur maximale permet aussi des attaques DoS via bcrypt avec des mots de passe tres longs.",
+          "location": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/auth/dto/SetupRequest.java:10",
+          "suggestion": "Ajouter @Size(min = 8, max = 128) sur le champ password.",
+          "fix_prompt": {
+            "file": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/auth/dto/SetupRequest.java",
+            "line": "10",
+            "action": "replace",
+            "description": "Ajouter @Size(min = 8, max = 128) sur le champ password"
+          },
+          "validation": {
+            "decision": "apply",
+            "confidence": 0.95,
+            "reason": "@NotBlank seul accepte 1 caractere pour admin, @Size deja utilise dans le projet, fix chirurgical."
+          }
+        }
+      ],
+      "original_comments": [],
+      "status": "completed",
+      "resolution": "resolved",
+      "green": 2,
+      "yellow": 0,
+      "red": 0,
+      "note": "Validation @Size ajoutee",
+      "index": 2
+    },
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/account/AccountService.java",
+      "category": "business-logic",
+      "review_type": "correction",
+      "original_note": "Faille d'autorisation critique sur SHARED + probleme de performance N+1",
+      "original_blocking": 1,
+      "original_green": 0,
+      "original_yellow": 1,
+      "original_red": 1,
+      "original_observations": [
+        {
+          "criterion": "security",
+          "severity": "bloquant",
+          "level": "red",
+          "text": "Logique SHARED utilise findFirstByIdNot() — suppose 2 utilisateurs, faille d'autorisation avec 3+",
+          "detail": "Avec 3+ utilisateurs, un utilisateur aleatoire recevrait des permissions WRITE sur le compte. Faille d'autorisation.",
+          "location": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/account/AccountService.java:57",
+          "suggestion": "Accepter un parametre explicite sharedWithUserId dans CreateAccountRequest pour designer l'utilisateur cible.",
+          "fix_prompt": {
+            "file": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/account/AccountService.java",
+            "line": "57",
+            "action": "refactor",
+            "description": "Remplacer findFirstByIdNot par un parametre explicite sharedWithUserId dans CreateAccountRequest"
+          },
+          "validation": {
+            "decision": "escalate",
+            "confidence": 0.92,
+            "reason": "Faille autorisation reelle mais fix necessite changement contrat API (ajout champ DTO, impact frontend)."
+          }
+        },
+        {
+          "criterion": "performance",
+          "severity": "suggestion",
+          "level": "yellow",
+          "text": "Probleme N+1 queries dans getAccountsForUser()",
+          "detail": "Apres recuperation de tous les comptes, le code fait une requete individuelle findByAccountIdAndUserId() par compte. Avec N comptes, N+1 requetes SQL.",
+          "location": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/account/AccountService.java:72",
+          "suggestion": "Creer une requete JPQL jointe ou charger toutes les permissions de l'utilisateur en une seule requete puis les associer en memoire.",
+          "fix_prompt": {
+            "file": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/account/AccountService.java",
+            "line": "72-85",
+            "action": "refactor",
+            "description": "Remplacer N+1 queries par une requete JPQL jointe accounts+permissions"
+          },
+          "validation": {
+            "decision": "apply",
+            "confidence": 0.85,
+            "reason": "Pattern N+1 confirme, fix chirurgical via methode batch au PermissionRepository."
+          }
+        }
+      ],
+      "original_comments": [],
+      "status": "completed",
+      "resolution": "resolved",
+      "green": 2,
+      "yellow": 2,
+      "red": 1,
+      "note": "Self-share corrige manuellement",
+      "index": 3
+    },
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/category/CategoryController.java",
+      "category": "controllers-api",
+      "review_type": "correction",
+      "original_note": "Manque de validation sur le endpoint de creation de categorie",
+      "original_blocking": 1,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 1,
+      "original_observations": [
+        {
+          "criterion": "security",
+          "severity": "bloquant",
+          "level": "red",
+          "text": "Map<String, String> brut sans validation — pas de Bean Validation, injection possible",
+          "detail": "Le endpoint accepte un Map<String, String> brut sans Bean Validation. La validation manuelle ne couvre que nameKey. Le champ icon n'est pas valide — un attaquant pourrait injecter des chaines arbitrairement longues.",
+          "location": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/category/CategoryController.java:41",
+          "suggestion": "Creer un record CreateCategoryRequest avec @NotBlank @Size(max=100) String nameKey et @Size(max=50) String icon, et utiliser @Valid @RequestBody.",
+          "fix_prompt": {
+            "file": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/category/CategoryController.java",
+            "line": "41",
+            "action": "refactor",
+            "description": "Remplacer Map<String, String> par un record CreateCategoryRequest avec Bean Validation"
+          },
+          "validation": {
+            "decision": "apply",
+            "confidence": 0.95,
+            "reason": "Map<String, String> sans validation confirme, le fix (record + @Valid) suit le pattern etabli dans les autres controllers."
+          }
+        }
+      ],
+      "original_comments": [],
+      "status": "completed",
+      "resolution": "resolved",
+      "green": 2,
+      "yellow": 0,
+      "red": 0,
+      "note": "Record avec Bean Validation",
+      "index": 4
+    },
+    {
+      "path": "prosperity-api/Dockerfile",
+      "category": "build-config",
+      "review_type": "correction",
+      "original_note": "Image Docker executee en root",
+      "original_blocking": 1,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 1,
+      "original_observations": [
+        {
+          "criterion": "security",
+          "severity": "bloquant",
+          "level": "red",
+          "text": "Processus execute en root — pas de USER non-root dans l'image de production",
+          "detail": "Le Dockerfile n'utilise pas de USER non-root. Le conteneur de production execute Java en tant que root, ce qui augmente la surface d'attaque en cas de compromission (escape de conteneur).",
+          "location": "prosperity-api/Dockerfile:10",
+          "suggestion": "Ajouter RUN useradd -r -s /bin/false app puis USER app avant le ENTRYPOINT.",
+          "fix_prompt": {
+            "file": "prosperity-api/Dockerfile",
+            "line": "10",
+            "action": "add",
+            "description": "Ajouter RUN useradd -r -s /bin/false app et USER app avant ENTRYPOINT"
+          },
+          "validation": {
+            "decision": "apply",
+            "confidence": 0.97,
+            "reason": "Absence de USER non-root confirmee, fix chirurgical de 2 lignes."
+          }
+        }
+      ],
+      "original_comments": [],
+      "status": "completed",
+      "resolution": "resolved",
+      "green": 1,
+      "yellow": 0,
+      "red": 0,
+      "note": "USER non-root ajoute",
+      "index": 5
+    },
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/account/AccountController.java",
+      "category": "controllers-api",
+      "review_type": "correction",
+      "original_note": "Code duplique et mauvais code de retour HTTP",
+      "original_blocking": 1,
+      "original_green": 0,
+      "original_yellow": 1,
+      "original_red": 1,
+      "original_observations": [
+        {
+          "criterion": "architecture",
+          "severity": "bloquant",
+          "level": "red",
+          "text": "extractUserId() duplique en 3 controllers — IllegalStateException -> HTTP 500 au lieu de 401",
+          "detail": "Le pattern extractUserId() est copie dans AccountController, CategoryController et UserController. Si le JWT ne contient pas de userId, une IllegalStateException est levee, convertie en HTTP 500 par le handler global au lieu de retourner 401.",
+          "location": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/account/AccountController.java:47",
+          "suggestion": "Extraire dans une classe utilitaire ou un @ControllerAdvice, et lancer une exception specifique mappee a 401.",
+          "fix_prompt": {
+            "file": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/account/AccountController.java",
+            "line": "47-55",
+            "action": "refactor",
+            "description": "Extraire extractUserId dans un utilitaire partage avec gestion 401"
+          },
+          "validation": {
+            "decision": "escalate",
+            "confidence": 0.85,
+            "reason": "Duplication et mauvais code HTTP confirmes mais impact runtime quasi-nul et fix necessite refactoring cross-fichier."
+          }
+        }
+      ],
+      "original_comments": [],
+      "status": "completed",
+      "resolution": "resolved",
+      "green": 1,
+      "yellow": 0,
+      "red": 0,
+      "note": "extractUserId centralise",
+      "index": 6
+    },
+    {
+      "path": "prosperity-web/src/routes/(app)/+layout.server.ts",
+      "category": "views-ui",
+      "review_type": "correction",
+      "original_note": "Gestion d'erreur trop agressive",
+      "original_blocking": 1,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 1,
+      "original_observations": [
+        {
+          "criterion": "error-handling",
+          "severity": "bloquant",
+          "level": "red",
+          "text": "Redirection vers /login en cas d'erreur API — indisponibilite temporaire deconnecte l'utilisateur",
+          "detail": "Toute erreur API (timeout, 500, reseau) declenche une redirection vers /login. Une indisponibilite temporaire du backend deconnecte tous les utilisateurs.",
+          "location": "prosperity-web/src/routes/(app)/+layout.server.ts:20",
+          "suggestion": "Distinguer les erreurs 401 (rediriger vers /login) des autres erreurs (afficher un message d'erreur).",
+          "fix_prompt": {
+            "file": "prosperity-web/src/routes/(app)/+layout.server.ts",
+            "line": "18-22",
+            "action": "refactor",
+            "description": "Differencier 401 (redirect /login) des autres erreurs (afficher erreur)"
+          },
+          "validation": {
+            "decision": "apply",
+            "confidence": 0.95,
+            "reason": "Toute erreur API redirige vers /login, fix chirurgical dans un seul fichier."
+          }
+        }
+      ],
+      "original_comments": [],
+      "status": "completed",
+      "resolution": "resolved",
+      "green": 2,
+      "yellow": 0,
+      "red": 0,
+      "note": "Erreurs 401 vs autres distinguees",
+      "index": 7
+    },
+    {
+      "path": "prosperity-web/src/routes/(app)/accounts/+page.server.ts",
+      "category": "views-ui",
+      "review_type": "correction",
+      "original_note": "Erreur silencieuse masquant les problemes",
+      "original_blocking": 1,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 1,
+      "original_observations": [
+        {
+          "criterion": "error-handling",
+          "severity": "bloquant",
+          "level": "red",
+          "text": "Erreur API silencieuse — retourne { accounts: [] } sans feedback utilisateur",
+          "detail": "En cas d'erreur API, le server load retourne une liste vide au lieu d'informer l'utilisateur de l'erreur. L'utilisateur pense qu'il n'a aucun compte.",
+          "location": "prosperity-web/src/routes/(app)/accounts/+page.server.ts:8",
+          "suggestion": "Propager l'erreur au composant Svelte pour afficher un message d'erreur adapte.",
+          "fix_prompt": {
+            "file": "prosperity-web/src/routes/(app)/accounts/+page.server.ts",
+            "line": "8-12",
+            "action": "refactor",
+            "description": "Propager l'erreur au lieu de retourner silencieusement une liste vide"
+          },
+          "validation": {
+            "decision": "escalate",
+            "confidence": 0.82,
+            "reason": "Meme pattern silent-error dans settings/users, fix cree inconsistance, strategie error propagation necessite decision humaine."
+          }
+        }
+      ],
+      "original_comments": [],
+      "status": "completed",
+      "resolution": "resolved",
+      "green": 2,
+      "yellow": 0,
+      "red": 0,
+      "note": "Erreurs propagees",
+      "index": 8
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "category": "build-config",
+      "review_type": "correction",
+      "original_note": "Tests frontend absents du CI + actions non pinnees",
+      "original_blocking": 1,
+      "original_green": 0,
+      "original_yellow": 1,
+      "original_red": 1,
+      "original_observations": [
+        {
+          "criterion": "test-coverage",
+          "severity": "bloquant",
+          "level": "red",
+          "text": "Le CI ne lance pas les tests frontend — npm run test absent du pipeline",
+          "detail": "Le job frontend execute check, lint et build mais pas npm run test. Les tests unitaires frontend ne sont jamais verifies en CI.",
+          "location": ".github/workflows/ci.yml:73",
+          "suggestion": "Ajouter une etape - name: Test / run: npm run test dans le job frontend.",
+          "fix_prompt": {
+            "file": ".github/workflows/ci.yml",
+            "line": "73",
+            "action": "add",
+            "description": "Ajouter etape npm run test apres le lint"
+          },
+          "validation": {
+            "decision": "apply",
+            "confidence": 0.97,
+            "reason": "npm run test absent du job frontend, script existe dans package.json, ajout simple."
+          }
+        },
+        {
+          "criterion": "security",
+          "severity": "suggestion",
+          "level": "yellow",
+          "text": "Actions GitHub non pinnees par SHA — supply chain risk",
+          "detail": "Les GitHub Actions sont referencees par tag (actions/checkout@v4). Un tag peut etre deplace par un attaquant ayant compromis le repository de l'action.",
+          "location": ".github/workflows/ci.yml:35",
+          "suggestion": "Pincer les actions par SHA de commit complet et ajouter un commentaire avec le tag pour la lisibilite.",
+          "fix_prompt": null,
+          "validation": {
+            "decision": "escalate",
+            "confidence": 0.70,
+            "reason": "Actions GitHub maintenues par GitHub, choix des SHA exacts necessite decision equipe."
+          }
+        }
+      ],
+      "original_comments": [],
+      "status": "completed",
+      "resolution": "resolved",
+      "green": 2,
+      "yellow": 0,
+      "red": 0,
+      "note": "Tests frontend + actions pinnees",
+      "index": 9
+    },
+    {
+      "path": "prosperity-web/src/routes/(auth)/setup/+page.svelte",
+      "category": "views-ui",
+      "review_type": "correction",
+      "original_note": "Messages non internationalises",
+      "original_blocking": 1,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 1,
+      "original_observations": [
+        {
+          "criterion": "conventions",
+          "severity": "bloquant",
+          "level": "red",
+          "text": "Messages d'erreur en dur en anglais au lieu du systeme i18n",
+          "detail": "Les messages d'erreur dans le composant setup sont en anglais en dur alors que l'application utilise Paraglide pour l'internationalisation.",
+          "location": "prosperity-web/src/routes/(auth)/setup/+page.svelte:30",
+          "suggestion": "Utiliser les cles de traduction Paraglide pour les messages d'erreur.",
+          "fix_prompt": {
+            "file": "prosperity-web/src/routes/(auth)/setup/+page.svelte",
+            "line": "30",
+            "action": "replace",
+            "description": "Remplacer les messages en dur par des cles i18n Paraglide"
+          },
+          "validation": {
+            "decision": "apply",
+            "confidence": 0.92,
+            "reason": "5 messages erreur en dur en anglais, reste du composant utilise Paraglide, fix localise 3 fichiers."
+          }
+        }
+      ],
+      "original_comments": [],
+      "status": "completed",
+      "resolution": "resolved",
+      "green": 1,
+      "yellow": 0,
+      "red": 0,
+      "note": "Messages i18n",
+      "index": 10
+    },
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/auth/SetupService.java",
+      "category": "business-logic",
+      "review_type": "unaddressed",
+      "original_note": "Race condition critique sur l'endpoint de setup initial",
+      "original_blocking": 1,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 1,
+      "original_observations": [
+        {
+          "criterion": "security",
+          "severity": "bloquant",
+          "level": "red",
+          "text": "Race condition createAdmin() — deux requetes simultanees peuvent creer deux admins",
+          "detail": "La verification isAdminExists() suivie de la creation n'est pas atomique. Deux requetes simultanees sur /api/setup (permitAll) peuvent passer la verification avant que l'une ne commite. Avec des emails differents, deux admins seraient crees.",
+          "location": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/auth/SetupService.java:32",
+          "suggestion": "Ajouter une contrainte unique en base (partial unique index sur system_role='ADMIN') ou utiliser un SELECT FOR UPDATE sur une table de configuration.",
+          "fix_prompt": {
+            "file": "prosperity-api/src/main/resources/db/changelog/migrations/20260309-01-create-users-table.yaml",
+            "line": "end",
+            "action": "add",
+            "description": "Ajouter un partial unique index: CREATE UNIQUE INDEX idx_unique_admin ON users(system_role) WHERE system_role = 'ADMIN'"
+          },
+          "validation": {
+            "decision": "escalate",
+            "confidence": 0.85,
+            "reason": "Race condition confirmee mais le fix requiert un choix architectural (partial unique index vs lock applicatif) et une migration Liquibase."
+          }
+        }
+      ],
+      "original_comments": [],
+      "status": "completed",
+      "resolution": "unresolved",
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "Contrainte DB ok mais service doit gerer DataIntegrityViolationException",
+      "index": 11
+    },
+    {
+      "path": "prosperity-web/src/hooks.server.ts",
+      "category": "infrastructure",
+      "review_type": "unaddressed",
+      "original_note": "Faille critique de verification de signature JWT cote frontend",
+      "original_blocking": 1,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 1,
+      "original_observations": [
+        {
+          "criterion": "security",
+          "severity": "bloquant",
+          "level": "red",
+          "text": "Decodage JWT sans verification de signature — atob() sans validation crypto, usurpation de role possible",
+          "detail": "decodeJwtPayload() decode le payload JWT avec atob() sans verifier la signature. Les donnees extraites (role, email, id) sont stockees dans event.locals.user et utilisees pour des decisions d'autorisation. Un attaquant qui forge le cookie access_token pourrait usurper un role admin.",
+          "location": "prosperity-web/src/hooks.server.ts:13",
+          "suggestion": "Verifier la signature JWT cote hooks serveur (avec une lib comme jose), ou ne pas peupler event.locals.user dans le hook et se fier uniquement a la reponse de /api/users/me.",
+          "fix_prompt": {
+            "file": "prosperity-web/src/hooks.server.ts",
+            "line": "13-30",
+            "action": "refactor",
+            "description": "Verifier la signature JWT avec la lib jose ou supprimer le decodage et se fier a l'API"
+          },
+          "validation": {
+            "decision": "escalate",
+            "confidence": 0.85,
+            "reason": "locals.user jamais consomme pour autorisation, risque actuel nul, choix de fix (jose vs suppression) est un trade-off architectural."
+          }
+        }
+      ],
+      "original_comments": [],
+      "status": "completed",
+      "resolution": "unresolved",
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "A corriger: verification signature JWT",
+      "index": 12
+    },
+    {
+      "path": "Caddyfile",
+      "category": "infrastructure",
+      "review_type": "unaddressed",
+      "original_note": "CSP manquante + pas de rate limiting",
+      "original_blocking": 1,
+      "original_green": 0,
+      "original_yellow": 1,
+      "original_red": 1,
+      "original_observations": [
+        {
+          "criterion": "security",
+          "severity": "bloquant",
+          "level": "red",
+          "text": "Absence de Content-Security-Policy — XSS possible pour une app financiere",
+          "detail": "Le Caddyfile definit HSTS, X-Frame-Options, X-Content-Type-Options mais omet Content-Security-Policy. Pour une application financiere, l'absence de CSP laisse la porte ouverte aux attaques XSS par injection de scripts externes.",
+          "location": "Caddyfile:3",
+          "suggestion": "Ajouter Content-Security-Policy \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'\" et ajuster selon les besoins.",
+          "fix_prompt": {
+            "file": "Caddyfile",
+            "line": "3-9",
+            "action": "add",
+            "description": "Ajouter header Content-Security-Policy dans le bloc header"
+          },
+          "validation": {
+            "decision": "escalate",
+            "confidence": 0.85,
+            "reason": "CSP deja configuree dans Spring Security, risque de duplication headers et analyse SvelteKit necessaire."
+          }
+        },
+        {
+          "criterion": "architecture",
+          "severity": "suggestion",
+          "level": "yellow",
+          "text": "Pas de rate limiting sur les endpoints d'authentification",
+          "detail": "Pas de rate limiting configure. Les endpoints d'authentification (/api/auth/*) sont particulierement sensibles au brute force pour une application financiere.",
+          "location": "Caddyfile:13",
+          "suggestion": "Implementer le rate limiting au niveau de Spring Security ou via le module rate_limit de Caddy.",
+          "fix_prompt": null,
+          "validation": {
+            "decision": "skip",
+            "confidence": 0.80,
+            "reason": "Rate limiting prevu dans Spring Security per architecture.md, pas actionable comme fix Caddyfile."
+          }
+        }
+      ],
+      "original_comments": [],
+      "status": "completed",
+      "resolution": "unresolved",
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "A corriger: CSP frontend + rate limiting",
+      "index": 13
+    },
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/account/PermissionRepository.java",
+      "category": "unknown",
+      "review_type": "new",
+      "original_note": "",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 14
+    },
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/account/dto/CreateAccountRequest.java",
+      "category": "unknown",
+      "review_type": "new",
+      "original_note": "",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 15
+    },
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/auth/JwtService.java",
+      "category": "infrastructure",
+      "review_type": "new",
+      "original_note": "Claims JWT manquants",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 1,
+      "original_red": 0,
+      "original_observations": [
+        {
+          "criterion": "security",
+          "severity": "suggestion",
+          "level": "yellow",
+          "text": "JWT genere sans claims issuer ni audience",
+          "detail": "Un token signe avec la meme cle mais destine a un autre service serait accepte.",
+          "location": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/auth/JwtService.java:36",
+          "suggestion": "Ajouter .issuer(\"prosperity-api\") et .audience().add(\"prosperity-api\") au builder, et les verifier dans validateToken().",
+          "fix_prompt": {
+            "file": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/auth/JwtService.java",
+            "line": "36-45",
+            "action": "add",
+            "description": "Ajouter claims issuer et audience au builder JWT"
+          },
+          "validation": {
+            "decision": "apply",
+            "confidence": 0.85,
+            "reason": "Absence issuer/audience confirmee, fix chirurgical 4 lignes ajoutees sans changement API."
+          }
+        }
+      ],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 16
+    },
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/category/dto/CreateCategoryRequest.java",
+      "category": "unknown",
+      "review_type": "new",
+      "original_note": "",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 17
+    },
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/shared/exception/BusinessRuleException.java",
+      "category": "unknown",
+      "review_type": "new",
+      "original_note": "",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 18
+    },
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/shared/exception/ResourceNotFoundException.java",
+      "category": "unknown",
+      "review_type": "new",
+      "original_note": "",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 19
+    },
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/shared/security/SecurityConfig.java",
+      "category": "infrastructure",
+      "review_type": "new",
+      "original_note": "CORS a externaliser",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 1,
+      "original_red": 0,
+      "original_observations": [
+        {
+          "criterion": "security",
+          "severity": "suggestion",
+          "level": "yellow",
+          "text": "Origines CORS en dur — modification code source requise pour la production",
+          "detail": "Les origines CORS sont en dur (localhost:3000, localhost:5173). En production, il faudra modifier le code source et redeployer.",
+          "location": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/shared/security/SecurityConfig.java:82",
+          "suggestion": "Externaliser dans application.yml via app.cors.allowed-origins et injecter avec @Value.",
+          "fix_prompt": {
+            "file": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/shared/security/SecurityConfig.java",
+            "line": "80-84",
+            "action": "refactor",
+            "description": "Externaliser les origines CORS dans application.yml"
+          },
+          "validation": {
+            "decision": "apply",
+            "confidence": 0.82,
+            "reason": "CORS hardcodees confirmees, fix chirurgical standard Spring via @Value + application.yml."
+          }
+        }
+      ],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 20
+    },
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/shared/security/SecurityUtils.java",
+      "category": "unknown",
+      "review_type": "new",
+      "original_note": "",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 21
+    },
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/shared/security/UnauthenticatedUserException.java",
+      "category": "unknown",
+      "review_type": "new",
+      "original_note": "",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 22
+    },
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/shared/web/GlobalExceptionHandler.java",
+      "category": "infrastructure",
+      "review_type": "new",
+      "original_note": "Exceptions metier a differencier",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 1,
+      "original_red": 0,
+      "original_observations": [
+        {
+          "criterion": "error-handling",
+          "severity": "suggestion",
+          "level": "yellow",
+          "text": "IllegalArgumentException utilisee pour les erreurs metier — masque les vrais bugs",
+          "detail": "Les services utilisent IllegalArgumentException pour les erreurs metier (User not found, Email already in use). Or cette exception est aussi lancee par la JVM pour des erreurs de programmation. Le handler les transforme toutes en HTTP 400.",
+          "location": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/shared/web/GlobalExceptionHandler.java:39",
+          "suggestion": "Creer des exceptions metier dediees (ResourceNotFoundException, BusinessRuleException) avec des handlers specifiques et codes HTTP adequats (404, 409).",
+          "fix_prompt": {
+            "file": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/shared/web/GlobalExceptionHandler.java",
+            "line": "39",
+            "action": "refactor",
+            "description": "Creer des exceptions metier dediees au lieu de IllegalArgumentException"
+          },
+          "validation": {
+            "decision": "escalate",
+            "confidence": 0.85,
+            "reason": "Probleme reel mais fix necessite creation classes exceptions + modification 3+ fichiers."
+          }
+        }
+      ],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 23
+    },
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/user/UserController.java",
+      "category": "unknown",
+      "review_type": "new",
+      "original_note": "",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 24
+    },
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/user/UserService.java",
+      "category": "unknown",
+      "review_type": "new",
+      "original_note": "",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 25
+    },
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/user/dto/ChangePasswordRequest.java",
+      "category": "domain-models",
+      "review_type": "new",
+      "original_note": "Validation mot de passe insuffisante",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 1,
+      "original_red": 0,
+      "original_observations": [
+        {
+          "criterion": "security",
+          "severity": "suggestion",
+          "level": "yellow",
+          "text": "Champs mot de passe sans validation de taille — @NotBlank seul accepte 1 caractere",
+          "detail": "ChangePasswordRequest.newPassword et CreateUserRequest.password n'ont que @NotBlank. Un mot de passe d'un seul caractere serait accepte.",
+          "location": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/user/dto/ChangePasswordRequest.java:7",
+          "suggestion": "Ajouter au minimum @Size(min = 8, max = 128) sur les champs mot de passe.",
+          "fix_prompt": {
+            "file": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/user/dto/ChangePasswordRequest.java",
+            "line": "7",
+            "action": "add",
+            "description": "Ajouter @Size(min = 8, max = 128) sur newPassword et confirmPassword"
+          },
+          "validation": {
+            "decision": "apply",
+            "confidence": 0.90,
+            "reason": "Aucune validation longueur mots de passe, fix chirurgical via @Size, pattern deja utilise."
+          }
+        }
+      ],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 26
+    },
+    {
+      "path": "prosperity-api/src/main/java/fr/kalifazzia/prosperity/user/dto/CreateUserRequest.java",
+      "category": "unknown",
+      "review_type": "new",
+      "original_note": "",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 27
+    },
+    {
+      "path": "prosperity-api/src/main/resources/application.yml",
+      "category": "unknown",
+      "review_type": "new",
+      "original_note": "",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 28
+    },
+    {
+      "path": "prosperity-api/src/main/resources/db/changelog/migrations/20260309-01-create-users-table.yaml",
+      "category": "unknown",
+      "review_type": "new",
+      "original_note": "",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 29
+    },
+    {
+      "path": "prosperity-api/src/test/java/fr/kalifazzia/prosperity/account/AccountControllerTest.java",
+      "category": "tests",
+      "review_type": "new",
+      "original_note": "Testcontainers bien utilise",
+      "original_blocking": 0,
+      "original_green": 1,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [
+        {
+          "criterion": "test-coverage",
+          "severity": "suggestion",
+          "level": "green",
+          "text": "Utilisation appropriee de Testcontainers pour les tests d'integration — PostgreSQL reel",
+          "detail": "Tous les tests backend utilisent Testcontainers avec PostgreSQL au lieu de H2 ou de mocks, ce qui garantit un comportement identique a la production. Le cleanup via BeforeEach avec deleteAll assure l'isolation entre tests.",
+          "location": "prosperity-api/src/test/java/fr/kalifazzia/prosperity/account/AccountControllerTest.java:39",
+          "suggestion": null,
+          "fix_prompt": null,
+          "validation": null
+        }
+      ],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 30
+    },
+    {
+      "path": "prosperity-api/src/test/java/fr/kalifazzia/prosperity/auth/AuthorizationTest.java",
+      "category": "tests",
+      "review_type": "new",
+      "original_note": "Assertions de test trop permissives",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 1,
+      "original_red": 0,
+      "original_observations": [
+        {
+          "criterion": "test-coverage",
+          "severity": "suggestion",
+          "level": "yellow",
+          "text": "Assertions trop larges (is4xxClientError) — anti-pattern The Liar",
+          "detail": "L'assertion status().is4xxClientError() est trop large — elle accepte 400, 401, 403, 404. Le test est cense verifier un 403 (autorisation) mais l'assertion ne le garantit pas.",
+          "location": "prosperity-api/src/test/java/fr/kalifazzia/prosperity/auth/AuthorizationTest.java:103",
+          "suggestion": "Utiliser status().isForbidden() et tester sur un vrai endpoint protege par @PreAuthorize(\"hasRole('ADMIN')\") comme GET /api/users.",
+          "fix_prompt": {
+            "file": "prosperity-api/src/test/java/fr/kalifazzia/prosperity/auth/AuthorizationTest.java",
+            "line": "103",
+            "action": "replace",
+            "description": "Remplacer is4xxClientError() par isForbidden() et tester sur un endpoint admin"
+          },
+          "validation": {
+            "decision": "apply",
+            "confidence": 0.85,
+            "reason": "is4xxClientError trop large et test sur mauvais endpoint, fix localise dans le meme fichier."
+          }
+        }
+      ],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 31
+    },
+    {
+      "path": "prosperity-web/Dockerfile",
+      "category": "build-config",
+      "review_type": "new",
+      "original_note": "Image Docker trop grosse",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 1,
+      "original_red": 0,
+      "original_observations": [
+        {
+          "criterion": "performance",
+          "severity": "suggestion",
+          "level": "yellow",
+          "text": "Image de production inclut les devDependencies — taille inutilement gonlée",
+          "detail": "L'image Docker de production copie l'integralite de node_modules (y compris devDependencies), gonflant inutilement sa taille.",
+          "location": "prosperity-web/Dockerfile:19",
+          "suggestion": "Copier uniquement package.json et package-lock.json dans le stage de production, puis executer npm ci --omit=dev.",
+          "fix_prompt": {
+            "file": "prosperity-web/Dockerfile",
+            "line": "17-19",
+            "action": "refactor",
+            "description": "Remplacer COPY node_modules par npm ci --omit=dev dans le stage de production"
+          },
+          "validation": {
+            "decision": "apply",
+            "confidence": 0.95,
+            "reason": "Production stage copie full node_modules, fix standard 2-3 lignes Dockerfile."
+          }
+        }
+      ],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 32
+    },
+    {
+      "path": "prosperity-web/messages/en.json",
+      "category": "unknown",
+      "review_type": "new",
+      "original_note": "",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 33
+    },
+    {
+      "path": "prosperity-web/messages/fr.json",
+      "category": "unknown",
+      "review_type": "new",
+      "original_note": "",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 34
+    },
+    {
+      "path": "prosperity-web/src/routes/(app)/accounts/new/+page.server.ts",
+      "category": "unknown",
+      "review_type": "new",
+      "original_note": "",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 35
+    },
+    {
+      "path": "prosperity-web/src/routes/(app)/settings/users/+page.server.ts",
+      "category": "unknown",
+      "review_type": "new",
+      "original_note": "",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [],
+      "original_comments": [],
+      "status": "pending",
+      "resolution": null,
+      "green": 0,
+      "yellow": 0,
+      "red": 0,
+      "note": "",
+      "index": 36
+    }
+  ],
+  "head_at_completion": "d84e335fc30a04eda749ee23283e9dbd130eed01"
+}

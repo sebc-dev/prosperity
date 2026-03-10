@@ -1,0 +1,72 @@
+{
+  "plugin_root": "/home/negus/dev/marketplace/scd-review",
+  "json_strategy": "jq",
+  "category_priority": [
+    "build-config",
+    "database-migrations",
+    "domain-models",
+    "infrastructure",
+    "business-logic",
+    "controllers-api",
+    "views-ui",
+    "integration-wiring",
+    "tests",
+    "i18n-docs"
+  ],
+  "review_criteria": [
+    "architecture",
+    "security",
+    "performance",
+    "conventions",
+    "error-handling",
+    "test-coverage"
+  ],
+  "severity": {
+    "good": "Pattern ou choix remarquable",
+    "question": "Point a clarifier ou discuter",
+    "attention": "Probleme potentiel a adresser"
+  },
+  "options": {
+    "default_base_branch": "main",
+    "language": "fr"
+  },
+  "validator": {
+    "enabled": true,
+    "confidence_threshold": 0.75,
+    "skip_green": true,
+    "batch_size": 5
+  },
+  "auto_mode": {
+    "enabled": false,
+    "review_action": "next",
+    "apply_action": "apply_validated",
+    "post_on_complete": true,
+    "confirm_before_post": false,
+    "generate_report": true,
+    "escalate_to_user": true
+  },
+  "platform": {
+    "type": "github",
+    "auto_post": true,
+    "inline_comments": {
+      "enabled": true,
+      "filter": "blocking",
+      "ai_fix_prompt": false
+    }
+  },
+  "state": {
+    "last_init": "2026-03-09T09:46:58Z",
+    "plugin_version": "0.13.0",
+    "scripts_hash": null,
+    "env_cache": null,
+    "steps_status": {
+      "config": "done",
+      "sessions_dir": "done",
+      "plugin_root": "done",
+      "scripts": "done",
+      "rules": "done",
+      "json_strategy": "done",
+      "platform": "done"
+    }
+  }
+}

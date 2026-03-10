@@ -10,6 +10,8 @@ NC='\033[0m'
 BOLD='\033[1m'
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CHECK_OUTPUT=$(mktemp)
+trap 'rm -f "$CHECK_OUTPUT"' EXIT
 BACKEND_DIR="$ROOT_DIR/prosperity-api"
 FRONTEND_DIR="$ROOT_DIR/prosperity-web"
 
@@ -63,10 +65,13 @@ log_skip() {
 run_check() {
     local name="$1"
     shift
-    if "$@" > /dev/null 2>&1; then
+    if "$@" > "$CHECK_OUTPUT" 2>&1; then
         log_pass "$name"
     else
         log_fail "$name"
+        echo -e "  ${YELLOW}── output ──${NC}"
+        sed 's/^/    /' "$CHECK_OUTPUT"
+        echo -e "  ${YELLOW}────────────${NC}"
     fi
 }
 
@@ -155,7 +160,9 @@ if $RUN_FRONTEND; then
     else
         # Ensure i18n stubs are generated
         if [ -f "$FRONTEND_DIR/scripts/generate-i18n-stubs.js" ]; then
-            (cd "$FRONTEND_DIR" && npx paraglide-js compile --project ./project.inlang --outdir ./src/lib/i18n --silent 2>/dev/null && node scripts/generate-i18n-stubs.js 2>/dev/null) || true
+            if ! (cd "$FRONTEND_DIR" && npx paraglide-js compile --project ./project.inlang --outdir ./src/lib/i18n --silent 2>/dev/null && node scripts/generate-i18n-stubs.js 2>/dev/null); then
+                log_skip "i18n generation (paraglide not available)"
+            fi
         fi
 
         case $MODE in

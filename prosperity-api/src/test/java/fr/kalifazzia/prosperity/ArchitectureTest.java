@@ -8,6 +8,8 @@ import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
 
 import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAPackage;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.resideInAnyPackage;
+import static com.tngtech.archunit.core.domain.JavaClass.Predicates.simpleNameStartingWith;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
@@ -21,8 +23,8 @@ class ArchitectureTest {
                     // shared is cross-cutting, allowed everywhere
                     .ignoreDependency(resideInAPackage("..shared.."), DescribedPredicate.<JavaClass>alwaysTrue())
                     .ignoreDependency(DescribedPredicate.<JavaClass>alwaysTrue(), resideInAPackage("..shared.."))
-                    // user is a core domain, account and auth may reference User entity
-                    .ignoreDependency(DescribedPredicate.<JavaClass>alwaysTrue(), resideInAPackage("..user.."))
+                    // user is a core domain, features may reference User/UserId domain classes only
+                    .ignoreDependency(DescribedPredicate.<JavaClass>alwaysTrue(), resideInAPackage("..user..").and(simpleNameStartingWith("User")))
                     .because("Features must be isolated (vertical slice). Allowed dependencies: shared (cross-cutting) and user (core domain).");
 
     @ArchTest
@@ -34,7 +36,8 @@ class ArchitectureTest {
     @ArchTest
     static final ArchRule shared_should_not_depend_on_features =
             noClasses().that().resideInAPackage("..shared..")
-                    .should().dependOnClassesThat().resideInAnyPackage(
-                            "..account..", "..category..")
+                    .should().dependOnClassesThat(
+                            resideInAPackage("fr.kalifazzia.prosperity..")
+                                    .and(DescribedPredicate.not(resideInAnyPackage("..shared..", "..user..", "..auth.."))))
                     .because("Shared kernel must not depend on feature packages (except user and auth for security wiring).");
 }

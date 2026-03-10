@@ -1,4 +1,8 @@
 spring:
+  datasource:
+    username: prosperity
+    password: prosperity
+
   jpa:
     show-sql: true
     properties:

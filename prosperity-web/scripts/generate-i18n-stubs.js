@@ -24,7 +24,14 @@ const MESSAGES_DTS = join(projectRoot, 'src', 'lib', 'i18n', 'messages.d.ts');
 
 const PARAM_PATTERN = /\{(\w+)\}/g;
 
-const messages = JSON.parse(readFileSync(SOURCE_JSON, 'utf-8'));
+let messages;
+try {
+	messages = JSON.parse(readFileSync(SOURCE_JSON, 'utf-8'));
+} catch (err) {
+	console.error(`Failed to read or parse source language JSON at: ${SOURCE_JSON}`);
+	console.error(err.message);
+	process.exit(1);
+}
 
 const lines = ['/* eslint-disable */'];
 lines.push('/** @typedef {import("../runtime.js").LocalizedString} LocalizedString */');
@@ -34,7 +41,14 @@ const dtsLines = [];
 dtsLines.push('type LocalizedString = import("../runtime.js").LocalizedString;');
 dtsLines.push('');
 
+const VALID_IDENTIFIER = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/;
+
 for (const [key, value] of Object.entries(messages)) {
+	if (!VALID_IDENTIFIER.test(key)) {
+		console.warn(`Skipping invalid key "${key}": not a valid JS identifier`);
+		continue;
+	}
+
 	const params = [];
 	let match;
 	while ((match = PARAM_PATTERN.exec(value)) !== null) {

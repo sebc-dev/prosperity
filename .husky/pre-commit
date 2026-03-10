@@ -1,4 +1,9 @@
 #!/bin/sh
 
 # Frontend: lint-staged (only staged files)
+if [ ! -d "prosperity-web/node_modules" ]; then
+    echo "Error: Run 'npm install' in prosperity-web/ first"
+    exit 1
+fi
+
 cd prosperity-web && npx lint-staged

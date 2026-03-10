@@ -2,9 +2,11 @@
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /app
 COPY pom.xml .
+COPY mvnw .
+COPY .mvn .mvn
+RUN chmod +x mvnw && ./mvnw dependency:go-offline -q
 COPY src ./src
-RUN apt-get update && apt-get install -y maven && rm -rf /var/lib/apt/lists/*
-RUN mvn package -DskipTests -q
+RUN ./mvnw package -DskipTests -q
 
 # Stage 2: Run
 FROM eclipse-temurin:21-jre

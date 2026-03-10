@@ -22,7 +22,7 @@ dist/
 *~
 
 # Environment
-.env
+.env*
 !.env.example
 
 # Docker
@@ -38,3 +38,6 @@ prosperity-web/src/lib/i18n/
 # Test coverage
 coverage/
 .nyc_output/
+
+# Code review sessions
+.claude/review/sessions/

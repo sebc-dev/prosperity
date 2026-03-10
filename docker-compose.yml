@@ -12,6 +12,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - backend
     restart: unless-stopped
 
   api:
@@ -27,6 +29,15 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - backend
+      - frontend
     restart: unless-stopped
 
   web:
@@ -37,8 +48,15 @@ services:
       API_URL: http://api:8080
       ORIGIN: ${APP_ORIGIN}
     depends_on:
-      - api
+      api:
+        condition: service_healthy
+    networks:
+      - frontend
     restart: unless-stopped
+
+networks:
+  backend:
+  frontend:
 
 volumes:
   pgdata:

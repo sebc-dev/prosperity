@@ -42,7 +42,7 @@
 			? 'border-red-500 focus:border-red-500 focus:ring-red-500 dark:border-red-500'
 			: 'border-gray-300 focus:border-gray-900 focus:ring-gray-900 dark:border-gray-700 dark:focus:border-gray-100 dark:focus:ring-gray-100'}"
 	>
-		{#each options as option}
+		{#each options as option (option.value)}
 			<option value={option.value}>{option.label}</option>
 		{/each}
 	</select>

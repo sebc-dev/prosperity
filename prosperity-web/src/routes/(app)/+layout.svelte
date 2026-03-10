@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import * as m from '$lib/i18n/messages.js';
 	import type { Snippet } from 'svelte';
@@ -57,9 +58,9 @@
 
 		<!-- Navigation -->
 		<nav class="flex-1 space-y-1 px-3 py-4">
-			{#each navItems as item}
+			{#each navItems as item (item.href)}
 				<a
-					href={item.href}
+					href={resolve(item.href)}
 					class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors
 					{isActive(item.href)
 						? 'bg-gray-100 text-gray-900 dark:bg-gray-800 dark:text-gray-100'
@@ -196,9 +197,9 @@
 				class="border-b border-gray-200 bg-white px-4 py-2 dark:border-gray-800 dark:bg-gray-900 lg:hidden"
 			>
 				<nav class="space-y-1">
-					{#each navItems as item}
+					{#each navItems as item (item.href)}
 						<a
-							href={item.href}
+							href={resolve(item.href)}
 							onclick={() => (mobileMenuOpen = false)}
 							class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors
 							{isActive(item.href)

@@ -152,7 +152,7 @@
 	<div class="rounded-lg border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
 		{#if data.users && data.users.length > 0}
 			<div class="divide-y divide-gray-200 dark:divide-gray-800">
-				{#each data.users as user}
+				{#each data.users as user (user.email)}
 					<div class="flex items-center justify-between px-6 py-4">
 						<div>
 							<p class="text-sm font-medium text-gray-900 dark:text-gray-100">

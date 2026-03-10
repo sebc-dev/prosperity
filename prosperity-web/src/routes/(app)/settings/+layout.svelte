@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import * as m from '$lib/i18n/messages.js';
 
@@ -25,10 +26,10 @@
 	<div
 		class="mb-6 flex gap-1 overflow-x-auto border-b border-gray-200 dark:border-gray-800 md:hidden"
 	>
-		{#each sections as section}
+		{#each sections as section (section.href)}
 			{#if section.show}
 				<a
-					href={section.href}
+					href={resolve(section.href)}
 					class="whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition-colors {currentPath.startsWith(
 						section.href
 					)
@@ -45,11 +46,11 @@
 		<!-- Desktop: sidebar -->
 		<nav class="hidden w-48 shrink-0 md:block">
 			<ul class="space-y-1">
-				{#each sections as section}
+				{#each sections as section (section.href)}
 					{#if section.show}
 						<li>
 							<a
-								href={section.href}
+								href={resolve(section.href)}
 								class="block rounded-md px-3 py-2 text-sm font-medium transition-colors {currentPath.startsWith(
 									section.href
 								)

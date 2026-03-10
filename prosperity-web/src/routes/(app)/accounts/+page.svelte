@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import * as m from '$lib/i18n/messages.js';
 	import Button from '$lib/components/ui/Button.svelte';
 	import AccountCard from '$lib/components/AccountCard.svelte';
@@ -31,7 +32,7 @@
 		<h1 class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
 			{m.accounts_title()}
 		</h1>
-		<a href="/accounts/new">
+		<a href={resolve('/accounts/new')}>
 			<Button variant="primary" size="md">
 				{m.accounts_create()}
 			</Button>
@@ -62,7 +63,7 @@
 			<p class="mb-6 text-sm text-gray-500 dark:text-gray-400">
 				{m.accounts_empty_description()}
 			</p>
-			<a href="/accounts/new">
+			<a href={resolve('/accounts/new')}>
 				<Button variant="primary">
 					{m.accounts_empty_cta()}
 				</Button>

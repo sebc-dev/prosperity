@@ -75,7 +75,7 @@
 			</h2>
 			<input type="hidden" name="theme" value={theme} />
 			<div class="flex gap-2">
-				{#each [{ value: 'light', label: m.theme_light() }, { value: 'dark', label: m.theme_dark() }, { value: 'system', label: m.theme_system() }] as option}
+				{#each [{ value: 'light', label: m.theme_light() }, { value: 'dark', label: m.theme_dark() }, { value: 'system', label: m.theme_system() }] as option (option.value)}
 					<button
 						type="button"
 						onclick={() => setTheme(option.value as 'light' | 'dark' | 'system')}
@@ -102,7 +102,7 @@
 				bind:value={defaultCurrency}
 				class="block w-full max-w-xs rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:focus:border-gray-100 dark:focus:ring-gray-100"
 			>
-				{#each currencies as currency}
+				{#each currencies as currency (currency)}
 					<option value={currency}>{currency}</option>
 				{/each}
 			</select>
@@ -134,7 +134,7 @@
 			</h2>
 			{#if data.categories && data.categories.length > 0}
 				<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
-					{#each data.categories as category}
+					{#each data.categories as category (category.id)}
 						<label
 							class="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors {favoriteCategories.includes(
 								category.id

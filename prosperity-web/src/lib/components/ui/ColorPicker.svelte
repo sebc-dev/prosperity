@@ -19,8 +19,12 @@
 		'#84CC16' // lime
 	];
 
-	let { name, value = $bindable(PRESET_COLORS[0]), label = '', class: className = '' }: Props =
-		$props();
+	let {
+		name,
+		value = $bindable(PRESET_COLORS[0]),
+		label = '',
+		class: className = ''
+	}: Props = $props();
 </script>
 
 <div class={className}>

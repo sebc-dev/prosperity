@@ -46,13 +46,9 @@ for (const [key, value] of Object.entries(messages)) {
 		lines.push(
 			`export const ${key} = (/** @type {{ ${paramsType} }} */ params) => /** @type {LocalizedString} */ ("stub");`
 		);
-		dtsLines.push(
-			`export declare const ${key}: (params: { ${paramsType} }) => LocalizedString;`
-		);
+		dtsLines.push(`export declare const ${key}: (params: { ${paramsType} }) => LocalizedString;`);
 	} else {
-		lines.push(
-			`export const ${key} = () => /** @type {LocalizedString} */ ("stub");`
-		);
+		lines.push(`export const ${key} = () => /** @type {LocalizedString} */ ("stub");`);
 		dtsLines.push(`export declare const ${key}: () => LocalizedString;`);
 	}
 }

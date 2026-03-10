@@ -11,13 +11,21 @@ export const load: PageServerLoad = async ({ locals }) => {
 		api.get('/api/categories')
 	]);
 
-	let preferences = { theme: 'system', defaultCurrency: 'EUR', language: 'fr', favoriteCategories: [] as string[] };
+	let preferences = {
+		theme: 'system',
+		defaultCurrency: 'EUR',
+		language: 'fr',
+		favoriteCategories: [] as string[]
+	};
 	let categories: Array<{ id: string; nameKey: string; icon: string }> = [];
 
 	if (prefsRes.ok) {
 		const userData = await prefsRes.json();
 		if (userData.preferences) {
-			const prefs = typeof userData.preferences === 'string' ? JSON.parse(userData.preferences) : userData.preferences;
+			const prefs =
+				typeof userData.preferences === 'string'
+					? JSON.parse(userData.preferences)
+					: userData.preferences;
 			preferences = {
 				theme: prefs.theme ?? 'system',
 				defaultCurrency: prefs.defaultCurrency ?? 'EUR',

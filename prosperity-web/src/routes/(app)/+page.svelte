@@ -23,7 +23,13 @@
 				class="mt-4 inline-flex items-center text-sm font-medium text-gray-900 hover:text-gray-700 dark:text-gray-100 dark:hover:text-gray-300"
 			>
 				{m.dashboard_view_accounts()}
-				<svg class="ml-1 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+				<svg
+					class="ml-1 h-4 w-4"
+					fill="none"
+					viewBox="0 0 24 24"
+					stroke="currentColor"
+					stroke-width="2"
+				>
 					<path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
 				</svg>
 			</a>

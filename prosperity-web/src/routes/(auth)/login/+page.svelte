@@ -69,10 +69,7 @@
 		</div>
 
 		<div>
-			<label
-				for="password"
-				class="block text-sm font-medium text-gray-700 dark:text-gray-300"
-			>
+			<label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
 				{m.login_password()}
 			</label>
 			<input

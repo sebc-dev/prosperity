@@ -40,7 +40,13 @@
 			href="/accounts"
 			class="mb-4 inline-flex items-center text-sm text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
 		>
-			<svg class="mr-1 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+			<svg
+				class="mr-1 h-4 w-4"
+				fill="none"
+				viewBox="0 0 24 24"
+				stroke="currentColor"
+				stroke-width="2"
+			>
 				<path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
 			</svg>
 			{m.common_back()}
@@ -107,11 +113,7 @@
 			bind:value={initialBalance}
 		/>
 
-		<ColorPicker
-			label={m.accounts_form_color()}
-			name="color"
-			bind:value={color}
-		/>
+		<ColorPicker label={m.accounts_form_color()} name="color" bind:value={color} />
 
 		<div class="flex gap-3 pt-2">
 			<Button type="submit" variant="primary" {loading}>

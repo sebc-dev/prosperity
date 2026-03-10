@@ -57,7 +57,9 @@
 
 	<!-- Add user form -->
 	{#if showForm}
-		<div class="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
+		<div
+			class="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900"
+		>
 			<h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-gray-100">
 				{m.users_add()}
 			</h3>
@@ -74,10 +76,7 @@
 				class="space-y-4"
 			>
 				<div>
-					<label
-						for="email"
-						class="block text-sm font-medium text-gray-700 dark:text-gray-300"
-					>
+					<label for="email" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
 						{m.users_email()}
 					</label>
 					<input
@@ -108,10 +107,7 @@
 				</div>
 
 				<div>
-					<label
-						for="password"
-						class="block text-sm font-medium text-gray-700 dark:text-gray-300"
-					>
+					<label for="password" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
 						{m.users_temp_password()}
 					</label>
 					<input
@@ -165,7 +161,8 @@
 							<p class="text-sm text-gray-500 dark:text-gray-400">{user.email}</p>
 						</div>
 						<span
-							class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium {user.role === 'ADMIN'
+							class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium {user.role ===
+							'ADMIN'
 								? 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
 								: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'}"
 						>

@@ -40,7 +40,9 @@
 
 	{#if !hasAccounts}
 		<!-- Empty state -->
-		<div class="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 px-6 py-16 dark:border-gray-700">
+		<div
+			class="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-300 px-6 py-16 dark:border-gray-700"
+		>
 			<svg
 				class="mb-4 h-12 w-12 text-gray-400 dark:text-gray-500"
 				fill="none"

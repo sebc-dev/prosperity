@@ -67,21 +67,20 @@
 		class="space-y-6"
 	>
 		<!-- Theme -->
-		<div class="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
+		<div
+			class="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900"
+		>
 			<h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
 				{m.preferences_theme()}
 			</h2>
 			<input type="hidden" name="theme" value={theme} />
 			<div class="flex gap-2">
-				{#each [
-					{ value: 'light', label: m.theme_light() },
-					{ value: 'dark', label: m.theme_dark() },
-					{ value: 'system', label: m.theme_system() }
-				] as option}
+				{#each [{ value: 'light', label: m.theme_light() }, { value: 'dark', label: m.theme_dark() }, { value: 'system', label: m.theme_system() }] as option}
 					<button
 						type="button"
 						onclick={() => setTheme(option.value as 'light' | 'dark' | 'system')}
-						class="rounded-md px-4 py-2 text-sm font-medium transition-colors {theme === option.value
+						class="rounded-md px-4 py-2 text-sm font-medium transition-colors {theme ===
+						option.value
 							? 'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900'
 							: 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}"
 					>
@@ -92,7 +91,9 @@
 		</div>
 
 		<!-- Currency -->
-		<div class="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
+		<div
+			class="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900"
+		>
 			<h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
 				{m.currency_default()}
 			</h2>
@@ -108,7 +109,9 @@
 		</div>
 
 		<!-- Language -->
-		<div class="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
+		<div
+			class="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900"
+		>
 			<h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
 				{m.language_label()}
 			</h2>
@@ -123,7 +126,9 @@
 		</div>
 
 		<!-- Favorite Categories -->
-		<div class="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900">
+		<div
+			class="rounded-lg border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900"
+		>
 			<h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-gray-100">
 				{m.preferences_favorite_categories()}
 			</h2>
@@ -131,7 +136,9 @@
 				<div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
 					{#each data.categories as category}
 						<label
-							class="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors {favoriteCategories.includes(category.id)
+							class="flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors {favoriteCategories.includes(
+								category.id
+							)
 								? 'border-gray-900 bg-gray-50 text-gray-900 dark:border-gray-100 dark:bg-gray-800 dark:text-gray-100'
 								: 'border-gray-200 text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-600'}"
 						>

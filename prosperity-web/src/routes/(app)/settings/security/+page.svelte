@@ -11,9 +11,7 @@
 	let confirmPassword = $state('');
 
 	const passwordTooShort = $derived(newPassword.length > 0 && newPassword.length < 8);
-	const passwordMismatch = $derived(
-		confirmPassword.length > 0 && newPassword !== confirmPassword
-	);
+	const passwordMismatch = $derived(confirmPassword.length > 0 && newPassword !== confirmPassword);
 
 	$effect(() => {
 		if (form?.success) {
@@ -61,10 +59,7 @@
 		class="space-y-4"
 	>
 		<div>
-			<label
-				for="oldPassword"
-				class="block text-sm font-medium text-gray-700 dark:text-gray-300"
-			>
+			<label for="oldPassword" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
 				{m.security_old_password()}
 			</label>
 			<input
@@ -79,10 +74,7 @@
 		</div>
 
 		<div>
-			<label
-				for="newPassword"
-				class="block text-sm font-medium text-gray-700 dark:text-gray-300"
-			>
+			<label for="newPassword" class="block text-sm font-medium text-gray-700 dark:text-gray-300">
 				{m.security_new_password()}
 			</label>
 			<input

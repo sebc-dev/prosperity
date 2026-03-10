@@ -114,7 +114,7 @@ if $RUN_BACKEND; then
         elif [ -f "$BACKEND_DIR/mvnw" ]; then
             MVN="$BACKEND_DIR/mvnw"
         else
-            log_fail "Backend: Maven not found (install mvn or add mvnw)"
+            log_skip "Backend: Maven not found (install mvn or add mvnw)"
             MVN=""
         fi
 

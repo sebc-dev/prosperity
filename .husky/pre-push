@@ -1,0 +1,4 @@
+#!/bin/sh
+
+# Run standard quality gate before push
+./quality-gate.sh quick

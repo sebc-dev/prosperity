@@ -68,8 +68,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Generate i18n messages
+      - name: Generate i18n runtime
         run: npx paraglide-js compile --project ./project.inlang --outdir ./src/lib/i18n
+
+      - name: Generate i18n message stubs
+        run: node scripts/generate-i18n-stubs.js
 
       - name: Type check
         run: npm run check

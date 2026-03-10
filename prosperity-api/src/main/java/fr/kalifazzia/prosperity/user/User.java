@@ -6,6 +6,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.util.UUID;
 
@@ -27,6 +29,7 @@ public class User extends BaseEntity {
     private SystemRole systemRole;
 
     @Column(name = "preferences", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
     private String preferences = "{}";
 
     @Column(name = "force_password_change", nullable = false)

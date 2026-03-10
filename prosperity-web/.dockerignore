@@ -1,0 +1,8 @@
+node_modules
+.env*
+.svelte-kit
+build
+.git
+coverage
+*.md
+tests

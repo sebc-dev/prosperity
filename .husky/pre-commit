@@ -1,0 +1,4 @@
+#!/bin/sh
+
+# Frontend: lint-staged (only staged files)
+cd prosperity-web && npx lint-staged

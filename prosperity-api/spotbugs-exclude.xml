@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+    <!-- Spring beans injected via constructor - storing refs is expected -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+        <Or>
+            <Class name="~.*Service"/>
+            <Class name="~.*Config"/>
+            <Class name="~.*Controller"/>
+            <Class name="~.*Filter"/>
+        </Or>
+    </Match>
+
+    <!-- Records/DTOs with collections - SpotBugs doesn't understand records well -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+        <Or>
+            <Class name="~.*Request"/>
+            <Class name="~.*Response"/>
+            <Class name="~.*ErrorResponse"/>
+        </Or>
+    </Match>
+</FindBugsFilter>

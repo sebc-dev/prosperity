@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import * as m from '$lib/i18n/messages.js';
 
@@ -29,7 +28,7 @@
 		{#each sections as section (section.href)}
 			{#if section.show}
 				<a
-					href={resolve(section.href)}
+					href={section.href}
 					class="whitespace-nowrap border-b-2 px-4 py-2 text-sm font-medium transition-colors {currentPath.startsWith(
 						section.href
 					)
@@ -50,7 +49,7 @@
 					{#if section.show}
 						<li>
 							<a
-								href={resolve(section.href)}
+								href={section.href}
 								class="block rounded-md px-3 py-2 text-sm font-medium transition-colors {currentPath.startsWith(
 									section.href
 								)

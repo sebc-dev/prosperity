@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import * as m from '$lib/i18n/messages.js';
 	import Card from '$lib/components/ui/Card.svelte';
 
@@ -20,7 +19,7 @@
 				{m.dashboard_accounts_cta()}
 			</p>
 			<a
-				href={resolve('/accounts')}
+				href="/accounts"
 				class="mt-4 inline-flex items-center text-sm font-medium text-gray-900 hover:text-gray-700 dark:text-gray-100 dark:hover:text-gray-300"
 			>
 				{m.dashboard_view_accounts()}

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { resolve } from '$app/paths';
 	import * as m from '$lib/i18n/messages.js';
 	import Button from '$lib/components/ui/Button.svelte';
 	import Input from '$lib/components/ui/Input.svelte';
@@ -38,7 +37,7 @@
 	<!-- Header -->
 	<div>
 		<a
-			href={resolve('/accounts')}
+			href="/accounts"
 			class="mb-4 inline-flex items-center text-sm text-gray-500 transition-colors hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
 		>
 			<svg
@@ -120,7 +119,7 @@
 			<Button type="submit" variant="primary" {loading}>
 				{m.accounts_form_submit()}
 			</Button>
-			<a href={resolve('/accounts')}>
+			<a href="/accounts">
 				<Button type="button" variant="secondary">
 					{m.common_cancel()}
 				</Button>

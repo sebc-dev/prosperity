@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import * as m from '$lib/i18n/messages.js';
 	import Badge from '$lib/components/ui/Badge.svelte';
 
@@ -31,7 +30,7 @@
 </script>
 
 <a
-	href={resolve(`/accounts/${account.id}`)}
+	href={`/accounts/${account.id}`}
 	class="group block overflow-hidden rounded-lg border border-gray-200 bg-white transition-shadow hover:shadow-md dark:border-gray-800 dark:bg-gray-900 dark:hover:shadow-gray-800/50"
 >
 	<!-- Color bar -->

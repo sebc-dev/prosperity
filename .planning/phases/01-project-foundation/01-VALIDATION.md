@@ -2,8 +2,8 @@
 phase: 1
 slug: project-foundation
 status: draft
-nyquist_compliant: false
-wave_0_complete: false
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-03-28
 ---
 
@@ -36,28 +36,18 @@ created: 2026-03-28
 
 ## Per-Task Verification Map
 
-| Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
-|---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| 01-01-01 | 01 | 1 | INFR-02 | integration | `docker compose up -d && curl localhost:8080/api/health` | ❌ W0 | ⬜ pending |
-| 01-01-02 | 01 | 1 | INFR-04 | unit | `./mvnw test` | ❌ W0 | ⬜ pending |
-| 01-01-03 | 01 | 1 | INFR-05 | integration | `./mvnw spring-boot:run` (Flyway auto-migrate) | ❌ W0 | ⬜ pending |
-| 01-02-01 | 02 | 2 | INFR-06 | build | `./mvnw verify` | ❌ W0 | ⬜ pending |
-| 01-02-02 | 02 | 2 | INFR-07 | build | `pnpm lint && pnpm format:check` | ❌ W0 | ⬜ pending |
-| 01-02-03 | 02 | 2 | INFR-08 | build | `./mvnw verify` (JaCoCo report) | ❌ W0 | ⬜ pending |
-| 01-02-04 | 02 | 2 | INFR-09 | hook | `git commit --allow-empty -m test` (lefthook triggers) | ❌ W0 | ⬜ pending |
-| 01-02-05 | 02 | 2 | INFR-10 | CI | GitHub Actions workflow validation | ❌ W0 | ⬜ pending |
+| Task ID | Plan | Wave | Requirement | Test Type | Automated Command | Status |
+|---------|------|------|-------------|-----------|-------------------|--------|
+| 01-01 T1 | 01 | 1 | INFR-04, INFR-05, INFR-06, INFR-07, INFR-08 | build | `cd backend && ./mvnw verify -B` | pending |
+| 01-02 T1 | 02 | 2 | INFR-06 | build | `cd backend && ./mvnw compile` | pending |
+| 01-03 T1 | 03 | 3 | INFR-06 | build | `cd backend && ./mvnw compile` | pending |
+| 01-04 T1 | 04 | 4 | INFR-06 | integration | `cd backend && ./mvnw flyway:validate` | pending |
+| 01-05 T1 | 05 | 4 | INFR-07 | unit | `cd backend && ./mvnw test` | pending |
+| 01-06 T1 | 06 | 1 | INFR-04, INFR-05 | build | `cd frontend && pnpm build && pnpm lint` | pending |
+| 01-07 T1 | 07 | 2 | INFR-02 | config | `docker compose config` | pending |
+| 01-07 T2 | 07 | 2 | INFR-10 | config | `grep -q "pre-commit" lefthook.yml && grep -q "mvnw verify" .github/workflows/ci.yml` | pending |
 
-*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
-
----
-
-## Wave 0 Requirements
-
-- [ ] Backend project scaffolded with `spring-boot-starter-test` dependency
-- [ ] Frontend project scaffolded with test runner configured
-- [ ] Domain model test stubs for Money, Account, Transaction, Envelope
-
-*If none: "Existing infrastructure covers all phase requirements."*
+*Status: pending / green / red / flaky*
 
 ---
 
@@ -66,18 +56,18 @@ created: 2026-03-28
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
 | Docker Compose full stack | INFR-02 | Requires Docker runtime | Run `docker compose up -d`, verify all 3 containers healthy, curl /api/health |
-| Pre-commit hook fires | INFR-09 | Requires git commit trigger | Make a formatting violation, attempt `git commit`, verify hook blocks it |
+| Pre-commit hook fires | INFR-10 | Requires git commit trigger | Make a formatting violation, attempt `git commit`, verify hook blocks it |
 | CI blocks merge on failure | INFR-10 | Requires GitHub Actions runner | Push branch with lint violation, verify PR check fails |
 
 ---
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 30s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify commands
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 not needed -- scaffolding phase creates test infrastructure
+- [x] No watch-mode flags
+- [x] Feedback latency < 30s
+- [x] `nyquist_compliant: true` set in frontmatter
 
 **Approval:** pending

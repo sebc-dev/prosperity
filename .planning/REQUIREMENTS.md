@@ -92,6 +92,13 @@
 - [ ] **INFR-01**: Backup PostgreSQL automatise via pg_dump planifie
 - [ ] **INFR-02**: Docker Compose fonctionnel (Caddy + Spring Boot + PostgreSQL)
 - [ ] **INFR-03**: PWA installable avec service worker actif
+- [ ] **INFR-04**: Linting : Checkstyle pour Java, ESLint pour Angular, execution locale (scripts) et CI
+- [ ] **INFR-05**: Formatage automatique : google-java-format pour Java, Prettier pour frontend, verification en CI
+- [ ] **INFR-06**: Analyse statique integree (SonarQube ou equivalent) avec quality gate locale et CI
+- [ ] **INFR-07**: Detection de code mort (Java + Angular) integree au pipeline CI
+- [ ] **INFR-08**: Couverture de tests enforcee avec seuils minimum (echec build si non atteint)
+- [ ] **INFR-09**: Scan de securite des dependances (vulnerabilites connues, OWASP dependency-check)
+- [ ] **INFR-10**: Pre-commit hooks (Husky/lefthook) executant lint, format, et checks avant chaque commit
 
 ## v2 Requirements
 
@@ -139,67 +146,74 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | - | Pending |
-| AUTH-02 | - | Pending |
-| AUTH-03 | - | Pending |
-| AUTH-04 | - | Pending |
-| AUTH-05 | - | Pending |
-| ADMN-01 | - | Pending |
-| ADMN-02 | - | Pending |
-| ADMN-03 | - | Pending |
-| ADMN-04 | - | Pending |
-| ACCT-01 | - | Pending |
-| ACCT-02 | - | Pending |
-| ACCT-03 | - | Pending |
-| ACCT-04 | - | Pending |
-| ACCT-05 | - | Pending |
-| ACCS-01 | - | Pending |
-| ACCS-02 | - | Pending |
-| ACCS-03 | - | Pending |
-| ACCS-04 | - | Pending |
-| TXNS-01 | - | Pending |
-| TXNS-02 | - | Pending |
-| TXNS-03 | - | Pending |
-| TXNS-04 | - | Pending |
-| TXNS-05 | - | Pending |
-| TXNS-06 | - | Pending |
-| TXNS-07 | - | Pending |
-| TXNS-08 | - | Pending |
-| CATG-01 | - | Pending |
-| CATG-02 | - | Pending |
-| CATG-03 | - | Pending |
-| CATG-04 | - | Pending |
-| PLAD-01 | - | Pending |
-| PLAD-02 | - | Pending |
-| PLAD-03 | - | Pending |
-| PLAD-04 | - | Pending |
-| PLAD-05 | - | Pending |
-| PLAD-06 | - | Pending |
-| PLAD-07 | - | Pending |
-| ENVL-01 | - | Pending |
-| ENVL-02 | - | Pending |
-| ENVL-03 | - | Pending |
-| ENVL-04 | - | Pending |
-| ENVL-05 | - | Pending |
-| ENVL-06 | - | Pending |
-| ENVL-07 | - | Pending |
-| DEBT-01 | - | Pending |
-| DEBT-02 | - | Pending |
-| DEBT-03 | - | Pending |
-| DEBT-04 | - | Pending |
-| DASH-01 | - | Pending |
-| DASH-02 | - | Pending |
-| DASH-03 | - | Pending |
-| DASH-04 | - | Pending |
-| INFR-01 | - | Pending |
-| INFR-02 | - | Pending |
-| INFR-03 | - | Pending |
+| AUTH-01 | Phase 2 | Pending |
+| AUTH-02 | Phase 2 | Pending |
+| AUTH-03 | Phase 2 | Pending |
+| AUTH-04 | Phase 2 | Pending |
+| AUTH-05 | Phase 2 | Pending |
+| ADMN-01 | Phase 8 | Pending |
+| ADMN-02 | Phase 8 | Pending |
+| ADMN-03 | Phase 7 | Pending |
+| ADMN-04 | Phase 8 | Pending |
+| ACCT-01 | Phase 3 | Pending |
+| ACCT-02 | Phase 3 | Pending |
+| ACCT-03 | Phase 3 | Pending |
+| ACCT-04 | Phase 3 | Pending |
+| ACCT-05 | Phase 3 | Pending |
+| ACCS-01 | Phase 3 | Pending |
+| ACCS-02 | Phase 3 | Pending |
+| ACCS-03 | Phase 3 | Pending |
+| ACCS-04 | Phase 3 | Pending |
+| TXNS-01 | Phase 5 | Pending |
+| TXNS-02 | Phase 5 | Pending |
+| TXNS-03 | Phase 5 | Pending |
+| TXNS-04 | Phase 5 | Pending |
+| TXNS-05 | Phase 5 | Pending |
+| TXNS-06 | Phase 5 | Pending |
+| TXNS-07 | Phase 5 | Pending |
+| TXNS-08 | Phase 5 | Pending |
+| CATG-01 | Phase 4 | Pending |
+| CATG-02 | Phase 4 | Pending |
+| CATG-03 | Phase 4 | Pending |
+| CATG-04 | Phase 4 | Pending |
+| PLAD-01 | Phase 7 | Pending |
+| PLAD-02 | Phase 7 | Pending |
+| PLAD-03 | Phase 7 | Pending |
+| PLAD-04 | Phase 7 | Pending |
+| PLAD-05 | Phase 7 | Pending |
+| PLAD-06 | Phase 7 | Pending |
+| PLAD-07 | Phase 7 | Pending |
+| ENVL-01 | Phase 6 | Pending |
+| ENVL-02 | Phase 6 | Pending |
+| ENVL-03 | Phase 6 | Pending |
+| ENVL-04 | Phase 6 | Pending |
+| ENVL-05 | Phase 6 | Pending |
+| ENVL-06 | Phase 6 | Pending |
+| ENVL-07 | Phase 6 | Pending |
+| DEBT-01 | Phase 9 | Pending |
+| DEBT-02 | Phase 9 | Pending |
+| DEBT-03 | Phase 9 | Pending |
+| DEBT-04 | Phase 9 | Pending |
+| DASH-01 | Phase 10 | Pending |
+| DASH-02 | Phase 10 | Pending |
+| DASH-03 | Phase 10 | Pending |
+| DASH-04 | Phase 10 | Pending |
+| INFR-01 | Phase 10 | Pending |
+| INFR-02 | Phase 1 | Pending |
+| INFR-03 | Phase 10 | Pending |
+| INFR-04 | Phase 1 | Pending |
+| INFR-05 | Phase 1 | Pending |
+| INFR-06 | Phase 1 | Pending |
+| INFR-07 | Phase 1 | Pending |
+| INFR-08 | Phase 1 | Pending |
+| INFR-09 | Phase 1 | Pending |
+| INFR-10 | Phase 1 | Pending |
 
 **Coverage:**
-- v1 requirements: 53 total
-- Mapped to phases: 0
-- Unmapped: 53 (pending roadmap creation)
+- v1 requirements: 62 total
+- Mapped to phases: 62
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-28*
-*Last updated: 2026-03-28 after initial definition*
+*Last updated: 2026-03-28 after roadmap revision (added INFR-04 through INFR-10 quality gates)*

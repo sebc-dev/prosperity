@@ -1,0 +1,10 @@
+{
+  "name": "prosperity",
+  "private": true,
+  "devDependencies": {
+    "lefthook": "^2.1.4"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["lefthook"]
+  }
+}

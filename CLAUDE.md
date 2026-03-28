@@ -15,15 +15,15 @@ App de gestion de finances personnelles (suivi, budgets enveloppes, multi-compte
 
 ## Stack
 - Backend: Java 21 LTS (Temurin) + Spring Boot 4.0.x + Spring Security 7.0.x
-- ORM: Spring Data JPA 4.0.x + Liquibase 5.0.x
+- ORM: Spring Data JPA 4.0.x + Flyway 11.x
 - Database: PostgreSQL 17
 - Frontend: Angular 21 + PrimeNG 21.x + Tailwind CSS v4 + ngx-echarts 21.x
 - Runtime: Node.js 22 LTS + pnpm
-- Infra: Docker Compose + Caddy 2.10.x
+- Infra: Docker Compose + Caddy 2.11.x
 - Bank sync: Plaid API (EU/FR)
 
 ## Architecture
-Hexagonale allegee (Domain / Application / Infrastructure) — API REST monolithique + SPA separee.
+Layered par feature (Controller / Service / Repository) + abstraction strategique (connecteur bancaire) — API REST monolithique + SPA separee.
 
 ```
 [Caddy :443] → /api/* → [Spring Boot :8080] → [PostgreSQL :5432]
@@ -95,7 +95,7 @@ Application de gestion de finances personnelles self-hosted pour un foyer. Perme
 | Testcontainers | 2.x | Tests integration | Containers Docker pour PostgreSQL dans les tests. Supporte Spring Boot 4 nativement. Apache 2.0. |
 | AssertJ | 3.x (via Boot) | Assertions tests | Fluent assertions, inclus dans spring-boot-starter-test. Apache 2.0. |
 | JUnit | 5.x / 6.x (via Boot) | Framework tests | Inclus dans spring-boot-starter-test. Boot 4 supporte JUnit 5 et 6. EPL 2.0. |
-| ArchUnit | 1.x | Tests architecture | Valider les regles hexagonales (domain ne depend pas d'infra). Apache 2.0. |
+| ArchUnit | 1.x | Tests architecture | Valider les regles de dependance entre packages (pas d'import circulaire, banking abstrait). Apache 2.0. |
 | Checkstyle | 10.x | Lint Java | Compatible Java 21 (parse up to Java 22). Integre Maven. LGPL 2.1. |
 | Jackson | 2.x (via Boot) | JSON serialization | Inclus dans Boot. Serialization montants, dates. Apache 2.0. |
 ### Supporting Libraries -- Frontend
@@ -185,7 +185,7 @@ Conventions not yet established. Will populate as patterns emerge during develop
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
 ## Architecture
 
-Architecture not yet mapped. Follow existing patterns found in the codebase.
+Layered par feature + abstraction strategique. Voir `docs/agent_docs/architecture.md` et `docs/adr/0002-architecture-layered.md`.
 <!-- GSD:architecture-end -->
 
 <!-- GSD:workflow-start source:GSD defaults -->

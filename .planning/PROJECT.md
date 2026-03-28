@@ -52,9 +52,10 @@ Un foyer peut suivre ses finances au quotidien (soldes, transactions, budgets en
 - **Banques** : Societe Generale + Banque Populaire (confirmees sur Plaid EU/FR)
 - **Infra** : serveur Ubuntu 4 cores, 24 Go RAM
 - **Stack decidee** : Java 21 + Spring Boot 4.0.x + Angular 21 + PrimeNG 21.x + Tailwind v4 + PostgreSQL 17 + Caddy 2.10.x
-- **Architecture** : hexagonale allegee (Domain/Application/Infrastructure), API REST monolithique + SPA separee
+- **Architecture** : layered par feature (Controller/Service/Repository) + abstraction strategique (connecteur bancaire), API REST monolithique + SPA separee
 - **Connecteur bancaire** : interface abstraite (Plaid interchangeable avec Powens/Salt Edge)
 - **ADR-0001** : decisions stack documentees dans `docs/adr/0001-initial-stack.md`
+- **ADR-0002** : architecture layered par feature (remplacement hexagonal) dans `docs/adr/0002-architecture-layered.md`
 
 ## Constraints
 

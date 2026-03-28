@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-03-28T20:51:13.151Z"
+stopped_at: Completed 01-06-PLAN.md
+last_updated: "2026-03-28T20:50:53.652Z"
 last_activity: 2026-03-28
 progress:
   total_phases: 10
@@ -21,12 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Un foyer peut suivre ses finances au quotidien (soldes, transactions, budgets enveloppes) sans effort manuel excessif, grace a la synchronisation bancaire automatique et une interface claire.
-**Current focus:** Phase 1: Project Foundation
+**Current focus:** Phase 01 — project-foundation
 
 ## Current Position
 
-Phase: 1 of 10 (Project Foundation)
-Plan: 1 of 2 in current phase
+Phase: 01 (project-foundation) — EXECUTING
+Plan: 2 of 13
 Status: Ready to execute
 Last activity: 2026-03-28
 
@@ -52,7 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: -
 
 *Updated after each plan completion*
-| Phase 01 P01 | 4min | 1 tasks | 9 files |
+| Phase 01 P06 | 3min | 1 tasks | 24 files |
 
 ## Accumulated Context
 
@@ -65,7 +65,8 @@ Recent decisions affecting current work:
 - [Roadmap]: ADMN-03 (Plaid config) grouped with Phase 7 (Plaid Integration), not Phase 8 (Administration)
 - [Roadmap]: Categories split into own phase (Phase 4) before Transactions (Phase 5) -- envelopes and transactions both depend on categories
 - [Revision]: Quality gates (INFR-04 to INFR-10) added to Phase 1 -- lint, format, static analysis, dead code, coverage thresholds, security scan, pre-commit hooks all enforced from day one
-- [Phase 01]: JaCoCo 0.8.14 (0.8.15 not published), Checkstyle suppression for @SpringBootApplication
+- [Phase 01]: PrimeNG 21 uses CSS-only theming via tailwindcss-primeui, no provider needed
+- [Phase 01]: Angular 21 uses simplified naming (app.ts not app.component.ts) and Vitest instead of Karma
 
 ### Pending Todos
 
@@ -78,6 +79,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-28T20:51:13.148Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-03-28T20:50:53.650Z
+Stopped at: Completed 01-06-PLAN.md
 Resume file: None

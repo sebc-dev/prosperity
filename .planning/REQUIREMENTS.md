@@ -90,7 +90,7 @@
 ### Infrastructure
 
 - [ ] **INFR-01**: Backup PostgreSQL automatise via pg_dump planifie
-- [ ] **INFR-02**: Docker Compose fonctionnel (Caddy + Spring Boot + PostgreSQL)
+- [x] **INFR-02**: Docker Compose fonctionnel (Caddy + Spring Boot + PostgreSQL)
 - [ ] **INFR-03**: PWA installable avec service worker actif
 - [x] **INFR-04**: Linting : Checkstyle pour Java, ESLint pour Angular, execution locale (scripts) et CI
 - [x] **INFR-05**: Formatage automatique : google-java-format pour Java, Prettier pour frontend, verification en CI
@@ -199,7 +199,7 @@
 | DASH-03 | Phase 10 | Pending |
 | DASH-04 | Phase 10 | Pending |
 | INFR-01 | Phase 10 | Pending |
-| INFR-02 | Phase 1 | Pending |
+| INFR-02 | Phase 1 | Complete |
 | INFR-03 | Phase 10 | Pending |
 | INFR-04 | Phase 1 | Complete |
 | INFR-05 | Phase 1 | Complete |

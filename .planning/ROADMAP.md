@@ -48,7 +48,7 @@ Plans:
 - [x] 01-04-PLAN.md — Account + AccountAccess entities + repositories (account layer)
 - [ ] 01-05-PLAN.md — Transaction entity + TransactionRepository (transaction layer)
 - [x] 01-06-PLAN.md — Frontend scaffolding: Angular 21 + PrimeNG + Tailwind + ESLint + Prettier
-- [ ] 01-07-PLAN.md — Category + Envelope + EnvelopeAllocation entities + repositories (envelope/category layer)
+- [x] 01-07-PLAN.md — Category + Envelope + EnvelopeAllocation entities + repositories (envelope/category layer)
 - [ ] 01-08-PLAN.md — Flyway migrations: V001 through V006 initial schema
 - [ ] 01-09-PLAN.md — Domain unit tests: Money, TransactionState, Envelope
 - [ ] 01-10-PLAN.md — ArchUnit architecture tests

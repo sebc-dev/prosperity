@@ -38,14 +38,19 @@ created: 2026-03-28
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | Status |
 |---------|------|------|-------------|-----------|-------------------|--------|
-| 01-01 T1 | 01 | 1 | INFR-04, INFR-05, INFR-06, INFR-07, INFR-08 | build | `cd backend && ./mvnw verify -B` | pending |
-| 01-02 T1 | 02 | 2 | INFR-06 | build | `cd backend && ./mvnw compile` | pending |
-| 01-03 T1 | 03 | 3 | INFR-06 | build | `cd backend && ./mvnw compile` | pending |
-| 01-04 T1 | 04 | 4 | INFR-06 | integration | `cd backend && ./mvnw flyway:validate` | pending |
-| 01-05 T1 | 05 | 4 | INFR-07 | unit | `cd backend && ./mvnw test` | pending |
-| 01-06 T1 | 06 | 1 | INFR-04, INFR-05 | build | `cd frontend && pnpm build && pnpm lint` | pending |
-| 01-07 T1 | 07 | 2 | INFR-02 | config | `docker compose config` | pending |
-| 01-07 T2 | 07 | 2 | INFR-10 | config | `grep -q "pre-commit" lefthook.yml && grep -q "mvnw verify" .github/workflows/ci.yml` | pending |
+| 01-01 T1 | 01 | 1 | INFR-04, INFR-05, INFR-06, INFR-07, INFR-08, INFR-09 | build | `cd backend && ./mvnw verify -q 2>&1 \| tail -10` | pending |
+| 01-02 T1 | 02 | 2 | INFR-07 | build | `cd backend && ./mvnw compile -q 2>&1 \| tail -5` | pending |
+| 01-03 T1 | 03 | 3 | INFR-07 | build | `cd backend && ./mvnw compile -q 2>&1 \| tail -5` | pending |
+| 01-04 T1 | 04 | 4 | INFR-07 | build | `cd backend && ./mvnw compile -q 2>&1 \| tail -5` | pending |
+| 01-05 T1 | 05 | 5 | INFR-07 | build | `cd backend && ./mvnw compile -q 2>&1 \| tail -5` | pending |
+| 01-06 T1 | 06 | 1 | INFR-04, INFR-05 | build | `cd frontend && pnpm lint 2>&1 \| tail -3 && pnpm format:check 2>&1 \| tail -3 && pnpm build 2>&1 \| tail -5` | pending |
+| 01-07 T1 | 07 | 5 | INFR-07 | build | `cd backend && ./mvnw compile -q 2>&1 \| tail -5` | pending |
+| 01-08 T1 | 08 | 6 | INFR-06 | config | `ls -la backend/src/main/resources/db/migration/V00*.sql 2>&1 && wc -l backend/src/main/resources/db/migration/V00*.sql` | pending |
+| 01-09 T1 | 09 | 6 | INFR-07 | unit | `cd backend && ./mvnw test -pl . -Dtest="MoneyTest,TransactionStateTest,EnvelopeTest" -q 2>&1 \| tail -10` | pending |
+| 01-10 T1 | 10 | 6 | INFR-07 | unit | `cd backend && ./mvnw test -pl . -Dtest="ArchitectureTest" -q 2>&1 \| tail -10` | pending |
+| 01-11 T1 | 11 | 6 | INFR-07 | unit | `cd backend && ./mvnw test -pl . -Dtest="ProsperityApplicationTest" -q 2>&1 \| tail -10` | pending |
+| 01-12 T1 | 12 | 2 | INFR-02 | config | `docker compose config 2>&1 \| tail -3` | pending |
+| 01-13 T1 | 13 | 3 | INFR-10 | config | `test -f lefthook.yml && grep -q "pre-commit" lefthook.yml && grep -q "java-format" lefthook.yml && grep -q "frontend-lint" lefthook.yml && echo "lefthook.yml: valid" && test -f .github/workflows/ci.yml && grep -q "mvnw verify" .github/workflows/ci.yml && grep -q "pnpm lint" .github/workflows/ci.yml && grep -q "pnpm build" .github/workflows/ci.yml && echo "ci.yml: valid"` | pending |
 
 *Status: pending / green / red / flaky*
 

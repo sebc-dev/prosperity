@@ -39,16 +39,22 @@ Decimal phases appear between their surrounding integers in numeric order.
   7. `pnpm lint` runs ESLint and `pnpm format:check` runs Prettier -- both fail on violations
   8. Pre-commit hooks (via Husky or lefthook) automatically run lint and format checks before each commit, preventing non-compliant code from entering the repository
   9. CI pipeline (GitHub Actions) runs all quality gates (lint, format, static analysis, dead code, coverage thresholds, security scan) on every push/PR and blocks merge on failure
-**Plans**: 7 plans
+**Plans**: 13 plans
 
 Plans:
 - [ ] 01-01-PLAN.md — Backend scaffold: Maven project + quality gate plugins
 - [ ] 01-02-PLAN.md — Value objects + enums: Money, MoneyConverter, enums, BankConnector interface
-- [ ] 01-03-PLAN.md — JPA entities + repositories: Account, User, Transaction, Category, Envelope
-- [ ] 01-04-PLAN.md — Flyway migrations: V001 through V006 initial schema
-- [ ] 01-05-PLAN.md — Unit tests: Money, TransactionState, Envelope, ArchUnit
+- [ ] 01-03-PLAN.md — User entity + UserRepository (auth layer)
+- [ ] 01-04-PLAN.md — Account + AccountAccess entities + repositories (account layer)
+- [ ] 01-05-PLAN.md — Transaction entity + TransactionRepository (transaction layer)
 - [ ] 01-06-PLAN.md — Frontend scaffolding: Angular 21 + PrimeNG + Tailwind + ESLint + Prettier
-- [ ] 01-07-PLAN.md — Infrastructure: Docker Compose + Caddy + CI pipeline + Lefthook
+- [ ] 01-07-PLAN.md — Category + Envelope + EnvelopeAllocation entities + repositories (envelope/category layer)
+- [ ] 01-08-PLAN.md — Flyway migrations: V001 through V006 initial schema
+- [ ] 01-09-PLAN.md — Domain unit tests: Money, TransactionState, Envelope
+- [ ] 01-10-PLAN.md — ArchUnit architecture tests
+- [ ] 01-11-PLAN.md — Boot test: ProsperityApplicationTest
+- [ ] 01-12-PLAN.md — Docker Compose + Caddy + backend Dockerfile
+- [ ] 01-13-PLAN.md — Lefthook pre-commit hooks + GitHub Actions CI pipeline
 ### Phase 2: Authentication & Setup Wizard
 **Goal**: Users can securely access the application, starting with admin account creation on first launch
 **Depends on**: Phase 1

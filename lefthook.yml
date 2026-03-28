@@ -1,0 +1,17 @@
+pre-commit:
+  parallel: true
+  commands:
+    java-format:
+      glob: "*.java"
+      run: cd backend && ./mvnw spotless:check -q
+    java-lint:
+      glob: "*.java"
+      run: cd backend && ./mvnw checkstyle:check -q
+    frontend-lint:
+      root: "frontend/"
+      glob: "*.{ts,html}"
+      run: cd frontend && pnpm lint
+    frontend-format:
+      root: "frontend/"
+      glob: "*.{ts,html,css,json}"
+      run: cd frontend && pnpm format:check

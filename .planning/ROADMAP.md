@@ -52,7 +52,7 @@ Plans:
 - [ ] 01-08-PLAN.md — Flyway migrations: V001 through V006 initial schema
 - [ ] 01-09-PLAN.md — Domain unit tests: Money, TransactionState, Envelope
 - [ ] 01-10-PLAN.md — ArchUnit architecture tests
-- [ ] 01-11-PLAN.md — Boot test: ProsperityApplicationTest
+- [x] 01-11-PLAN.md — Boot test: ProsperityApplicationTest
 - [x] 01-12-PLAN.md — Docker Compose + Caddy + backend Dockerfile
 - [x] 01-13-PLAN.md — Lefthook pre-commit hooks + GitHub Actions CI pipeline
 ### Phase 2: Authentication & Setup Wizard

@@ -39,12 +39,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   7. `pnpm lint` runs ESLint and `pnpm format:check` runs Prettier -- both fail on violations
   8. Pre-commit hooks (via Husky or lefthook) automatically run lint and format checks before each commit, preventing non-compliant code from entering the repository
   9. CI pipeline (GitHub Actions) runs all quality gates (lint, format, static analysis, dead code, coverage thresholds, security scan) on every push/PR and blocks merge on failure
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
-
+- [ ] 01-01-PLAN.md — Backend scaffolding: Spring Boot 4.0.5 + domain model + quality gates
+- [ ] 01-02-PLAN.md — Frontend scaffolding: Angular 21 + PrimeNG + Tailwind + ESLint + Prettier
+- [ ] 01-03-PLAN.md — Infrastructure: Docker Compose + Caddy + CI pipeline + Lefthook
 ### Phase 2: Authentication & Setup Wizard
 **Goal**: Users can securely access the application, starting with admin account creation on first launch
 **Depends on**: Phase 1
@@ -199,7 +199,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Project Foundation | 0/2 | Not started | - |
+| 1. Project Foundation | 0/3 | Planning | - |
 | 2. Authentication & Setup Wizard | 0/2 | Not started | - |
 | 3. Accounts & Access Control | 0/2 | Not started | - |
 | 4. Categories | 0/1 | Not started | - |

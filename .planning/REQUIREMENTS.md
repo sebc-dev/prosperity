@@ -98,7 +98,7 @@
 - [x] **INFR-07**: Detection de code mort (Java + Angular) integree au pipeline CI
 - [x] **INFR-08**: Couverture de tests enforcee avec seuils minimum (echec build si non atteint)
 - [x] **INFR-09**: Scan de securite des dependances (vulnerabilites connues, OWASP dependency-check)
-- [ ] **INFR-10**: Pre-commit hooks (Husky/lefthook) executant lint, format, et checks avant chaque commit
+- [x] **INFR-10**: Pre-commit hooks (Husky/lefthook) executant lint, format, et checks avant chaque commit
 
 ## v2 Requirements
 
@@ -207,7 +207,7 @@
 | INFR-07 | Phase 1 | Complete |
 | INFR-08 | Phase 1 | Complete |
 | INFR-09 | Phase 1 | Complete |
-| INFR-10 | Phase 1 | Pending |
+| INFR-10 | Phase 1 | Complete |
 
 **Coverage:**
 - v1 requirements: 62 total

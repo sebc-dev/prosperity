@@ -54,7 +54,7 @@ Plans:
 - [ ] 01-10-PLAN.md — ArchUnit architecture tests
 - [ ] 01-11-PLAN.md — Boot test: ProsperityApplicationTest
 - [x] 01-12-PLAN.md — Docker Compose + Caddy + backend Dockerfile
-- [ ] 01-13-PLAN.md — Lefthook pre-commit hooks + GitHub Actions CI pipeline
+- [x] 01-13-PLAN.md — Lefthook pre-commit hooks + GitHub Actions CI pipeline
 ### Phase 2: Authentication & Setup Wizard
 **Goal**: Users can securely access the application, starting with admin account creation on first launch
 **Depends on**: Phase 1

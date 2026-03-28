@@ -46,7 +46,7 @@ Plans:
 - [x] 01-02-PLAN.md — Value objects + enums: Money, MoneyConverter, enums, BankConnector interface
 - [x] 01-03-PLAN.md — User entity + UserRepository (auth layer)
 - [x] 01-04-PLAN.md — Account + AccountAccess entities + repositories (account layer)
-- [ ] 01-05-PLAN.md — Transaction entity + TransactionRepository (transaction layer)
+- [x] 01-05-PLAN.md — Transaction entity + TransactionRepository (transaction layer)
 - [x] 01-06-PLAN.md — Frontend scaffolding: Angular 21 + PrimeNG + Tailwind + ESLint + Prettier
 - [x] 01-07-PLAN.md — Category + Envelope + EnvelopeAllocation entities + repositories (envelope/category layer)
 - [ ] 01-08-PLAN.md — Flyway migrations: V001 through V006 initial schema

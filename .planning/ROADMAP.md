@@ -44,7 +44,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 - [x] 01-01-PLAN.md — Backend scaffold: Maven project + quality gate plugins
 - [x] 01-02-PLAN.md — Value objects + enums: Money, MoneyConverter, enums, BankConnector interface
-- [ ] 01-03-PLAN.md — User entity + UserRepository (auth layer)
+- [x] 01-03-PLAN.md — User entity + UserRepository (auth layer)
 - [ ] 01-04-PLAN.md — Account + AccountAccess entities + repositories (account layer)
 - [ ] 01-05-PLAN.md — Transaction entity + TransactionRepository (transaction layer)
 - [x] 01-06-PLAN.md — Frontend scaffolding: Angular 21 + PrimeNG + Tailwind + ESLint + Prettier

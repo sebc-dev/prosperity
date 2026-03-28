@@ -1,0 +1,205 @@
+# Requirements: Prosperity
+
+**Defined:** 2026-03-28
+**Core Value:** Un foyer peut suivre ses finances au quotidien (soldes, transactions, budgets enveloppes) sans effort manuel excessif, grace a la synchronisation bancaire automatique et une interface claire.
+
+## v1 Requirements
+
+### Setup & Authentication
+
+- [ ] **AUTH-01**: Premier lancement affiche un setup wizard pour creer le compte administrateur
+- [ ] **AUTH-02**: Utilisateur peut se connecter avec email et mot de passe (BFF cookie flow, JWT cote serveur, cookies httpOnly)
+- [ ] **AUTH-03**: Utilisateur peut se deconnecter depuis n'importe quelle page
+- [ ] **AUTH-04**: Session utilisateur persiste apres rafraichissement du navigateur
+- [ ] **AUTH-05**: Protection CSRF active sur tous les endpoints mutatifs
+
+### Administration
+
+- [ ] **ADMN-01**: Admin peut inviter de nouveaux utilisateurs (email d'invitation)
+- [ ] **ADMN-02**: Admin peut gerer les droits des utilisateurs
+- [ ] **ADMN-03**: Admin peut configurer les connexions Plaid (ajout, suppression, statut)
+- [ ] **ADMN-04**: Admin peut voir le monitoring systeme (statut synchro, sante de l'app)
+
+### Comptes Bancaires
+
+- [ ] **ACCT-01**: Utilisateur peut creer un compte bancaire personnel
+- [ ] **ACCT-02**: Utilisateur peut creer un compte bancaire commun (partage entre utilisateurs)
+- [ ] **ACCT-03**: Utilisateur peut voir la liste de ses comptes avec soldes
+- [ ] **ACCT-04**: Utilisateur peut modifier les informations d'un compte (nom, type)
+- [ ] **ACCT-05**: Utilisateur peut archiver un compte (masque sans supprimer les donnees)
+
+### Controle d'Acces
+
+- [ ] **ACCS-01**: Chaque compte a des permissions par utilisateur (lecture/ecriture/admin)
+- [ ] **ACCS-02**: Utilisateur ne voit que les comptes auxquels il a acces
+- [ ] **ACCS-03**: Admin peut modifier les permissions d'acces aux comptes pour chaque utilisateur
+- [ ] **ACCS-04**: Le controle d'acces s'applique aux requetes d'agregation (dashboard, recherche)
+
+### Transactions
+
+- [ ] **TXNS-01**: Utilisateur peut saisir manuellement une transaction (montant, date, description, categorie, compte)
+- [ ] **TXNS-02**: Utilisateur peut modifier une transaction saisie manuellement
+- [ ] **TXNS-03**: Utilisateur peut supprimer une transaction saisie manuellement
+- [ ] **TXNS-04**: Utilisateur peut creer des templates de transactions recurrentes (loyer, abonnements)
+- [ ] **TXNS-05**: Utilisateur peut pointer manuellement une transaction (associer saisie manuelle a import Plaid)
+- [ ] **TXNS-06**: Utilisateur peut splitter une transaction en plusieurs categories (split transactions)
+- [ ] **TXNS-07**: Utilisateur peut rechercher et filtrer les transactions (date, montant, categorie, description)
+- [ ] **TXNS-08**: Liste des transactions avec pagination
+
+### Categorisation
+
+- [ ] **CATG-01**: Les transactions importees via Plaid arrivent avec les categories Plaid pre-remplies
+- [ ] **CATG-02**: Utilisateur peut modifier la categorie d'une transaction
+- [ ] **CATG-03**: Utilisateur peut creer des categories personnalisees
+- [ ] **CATG-04**: Les categories sont hierarchiques (categorie parente / sous-categorie)
+
+### Import Bancaire (Plaid)
+
+- [ ] **PLAD-01**: Admin peut connecter un compte bancaire via Plaid Link (SG, Banque Populaire)
+- [ ] **PLAD-02**: Utilisateur peut declencher un import manuel des transactions
+- [ ] **PLAD-03**: Import planifie automatique (batch, frequence configurable)
+- [ ] **PLAD-04**: Import initial parametrable (profondeur d'historique)
+- [ ] **PLAD-05**: Gestion correcte des transitions pending -> posted (delete + create, pas update)
+- [ ] **PLAD-06**: Gestion du cycle de consentement PSD2 (renouvellement tous les 180 jours)
+- [ ] **PLAD-07**: Interface abstraite pour le connecteur bancaire (Plaid interchangeable)
+
+### Budgets Enveloppes
+
+- [ ] **ENVL-01**: Utilisateur peut creer une enveloppe budgetaire sur un compte
+- [ ] **ENVL-02**: Utilisateur peut allouer un montant mensuel a une enveloppe
+- [ ] **ENVL-03**: Les depenses categorisees sont automatiquement imputees a l'enveloppe correspondante
+- [ ] **ENVL-04**: Rollover parametrable par enveloppe (report automatique du solde ou remise a zero)
+- [ ] **ENVL-05**: Indicateur visuel de depassement (rouge/jaune quand enveloppe depassee ou proche)
+- [ ] **ENVL-06**: Utilisateur peut voir l'historique de consommation d'une enveloppe
+- [ ] **ENVL-07**: Utilisateur peut modifier ou supprimer une enveloppe
+
+### Dette Interne
+
+- [ ] **DEBT-01**: Le systeme calcule automatiquement qui doit quoi a qui depuis les transactions sur comptes communs
+- [ ] **DEBT-02**: Utilisateur peut voir le solde de dette interne avec chaque membre du foyer
+- [ ] **DEBT-03**: Utilisateur peut enregistrer un remboursement (objectif = solde zero)
+- [ ] **DEBT-04**: Historique long terme des dettes et remboursements
+
+### Dashboard
+
+- [ ] **DASH-01**: Utilisateur voit les soldes de tous ses comptes sur une vue consolidee
+- [ ] **DASH-02**: Utilisateur voit l'etat de ses enveloppes (restant, consomme, pourcentage)
+- [ ] **DASH-03**: Utilisateur voit des graphiques d'evolution (soldes et depenses dans le temps)
+- [ ] **DASH-04**: Utilisateur voit les dernieres transactions tous comptes confondus
+
+### Infrastructure
+
+- [ ] **INFR-01**: Backup PostgreSQL automatise via pg_dump planifie
+- [ ] **INFR-02**: Docker Compose fonctionnel (Caddy + Spring Boot + PostgreSQL)
+- [ ] **INFR-03**: PWA installable avec service worker actif
+
+## v2 Requirements
+
+### Rapports
+
+- **REPT-01**: Rapports de depenses par categorie sur periode configurable
+- **REPT-02**: Rapport evolution patrimoine net (net worth)
+- **REPT-03**: Comparaison depenses mois par mois / annee par annee
+
+### Notifications
+
+- **NOTF-01**: Notification in-app quand une enveloppe depasse un seuil
+- **NOTF-02**: Notification push PWA pour alertes budget
+- **NOTF-03**: Preferences de notification configurables par utilisateur
+
+### Categorisation Avancee
+
+- **CATG-05**: Regles de categorisation automatique (si libelle contient X -> categorie Y)
+- **CATG-06**: Suggestions de categorie basees sur l'historique
+
+### Ameliorations Sync
+
+- **PLAD-08**: Sync temps reel via webhooks Plaid
+- **PLAD-09**: Suggestion automatique de pointage (montant + date proches)
+
+### Offline & Mobile
+
+- **OFFL-01**: Mode offline-first PWA avec synchronisation
+- **OFFL-02**: Experience mobile optimisee (gestes, navigation adaptee)
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| App native iOS/Android | PWA couvre le besoin mobile, pas d'app store |
+| Multi-devises | Comptes en euros uniquement, complexite enorme |
+| Multi-foyers / mode SaaS | Self-hosted pour un seul foyer |
+| Investissements / portefeuille | Domaine different, utiliser un outil dedie |
+| Bill splitting externe | Hors foyer, utiliser Splitwise |
+| Double-entry accounting | Pas necessaire pour le budgeting enveloppes |
+| Enveloppes cross-account | Per-account en v1, evaluer en v2 selon usage |
+| Categorisation ML | Necessite donnees d'entrainement, premature en v1 |
+
+## Traceability
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| AUTH-01 | - | Pending |
+| AUTH-02 | - | Pending |
+| AUTH-03 | - | Pending |
+| AUTH-04 | - | Pending |
+| AUTH-05 | - | Pending |
+| ADMN-01 | - | Pending |
+| ADMN-02 | - | Pending |
+| ADMN-03 | - | Pending |
+| ADMN-04 | - | Pending |
+| ACCT-01 | - | Pending |
+| ACCT-02 | - | Pending |
+| ACCT-03 | - | Pending |
+| ACCT-04 | - | Pending |
+| ACCT-05 | - | Pending |
+| ACCS-01 | - | Pending |
+| ACCS-02 | - | Pending |
+| ACCS-03 | - | Pending |
+| ACCS-04 | - | Pending |
+| TXNS-01 | - | Pending |
+| TXNS-02 | - | Pending |
+| TXNS-03 | - | Pending |
+| TXNS-04 | - | Pending |
+| TXNS-05 | - | Pending |
+| TXNS-06 | - | Pending |
+| TXNS-07 | - | Pending |
+| TXNS-08 | - | Pending |
+| CATG-01 | - | Pending |
+| CATG-02 | - | Pending |
+| CATG-03 | - | Pending |
+| CATG-04 | - | Pending |
+| PLAD-01 | - | Pending |
+| PLAD-02 | - | Pending |
+| PLAD-03 | - | Pending |
+| PLAD-04 | - | Pending |
+| PLAD-05 | - | Pending |
+| PLAD-06 | - | Pending |
+| PLAD-07 | - | Pending |
+| ENVL-01 | - | Pending |
+| ENVL-02 | - | Pending |
+| ENVL-03 | - | Pending |
+| ENVL-04 | - | Pending |
+| ENVL-05 | - | Pending |
+| ENVL-06 | - | Pending |
+| ENVL-07 | - | Pending |
+| DEBT-01 | - | Pending |
+| DEBT-02 | - | Pending |
+| DEBT-03 | - | Pending |
+| DEBT-04 | - | Pending |
+| DASH-01 | - | Pending |
+| DASH-02 | - | Pending |
+| DASH-03 | - | Pending |
+| DASH-04 | - | Pending |
+| INFR-01 | - | Pending |
+| INFR-02 | - | Pending |
+| INFR-03 | - | Pending |
+
+**Coverage:**
+- v1 requirements: 53 total
+- Mapped to phases: 0
+- Unmapped: 53 (pending roadmap creation)
+
+---
+*Requirements defined: 2026-03-28*
+*Last updated: 2026-03-28 after initial definition*

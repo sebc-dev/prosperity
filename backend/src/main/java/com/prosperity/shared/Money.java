@@ -19,7 +19,12 @@ public record Money(BigDecimal amount) {
   }
 
   public static Money of(String value) {
-    return new Money(new BigDecimal(value));
+    Objects.requireNonNull(value, "value must not be null");
+    try {
+      return new Money(new BigDecimal(value));
+    } catch (NumberFormatException e) {
+      throw new IllegalArgumentException("Invalid monetary value: " + value, e);
+    }
   }
 
   public static Money zero() {

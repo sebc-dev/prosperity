@@ -32,7 +32,7 @@ public class Account {
   private AccountType accountType;
 
   @Convert(converter = MoneyConverter.class)
-  @Column(name = "balance", columnDefinition = "NUMERIC(19,4)")
+  @Column(name = "balance", nullable = false, columnDefinition = "NUMERIC(19,4)")
   private Money balance;
 
   @Column(nullable = false, length = 3)

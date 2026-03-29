@@ -95,4 +95,25 @@ class MoneyTest {
 
     assertThat(a).isEqualTo(b);
   }
+
+  @Test
+  void ofString_rejectsNull() {
+    assertThatThrownBy(() -> Money.of(null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("value must not be null");
+  }
+
+  @Test
+  void ofString_rejectsEmptyString() {
+    assertThatThrownBy(() -> Money.of(""))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Invalid monetary value");
+  }
+
+  @Test
+  void ofString_rejectsNonNumericString() {
+    assertThatThrownBy(() -> Money.of("abc"))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("Invalid monetary value: abc");
+  }
 }

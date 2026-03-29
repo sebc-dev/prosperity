@@ -1,0 +1,92 @@
+{
+  "version": "2.0.0",
+  "plugin_root": "/home/negus/dev/marketplace/scd-review",
+  "json_strategy": "jq",
+
+  "model_profile": "balanced",
+  "model_overrides": {},
+  "default_output": "fix",
+
+  "category_priority": [
+    "build-config",
+    "database-migrations",
+    "domain-models",
+    "infrastructure",
+    "business-logic",
+    "controllers-api",
+    "views-ui",
+    "integration-wiring",
+    "tests",
+    "i18n-docs"
+  ],
+
+  "review_criteria": [
+    "architecture",
+    "security",
+    "performance",
+    "conventions",
+    "error-handling",
+    "test-coverage"
+  ],
+
+  "severity": {
+    "blocking": "Probleme avec impact reel sur production ou maintenabilite",
+    "suggestion": "Amelioration sans risque immediat"
+  },
+
+  "options": {
+    "default_base_branch": "main",
+    "language": "fr"
+  },
+
+  "validator": {
+    "enabled": true,
+    "confidence_threshold": 0.75,
+    "skip_green": true
+  },
+
+  "pipeline": {
+    "max_parallel_agents": 5,
+    "max_files_per_run": 20,
+    "midpoint_checkpoint": true
+  },
+
+  "platform": {
+    "type": "github",
+    "inline_only": true,
+    "orphan_summary": true
+  },
+
+  "context": {
+    "jira_api_url": null,
+    "jira_auth_token_env": "JIRA_TOKEN",
+    "max_context_lines": 200
+  },
+
+  "environment": {
+    "os": "Linux",
+    "jq_available": true,
+    "json_strategy": "jq",
+    "platform_cli": "gh",
+    "platform_cli_version": "2.45.0",
+    "platform_cli_authenticated": true,
+    "scripts_installed": true,
+    "scripts_hash": null,
+    "rules_installed": true,
+    "probed_at": "2026-03-29T00:00:00Z"
+  },
+
+  "state": {
+    "last_init": "2026-03-29T00:00:00Z",
+    "plugin_version": "2.0.0",
+    "steps_status": {
+      "config": "done",
+      "sessions_dir": "done",
+      "plugin_root": "done",
+      "scripts": "done",
+      "rules": "done",
+      "json_strategy": "done",
+      "platform": "done"
+    }
+  }
+}

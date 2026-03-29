@@ -12,7 +12,13 @@ Un foyer peut suivre ses finances au quotidien (soldes, transactions, budgets en
 
 ### Validated
 
-(None yet -- ship to validate)
+- [x] Infrastructure dev : Maven + quality gates + JaCoCo coverage enforcement — Validated in Phase 1: Project Foundation
+- [x] Frontend scaffolding : Angular 21 + PrimeNG + Tailwind + ESLint + Prettier — Validated in Phase 1: Project Foundation
+- [x] Domain model : Money (BigDecimal), entities JPA, enums, BankConnector abstrait — Validated in Phase 1: Project Foundation
+- [x] Flyway migrations : schema initial PostgreSQL — Validated in Phase 1: Project Foundation
+- [x] Docker Compose + Caddy : stack conteneurisee — Validated in Phase 1: Project Foundation
+- [x] CI pipeline : GitHub Actions avec quality gates — Validated in Phase 1: Project Foundation
+- [x] Pre-commit hooks : lefthook lint/format — Validated in Phase 1: Project Foundation
 
 ### Active
 
@@ -52,9 +58,10 @@ Un foyer peut suivre ses finances au quotidien (soldes, transactions, budgets en
 - **Banques** : Societe Generale + Banque Populaire (confirmees sur Plaid EU/FR)
 - **Infra** : serveur Ubuntu 4 cores, 24 Go RAM
 - **Stack decidee** : Java 21 + Spring Boot 4.0.x + Angular 21 + PrimeNG 21.x + Tailwind v4 + PostgreSQL 17 + Caddy 2.10.x
-- **Architecture** : hexagonale allegee (Domain/Application/Infrastructure), API REST monolithique + SPA separee
+- **Architecture** : layered par feature (Controller/Service/Repository) + abstraction strategique (connecteur bancaire), API REST monolithique + SPA separee
 - **Connecteur bancaire** : interface abstraite (Plaid interchangeable avec Powens/Salt Edge)
 - **ADR-0001** : decisions stack documentees dans `docs/adr/0001-initial-stack.md`
+- **ADR-0002** : architecture layered par feature (remplacement hexagonal) dans `docs/adr/0002-architecture-layered.md`
 
 ## Constraints
 
@@ -101,4 +108,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-28 after initialization*
+*Last updated: 2026-03-29 after Phase 1 completion*

@@ -1,0 +1,17 @@
+# Build output
+target/
+
+# Maven wrapper jar (downloaded at runtime)
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db

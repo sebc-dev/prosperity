@@ -90,15 +90,15 @@
 ### Infrastructure
 
 - [ ] **INFR-01**: Backup PostgreSQL automatise via pg_dump planifie
-- [ ] **INFR-02**: Docker Compose fonctionnel (Caddy + Spring Boot + PostgreSQL)
+- [x] **INFR-02**: Docker Compose fonctionnel (Caddy + Spring Boot + PostgreSQL)
 - [ ] **INFR-03**: PWA installable avec service worker actif
-- [ ] **INFR-04**: Linting : Checkstyle pour Java, ESLint pour Angular, execution locale (scripts) et CI
-- [ ] **INFR-05**: Formatage automatique : google-java-format pour Java, Prettier pour frontend, verification en CI
-- [ ] **INFR-06**: Analyse statique integree (SonarQube ou equivalent) avec quality gate locale et CI
-- [ ] **INFR-07**: Detection de code mort (Java + Angular) integree au pipeline CI
-- [ ] **INFR-08**: Couverture de tests enforcee avec seuils minimum (echec build si non atteint)
-- [ ] **INFR-09**: Scan de securite des dependances (vulnerabilites connues, OWASP dependency-check)
-- [ ] **INFR-10**: Pre-commit hooks (Husky/lefthook) executant lint, format, et checks avant chaque commit
+- [x] **INFR-04**: Linting : Checkstyle pour Java, ESLint pour Angular, execution locale (scripts) et CI
+- [x] **INFR-05**: Formatage automatique : google-java-format pour Java, Prettier pour frontend, verification en CI
+- [x] **INFR-06**: Analyse statique integree (SonarQube ou equivalent) avec quality gate locale et CI
+- [x] **INFR-07**: Detection de code mort (Java + Angular) integree au pipeline CI
+- [x] **INFR-08**: Couverture de tests enforcee avec seuils minimum (echec build si non atteint)
+- [x] **INFR-09**: Scan de securite des dependances (vulnerabilites connues, OWASP dependency-check)
+- [x] **INFR-10**: Pre-commit hooks (Husky/lefthook) executant lint, format, et checks avant chaque commit
 
 ## v2 Requirements
 
@@ -199,15 +199,15 @@
 | DASH-03 | Phase 10 | Pending |
 | DASH-04 | Phase 10 | Pending |
 | INFR-01 | Phase 10 | Pending |
-| INFR-02 | Phase 1 | Pending |
+| INFR-02 | Phase 1 | Complete |
 | INFR-03 | Phase 10 | Pending |
-| INFR-04 | Phase 1 | Pending |
-| INFR-05 | Phase 1 | Pending |
-| INFR-06 | Phase 1 | Pending |
-| INFR-07 | Phase 1 | Pending |
-| INFR-08 | Phase 1 | Pending |
-| INFR-09 | Phase 1 | Pending |
-| INFR-10 | Phase 1 | Pending |
+| INFR-04 | Phase 1 | Complete |
+| INFR-05 | Phase 1 | Complete |
+| INFR-06 | Phase 1 | Complete |
+| INFR-07 | Phase 1 | Complete |
+| INFR-08 | Phase 1 | Complete |
+| INFR-09 | Phase 1 | Complete |
+| INFR-10 | Phase 1 | Complete |
 
 **Coverage:**
 - v1 requirements: 62 total

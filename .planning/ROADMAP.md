@@ -39,12 +39,23 @@ Decimal phases appear between their surrounding integers in numeric order.
   7. `pnpm lint` runs ESLint and `pnpm format:check` runs Prettier -- both fail on violations
   8. Pre-commit hooks (via Husky or lefthook) automatically run lint and format checks before each commit, preventing non-compliant code from entering the repository
   9. CI pipeline (GitHub Actions) runs all quality gates (lint, format, static analysis, dead code, coverage thresholds, security scan) on every push/PR and blocks merge on failure
-**Plans**: TBD
+**Plans**: 14 plans
 
 Plans:
-- [ ] 01-01: TBD
-- [ ] 01-02: TBD
-
+- [x] 01-01-PLAN.md — Backend scaffold: Maven project + quality gate plugins
+- [x] 01-02-PLAN.md — Value objects + enums: Money, MoneyConverter, enums, BankConnector interface
+- [x] 01-03-PLAN.md — User entity + UserRepository (auth layer)
+- [x] 01-04-PLAN.md — Account + AccountAccess entities + repositories (account layer)
+- [x] 01-05-PLAN.md — Transaction entity + TransactionRepository (transaction layer)
+- [x] 01-06-PLAN.md — Frontend scaffolding: Angular 21 + PrimeNG + Tailwind + ESLint + Prettier
+- [x] 01-07-PLAN.md — Category + Envelope + EnvelopeAllocation entities + repositories (envelope/category layer)
+- [x] 01-08-PLAN.md — Flyway migrations: V001 through V006 initial schema
+- [x] 01-09-PLAN.md — Domain unit tests: Money, TransactionState, Envelope
+- [x] 01-10-PLAN.md — ArchUnit architecture tests
+- [x] 01-11-PLAN.md — Boot test: ProsperityApplicationTest
+- [x] 01-12-PLAN.md — Docker Compose + Caddy + backend Dockerfile
+- [x] 01-13-PLAN.md — Lefthook pre-commit hooks + GitHub Actions CI pipeline
+- [x] 01-14-PLAN.md — Gap closure: JaCoCo coverage threshold enforcement (INFR-08)
 ### Phase 2: Authentication & Setup Wizard
 **Goal**: Users can securely access the application, starting with admin account creation on first launch
 **Depends on**: Phase 1
@@ -199,7 +210,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Project Foundation | 0/2 | Not started | - |
+| 1. Project Foundation | 0/14 | Planning | - |
 | 2. Authentication & Setup Wizard | 0/2 | Not started | - |
 | 3. Accounts & Access Control | 0/2 | Not started | - |
 | 4. Categories | 0/1 | Not started | - |

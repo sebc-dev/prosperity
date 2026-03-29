@@ -1,7 +1,7 @@
 ---
 phase: 2
 slug: authentication-setup-wizard
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-03-29
@@ -50,15 +50,15 @@ Exceptions: none
 | Role | Size | Weight | Line Height | Tailwind Class |
 |------|------|--------|-------------|----------------|
 | Body | 16px | 400 (regular) | 1.5 | `text-base font-normal leading-normal` |
-| Label | 14px | 500 (medium) | 1.4 | `text-sm font-medium leading-snug` |
+| Label | 14px | 600 (semibold) | 1.4 | `text-sm font-semibold leading-snug` |
 | Heading | 24px | 600 (semibold) | 1.2 | `text-2xl font-semibold leading-tight` |
 | Subheading | 18px | 600 (semibold) | 1.3 | `text-lg font-semibold` |
 
 **Notes:**
-- All form labels use the Label role (14px/500)
+- All form labels use the Label role (14px/600)
 - Page titles (e.g. "Creer le compte administrateur") use Heading role
-- Error messages and helper text use Body role at 14px: `text-sm font-normal`
-- Weights are limited to 400, 500, and 600
+- Error messages and helper text use Label size (14px) at regular weight (400): `text-sm font-normal`
+- Weights are limited to 400 and 600
 
 ---
 
@@ -150,6 +150,7 @@ PrimeNG Aura theme provides the color tokens via CSS variables. This contract us
 +----------------------------------------------------------+
 ```
 
+- **Focal point:** the primary CTA button ("Creer le compte" / "Se connecter") — full-width, accent-filled, positioned after all fields
 - Card: `max-w-md` (448px), centered with `mx-auto`, `p-8` padding, `rounded-xl`, `shadow-md`
 - Background: `bg-surface-50` (page), card is `bg-surface-0` (white)
 - Vertical gap between fields: `gap-4` (16px)
@@ -227,7 +228,7 @@ Real-time feedback below the password field during setup:
 | **Login password label** | Mot de passe |
 | **Login error (D-12)** | Identifiants invalides |
 | **Login error (network)** | Impossible de joindre le serveur. Verifiez votre connexion. |
-| **Setup already done (409)** | Le compte administrateur existe deja. |
+| **Setup already done (409)** | Le compte administrateur existe deja. Rendez-vous sur la page de connexion. |
 | **Session expired toast** | Votre session a expire. Veuillez vous reconnecter. |
 | **Dashboard placeholder** | Bienvenue {display_name} |
 | **Dashboard placeholder body** | Votre espace est pret. Les fonctionnalites arrivent dans les prochaines phases. |
@@ -287,17 +288,18 @@ Real-time feedback below the password field during setup:
 | Error announcement | `aria-live="polite"` on error message container |
 | Password visibility toggle | `aria-label="Afficher le mot de passe"` / `"Masquer le mot de passe"` |
 | Form labels | All inputs use `p-floatlabel` which generates proper `<label>` + `for` attribute |
+| Sidebar toggle | `aria-label="Ouvrir le menu"` / `"Fermer le menu"` on hamburger icon |
 | Color contrast | PrimeNG Aura meets WCAG 2.1 AA by default |
 
 ---
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS (FLAG: focal point added)
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS (FLAG: 14/16/18 scale tight but role-differentiated)
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** approved 2026-03-29

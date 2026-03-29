@@ -37,7 +37,7 @@ public class Transaction {
   private Account bankAccount;
 
   @Convert(converter = MoneyConverter.class)
-  @Column(name = "amount_cents", nullable = false)
+  @Column(name = "amount", nullable = false, columnDefinition = "NUMERIC(19,4)")
   private Money amount;
 
   @Column(length = 500)

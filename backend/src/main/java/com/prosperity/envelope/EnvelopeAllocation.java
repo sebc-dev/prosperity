@@ -34,7 +34,7 @@ public class EnvelopeAllocation {
   private LocalDate monthValue;
 
   @Convert(converter = MoneyConverter.class)
-  @Column(name = "allocated_amount_cents")
+  @Column(name = "allocated_amount", columnDefinition = "NUMERIC(19,4)")
   private Money allocatedAmount;
 
   @Column(name = "created_at", nullable = false, columnDefinition = "TIMESTAMPTZ")

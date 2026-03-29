@@ -46,8 +46,8 @@ public class Envelope {
   private User owner;
 
   @Convert(converter = MoneyConverter.class)
-  @Column(name = "budget_cents", nullable = false)
-  private Money budget = Money.ofCents(0);
+  @Column(name = "budget", nullable = false, columnDefinition = "NUMERIC(19,4)")
+  private Money budget = Money.zero();
 
   @Enumerated(EnumType.STRING)
   @Column(name = "rollover_policy", length = 20, nullable = false)

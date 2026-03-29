@@ -59,7 +59,7 @@ class EnvelopeTest {
     Money remaining = Money.of("73.42");
     Money result = envelope.rollover(remaining);
 
-    assertThat(result.toCents()).isEqualTo(7342L);
+    assertThat(result).isEqualTo(remaining);
   }
 
   @Test

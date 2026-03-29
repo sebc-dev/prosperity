@@ -32,7 +32,7 @@ public class Account {
   private AccountType accountType;
 
   @Convert(converter = MoneyConverter.class)
-  @Column(name = "balance_cents")
+  @Column(name = "balance", columnDefinition = "NUMERIC(19,4)")
   private Money balance;
 
   @Column(nullable = false, length = 3)
@@ -52,7 +52,7 @@ public class Account {
   public Account(String name, AccountType accountType) {
     this.name = name;
     this.accountType = accountType;
-    this.balance = Money.ofCents(0);
+    this.balance = Money.zero();
     this.createdAt = Instant.now();
     this.updatedAt = Instant.now();
   }

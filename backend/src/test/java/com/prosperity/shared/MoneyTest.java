@@ -13,29 +13,15 @@ class MoneyTest {
     Money money = Money.of("10.50");
 
     assertThat(money.amount()).isEqualByComparingTo(new BigDecimal("10.50"));
-    assertThat(money.amount().scale()).isEqualTo(2);
+    assertThat(money.amount().scale()).isEqualTo(4);
   }
 
   @Test
-  void ofCents_createsMoney_withCorrectBigDecimal() {
-    Money money = Money.ofCents(1050);
-
-    assertThat(money.amount()).isEqualByComparingTo(new BigDecimal("10.50"));
-    assertThat(money.amount().scale()).isEqualTo(2);
-  }
-
-  @Test
-  void ofCents_zero_createsZeroMoney() {
-    Money money = Money.ofCents(0);
+  void zero_createsZeroMoney() {
+    Money money = Money.zero();
 
     assertThat(money.amount()).isEqualByComparingTo(BigDecimal.ZERO);
-  }
-
-  @Test
-  void ofCents_negative_createsNegativeMoney() {
-    Money money = Money.ofCents(-500);
-
-    assertThat(money.amount()).isEqualByComparingTo(new BigDecimal("-5.00"));
+    assertThat(money.amount().scale()).isEqualTo(4);
   }
 
   @Test
@@ -44,26 +30,34 @@ class MoneyTest {
   }
 
   @Test
-  void constructor_rejectsScaleGreaterThanTwo() {
-    assertThatThrownBy(() -> new Money(new BigDecimal("10.123")))
+  void constructor_rejectsScaleGreaterThanFour() {
+    assertThatThrownBy(() -> new Money(new BigDecimal("10.12345")))
         .isInstanceOf(IllegalArgumentException.class)
-        .hasMessageContaining("2 decimal places");
+        .hasMessageContaining("4 decimal places");
   }
 
   @Test
   void constructor_acceptsScaleZero() {
     Money money = new Money(new BigDecimal("10"));
 
-    assertThat(money.amount().scale()).isEqualTo(2);
-    assertThat(money.amount()).isEqualByComparingTo(new BigDecimal("10.00"));
+    assertThat(money.amount().scale()).isEqualTo(4);
+    assertThat(money.amount()).isEqualByComparingTo(new BigDecimal("10.0000"));
   }
 
   @Test
-  void constructor_acceptsScaleOne() {
-    Money money = new Money(new BigDecimal("10.5"));
+  void constructor_acceptsScaleTwo() {
+    Money money = new Money(new BigDecimal("10.50"));
 
-    assertThat(money.amount().scale()).isEqualTo(2);
+    assertThat(money.amount().scale()).isEqualTo(4);
     assertThat(money.amount()).isEqualByComparingTo(new BigDecimal("10.50"));
+  }
+
+  @Test
+  void constructor_acceptsScaleFour() {
+    Money money = new Money(new BigDecimal("10.1234"));
+
+    assertThat(money.amount().scale()).isEqualTo(4);
+    assertThat(money.amount()).isEqualByComparingTo(new BigDecimal("10.1234"));
   }
 
   @Test
@@ -87,32 +81,18 @@ class MoneyTest {
   }
 
   @Test
-  void toCents_returnsCorrectLongValue() {
-    Money money = Money.of("10.50");
+  void equality_sameAmount_areEqual() {
+    Money a = Money.of("42.50");
+    Money b = Money.of("42.50");
 
-    assertThat(money.toCents()).isEqualTo(1050L);
+    assertThat(a).isEqualTo(b);
   }
 
   @Test
-  void toCents_negativeAmount_returnsNegativeCents() {
-    Money money = Money.of("-5.25");
+  void equality_differentScale_areEqual_afterNormalization() {
+    Money a = new Money(new BigDecimal("5"));
+    Money b = Money.of("5.00");
 
-    assertThat(money.toCents()).isEqualTo(-525L);
-  }
-
-  @Test
-  void toCents_zero_returnsZero() {
-    Money money = Money.of("0.00");
-
-    assertThat(money.toCents()).isEqualTo(0L);
-  }
-
-  @Test
-  void roundTrip_ofCentsAndToCents_areConsistent() {
-    long cents = 9999L;
-
-    Money money = Money.ofCents(cents);
-
-    assertThat(money.toCents()).isEqualTo(cents);
+    assertThat(a).isEqualTo(b);
   }
 }

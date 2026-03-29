@@ -12,7 +12,13 @@ Un foyer peut suivre ses finances au quotidien (soldes, transactions, budgets en
 
 ### Validated
 
-(None yet -- ship to validate)
+- [x] Infrastructure dev : Maven + quality gates + JaCoCo coverage enforcement — Validated in Phase 1: Project Foundation
+- [x] Frontend scaffolding : Angular 21 + PrimeNG + Tailwind + ESLint + Prettier — Validated in Phase 1: Project Foundation
+- [x] Domain model : Money (BigDecimal), entities JPA, enums, BankConnector abstrait — Validated in Phase 1: Project Foundation
+- [x] Flyway migrations : schema initial PostgreSQL — Validated in Phase 1: Project Foundation
+- [x] Docker Compose + Caddy : stack conteneurisee — Validated in Phase 1: Project Foundation
+- [x] CI pipeline : GitHub Actions avec quality gates — Validated in Phase 1: Project Foundation
+- [x] Pre-commit hooks : lefthook lint/format — Validated in Phase 1: Project Foundation
 
 ### Active
 
@@ -102,4 +108,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-28 after initialization*
+*Last updated: 2026-03-29 after Phase 1 completion*

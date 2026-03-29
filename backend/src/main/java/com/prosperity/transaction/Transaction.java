@@ -2,6 +2,7 @@ package com.prosperity.transaction;
 
 import com.prosperity.account.Account;
 import com.prosperity.auth.User;
+import com.prosperity.category.Category;
 import com.prosperity.shared.Money;
 import com.prosperity.shared.MoneyConverter;
 import com.prosperity.shared.TransactionSource;
@@ -11,6 +12,7 @@ import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -30,7 +32,7 @@ public class Transaction {
   @GeneratedValue(strategy = GenerationType.UUID)
   private UUID id;
 
-  @ManyToOne(optional = false)
+  @ManyToOne(optional = false, fetch = FetchType.LAZY)
   @JoinColumn(name = "bank_account_id", nullable = false)
   private Account bankAccount;
 
@@ -41,8 +43,9 @@ public class Transaction {
   @Column(length = 500)
   private String description;
 
-  @Column(length = 100)
-  private String category;
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "category_id")
+  private Category category;
 
   @Column(name = "transaction_date", nullable = false)
   private LocalDate transactionDate;
@@ -61,7 +64,7 @@ public class Transaction {
   @Column(nullable = false)
   private boolean pointed = false;
 
-  @ManyToOne
+  @ManyToOne(fetch = FetchType.LAZY)
   @JoinColumn(name = "created_by")
   private User createdBy;
 
@@ -111,11 +114,11 @@ public class Transaction {
     this.description = description;
   }
 
-  public String getCategory() {
+  public Category getCategory() {
     return category;
   }
 
-  public void setCategory(String category) {
+  public void setCategory(Category category) {
     this.category = category;
   }
 

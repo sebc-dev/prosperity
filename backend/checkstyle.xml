@@ -39,6 +39,11 @@
     <module name="MethodName">
       <property name="format" value="^[a-z][a-zA-Z0-9]*$"/>
     </module>
+    <!-- Allow underscores in test method names (testing-principles.md convention) -->
+    <module name="SuppressionXpathSingleFilter">
+      <property name="checks" value="MethodName"/>
+      <property name="files" value=".*Test\.java$"/>
+    </module>
 
     <!-- Design -->
     <module name="FinalClass"/>
@@ -57,7 +62,8 @@
     <module name="SimplifyBooleanReturn"/>
     <module name="OneStatementPerLine"/>
 
-    <!-- Suppress MissingSwitchDefault for records in sealed hierarchies -->
+    <module name="MissingSwitchDefault"/>
+    <!-- Suppress MissingSwitchDefault for exhaustive switch on sealed/enum types -->
     <module name="SuppressionXpathSingleFilter">
       <property name="checks" value="MissingSwitchDefault"/>
       <property name="query" value="//LITERAL_SWITCH"/>

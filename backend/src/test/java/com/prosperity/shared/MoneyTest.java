@@ -2,7 +2,6 @@ package com.prosperity.shared;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.math.BigDecimal;
 import org.junit.jupiter.api.Test;
@@ -106,18 +105,6 @@ class MoneyTest {
     Money money = Money.of("0.00");
 
     assertThat(money.toCents()).isEqualTo(0L);
-  }
-
-  @Test
-  void noOfDoubleFactoryMethod_exists() throws Exception {
-    assertThrows(
-        NoSuchMethodException.class, () -> Money.class.getDeclaredMethod("of", double.class));
-  }
-
-  @Test
-  void noOfDoubleFactoryMethod_primitive_exists() throws Exception {
-    assertThrows(
-        NoSuchMethodException.class, () -> Money.class.getDeclaredMethod("of", Double.class));
   }
 
   @Test

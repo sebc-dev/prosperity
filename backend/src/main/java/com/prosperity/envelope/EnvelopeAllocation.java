@@ -5,6 +5,7 @@ import com.prosperity.shared.MoneyConverter;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -12,6 +13,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.UUID;
 
@@ -24,12 +26,12 @@ public class EnvelopeAllocation {
   @GeneratedValue(strategy = GenerationType.UUID)
   private UUID id;
 
-  @ManyToOne(optional = false)
+  @ManyToOne(optional = false, fetch = FetchType.LAZY)
   @JoinColumn(name = "envelope_id", nullable = false)
   private Envelope envelope;
 
-  @Column(name = "month", nullable = false, length = 7)
-  private String monthValue;
+  @Column(name = "month", nullable = false)
+  private LocalDate monthValue;
 
   @Convert(converter = MoneyConverter.class)
   @Column(name = "allocated_amount_cents")
@@ -42,7 +44,7 @@ public class EnvelopeAllocation {
 
   public EnvelopeAllocation(Envelope envelope, YearMonth month, Money allocatedAmount) {
     this.envelope = envelope;
-    this.monthValue = month.toString();
+    this.monthValue = month.atDay(1);
     this.allocatedAmount = allocatedAmount;
     this.createdAt = Instant.now();
   }
@@ -64,11 +66,11 @@ public class EnvelopeAllocation {
   }
 
   public YearMonth getMonth() {
-    return YearMonth.parse(monthValue);
+    return YearMonth.from(monthValue);
   }
 
   public void setMonth(YearMonth month) {
-    this.monthValue = month.toString();
+    this.monthValue = month.atDay(1);
   }
 
   public Money getAllocatedAmount() {

@@ -2,6 +2,8 @@ package com.prosperity.auth;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -27,8 +29,9 @@ public class User {
   @Column(name = "display_name", nullable = false, length = 100)
   private String displayName;
 
+  @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 50)
-  private String role = "USER";
+  private Role role = Role.USER;
 
   @Column(name = "created_at", nullable = false, columnDefinition = "TIMESTAMPTZ")
   private Instant createdAt;
@@ -78,11 +81,11 @@ public class User {
     this.displayName = displayName;
   }
 
-  public String getRole() {
+  public Role getRole() {
     return role;
   }
 
-  public void setRole(String role) {
+  public void setRole(Role role) {
     this.role = role;
   }
 

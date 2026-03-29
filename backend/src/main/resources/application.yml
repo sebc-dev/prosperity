@@ -18,4 +18,4 @@ management:
         include: health
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized

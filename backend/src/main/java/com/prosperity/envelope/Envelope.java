@@ -11,6 +11,7 @@ import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -29,7 +30,7 @@ public class Envelope {
   @GeneratedValue(strategy = GenerationType.UUID)
   private UUID id;
 
-  @ManyToOne(optional = false)
+  @ManyToOne(optional = false, fetch = FetchType.LAZY)
   @JoinColumn(name = "bank_account_id", nullable = false)
   private Account bankAccount;
 
@@ -40,13 +41,13 @@ public class Envelope {
   @Column(name = "scope", length = 20)
   private EnvelopeScope scope;
 
-  @ManyToOne
+  @ManyToOne(fetch = FetchType.LAZY)
   @JoinColumn(name = "owner_id")
   private User owner;
 
   @Convert(converter = MoneyConverter.class)
-  @Column(name = "budget_cents")
-  private Money budget;
+  @Column(name = "budget_cents", nullable = false)
+  private Money budget = Money.ofCents(0);
 
   @Enumerated(EnumType.STRING)
   @Column(name = "rollover_policy", length = 20, nullable = false)

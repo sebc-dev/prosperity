@@ -12,7 +12,8 @@ CREATE TABLE envelopes (
 CREATE TABLE envelope_allocations (
     id UUID PRIMARY KEY,
     envelope_id UUID NOT NULL REFERENCES envelopes(id),
-    month VARCHAR(7) NOT NULL,
+    month DATE NOT NULL,
     allocated_amount_cents BIGINT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(envelope_id, month)
 );

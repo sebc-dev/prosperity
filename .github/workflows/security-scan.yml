@@ -1,0 +1,33 @@
+name: Security Scan (OWASP)
+
+on:
+  schedule:
+    - cron: '0 6 * * 1' # Every Monday at 06:00 UTC
+  workflow_dispatch: # Manual trigger
+
+jobs:
+  owasp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+      - name: Cache OWASP NVD data
+        uses: actions/cache@v4
+        with:
+          path: ~/.dependency-check/
+          key: owasp-nvd-${{ hashFiles('backend/pom.xml') }}
+          restore-keys: owasp-nvd-
+      - name: OWASP Dependency Check
+        run: cd backend && ./mvnw dependency-check:check -Ddependency-check.skip=false -B
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+      - name: Upload OWASP report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: owasp-report
+          path: backend/target/dependency-check-report.html

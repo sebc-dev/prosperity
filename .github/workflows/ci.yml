@@ -30,13 +30,7 @@ jobs:
           distribution: temurin
           java-version: 21
           cache: maven
-      - name: Cache OWASP NVD data
-        uses: actions/cache@v4
-        with:
-          path: ~/.dependency-check/
-          key: owasp-nvd-${{ hashFiles('backend/pom.xml') }}
-          restore-keys: owasp-nvd-
-      - name: Build and verify (compile + test + checkstyle + spotless + jacoco + owasp)
+      - name: Build and verify (compile + test + checkstyle + spotless + jacoco)
         run: cd backend && ./mvnw verify -B
         env:
           SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/prosperity

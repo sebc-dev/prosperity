@@ -8,10 +8,10 @@ export const authGuard: CanActivateFn = () => {
   const router = inject(Router);
 
   return authService.checkSession().pipe(
-    map(user => {
+    map((user) => {
       if (user) return true;
       return router.createUrlTree(['/login']);
-    })
+    }),
   );
 };
 
@@ -20,10 +20,10 @@ export const unauthenticatedGuard: CanActivateFn = () => {
   const router = inject(Router);
 
   return authService.checkSession().pipe(
-    map(user => {
+    map((user) => {
       if (!user) return true;
       return router.createUrlTree(['/dashboard']);
-    })
+    }),
   );
 };
 
@@ -32,10 +32,10 @@ export const setupGuard: CanActivateFn = () => {
   const router = inject(Router);
 
   return authService.checkStatus().pipe(
-    map(status => {
+    map((status) => {
       if (!status.setupComplete) return true;
       return router.createUrlTree(['/login']);
     }),
-    catchError(() => of(router.createUrlTree(['/login'])))
+    catchError(() => of(router.createUrlTree(['/login']))),
   );
 };

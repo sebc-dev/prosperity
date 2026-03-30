@@ -41,7 +41,7 @@ export class AuthService {
   private mapError(err: HttpErrorResponse): Observable<never> {
     const authError: AuthError = {
       status: err.status,
-      message: typeof err.error === 'string' ? err.error : err.error?.error ?? err.statusText,
+      message: typeof err.error === 'string' ? err.error : (err.error?.error ?? err.statusText),
       original: err,
     };
     return throwError(() => authError);
@@ -49,11 +49,11 @@ export class AuthService {
 
   checkSession(): Observable<UserResponse | null> {
     return this.http.get<UserResponse>('/api/auth/me').pipe(
-      tap(user => this.currentUser.set(user)),
+      tap((user) => this.currentUser.set(user)),
       catchError(() => {
         this.currentUser.set(null);
         return of(null);
-      })
+      }),
     );
   }
 
@@ -63,24 +63,24 @@ export class AuthService {
 
   login(request: LoginRequest): Observable<UserResponse> {
     return this.http.post<UserResponse>('/api/auth/login', request).pipe(
-      tap(user => this.currentUser.set(user)),
-      catchError(err => this.mapError(err))
+      tap((user) => this.currentUser.set(user)),
+      catchError((err) => this.mapError(err)),
     );
   }
 
   setup(request: SetupRequest): Observable<UserResponse> {
-    return this.http.post<UserResponse>('/api/auth/setup', request).pipe(
-      catchError(err => this.mapError(err))
-    );
+    return this.http
+      .post<UserResponse>('/api/auth/setup', request)
+      .pipe(catchError((err) => this.mapError(err)));
   }
 
   logout(): Observable<void> {
     return this.http.post<void>('/api/auth/logout', {}).pipe(
       tap(() => this.currentUser.set(null)),
-      catchError(err => {
+      catchError((err) => {
         this.currentUser.set(null);
         return throwError(() => err);
-      })
+      }),
     );
   }
 

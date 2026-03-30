@@ -72,7 +72,9 @@ describe('AuthService', () => {
   it('setup_does_not_set_current_user', () => {
     const mockUser: UserResponse = { displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' };
 
-    service.setup({ email: 'admin@test.com', password: 'SecurePass123!', displayName: 'Admin' }).subscribe();
+    service
+      .setup({ email: 'admin@test.com', password: 'SecurePass123!', displayName: 'Admin' })
+      .subscribe();
 
     const req = httpTesting.expectOne('/api/auth/setup');
     req.flush(mockUser);
@@ -83,7 +85,7 @@ describe('AuthService', () => {
   it('check_status_returns_setup_complete', () => {
     let result: boolean | undefined;
 
-    service.checkStatus().subscribe(status => result = status.setupComplete);
+    service.checkStatus().subscribe((status) => (result = status.setupComplete));
 
     const req = httpTesting.expectOne('/api/auth/status');
     req.flush({ setupComplete: true });
@@ -96,8 +98,12 @@ describe('AuthService', () => {
     let error: AuthError | undefined;
 
     // Act
-    service.login({ email: 'bad@test.com', password: 'wrong' }).subscribe({ error: e => error = e });
-    httpTesting.expectOne('/api/auth/login').flush({ error: 'Identifiants invalides' }, { status: 401, statusText: 'Unauthorized' });
+    service
+      .login({ email: 'bad@test.com', password: 'wrong' })
+      .subscribe({ error: (e) => (error = e) });
+    httpTesting
+      .expectOne('/api/auth/login')
+      .flush({ error: 'Identifiants invalides' }, { status: 401, statusText: 'Unauthorized' });
 
     // Assert
     expect(error).toBeDefined();
@@ -111,8 +117,12 @@ describe('AuthService', () => {
     let error: AuthError | undefined;
 
     // Act
-    service.setup({ email: 'admin@test.com', password: 'SecurePass123!', displayName: 'Admin' }).subscribe({ error: e => error = e });
-    httpTesting.expectOne('/api/auth/setup').flush({ error: 'Admin already exists' }, { status: 409, statusText: 'Conflict' });
+    service
+      .setup({ email: 'admin@test.com', password: 'SecurePass123!', displayName: 'Admin' })
+      .subscribe({ error: (e) => (error = e) });
+    httpTesting
+      .expectOne('/api/auth/setup')
+      .flush({ error: 'Admin already exists' }, { status: 409, statusText: 'Conflict' });
 
     // Assert
     expect(error).toBeDefined();

@@ -41,10 +41,14 @@ describe('Auth Guards', () => {
 
   describe('authGuard', () => {
     it('allows_access_when_authenticated', () => {
-      const mockUser: UserResponse = { displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' };
+      const mockUser: UserResponse = {
+        displayName: 'Admin',
+        email: 'admin@test.com',
+        role: 'ADMIN',
+      };
       let result: boolean | UrlTree | undefined;
 
-      runGuard(authGuard).subscribe(r => result = r);
+      runGuard(authGuard).subscribe((r) => (result = r));
 
       httpTesting.expectOne('/api/auth/me').flush(mockUser);
       expect(result).toBe(true);
@@ -53,9 +57,11 @@ describe('Auth Guards', () => {
     it('redirects_to_login_when_not_authenticated', () => {
       let result: boolean | UrlTree | undefined;
 
-      runGuard(authGuard).subscribe(r => result = r);
+      runGuard(authGuard).subscribe((r) => (result = r));
 
-      httpTesting.expectOne('/api/auth/me').flush(null, { status: 401, statusText: 'Unauthorized' });
+      httpTesting
+        .expectOne('/api/auth/me')
+        .flush(null, { status: 401, statusText: 'Unauthorized' });
       expect((result as UrlTree).toString()).toBe('/login');
     });
   });
@@ -64,17 +70,23 @@ describe('Auth Guards', () => {
     it('allows_access_when_not_authenticated', () => {
       let result: boolean | UrlTree | undefined;
 
-      runGuard(unauthenticatedGuard).subscribe(r => result = r);
+      runGuard(unauthenticatedGuard).subscribe((r) => (result = r));
 
-      httpTesting.expectOne('/api/auth/me').flush(null, { status: 401, statusText: 'Unauthorized' });
+      httpTesting
+        .expectOne('/api/auth/me')
+        .flush(null, { status: 401, statusText: 'Unauthorized' });
       expect(result).toBe(true);
     });
 
     it('redirects_to_dashboard_when_authenticated', () => {
-      const mockUser: UserResponse = { displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' };
+      const mockUser: UserResponse = {
+        displayName: 'Admin',
+        email: 'admin@test.com',
+        role: 'ADMIN',
+      };
       let result: boolean | UrlTree | undefined;
 
-      runGuard(unauthenticatedGuard).subscribe(r => result = r);
+      runGuard(unauthenticatedGuard).subscribe((r) => (result = r));
 
       httpTesting.expectOne('/api/auth/me').flush(mockUser);
       expect((result as UrlTree).toString()).toBe('/dashboard');
@@ -85,7 +97,7 @@ describe('Auth Guards', () => {
     it('allows_access_when_setup_not_complete', () => {
       let result: boolean | UrlTree | undefined;
 
-      runGuard(setupGuard).subscribe(r => result = r);
+      runGuard(setupGuard).subscribe((r) => (result = r));
 
       httpTesting.expectOne('/api/auth/status').flush({ setupComplete: false });
       expect(result).toBe(true);
@@ -94,7 +106,7 @@ describe('Auth Guards', () => {
     it('redirects_to_login_when_setup_complete', () => {
       let result: boolean | UrlTree | undefined;
 
-      runGuard(setupGuard).subscribe(r => result = r);
+      runGuard(setupGuard).subscribe((r) => (result = r));
 
       httpTesting.expectOne('/api/auth/status').flush({ setupComplete: true });
       expect((result as UrlTree).toString()).toBe('/login');
@@ -103,9 +115,11 @@ describe('Auth Guards', () => {
     it('redirects_to_login_when_status_endpoint_errors', () => {
       let result: boolean | UrlTree | undefined;
 
-      runGuard(setupGuard).subscribe(r => result = r);
+      runGuard(setupGuard).subscribe((r) => (result = r));
 
-      httpTesting.expectOne('/api/auth/status').flush(null, { status: 500, statusText: 'Internal Server Error' });
+      httpTesting
+        .expectOne('/api/auth/status')
+        .flush(null, { status: 500, statusText: 'Internal Server Error' });
       expect((result as UrlTree).toString()).toBe('/login');
     });
   });

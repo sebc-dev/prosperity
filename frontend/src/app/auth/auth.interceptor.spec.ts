@@ -13,9 +13,7 @@ describe('authInterceptor', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
-        provideRouter([
-          { path: 'login', redirectTo: '' },
-        ]),
+        provideRouter([{ path: 'login', redirectTo: '' }]),
         provideHttpClient(withInterceptors([authInterceptor])),
         provideHttpClientTesting(),
       ],
@@ -69,7 +67,9 @@ describe('authInterceptor', () => {
 
     // Act
     httpClient.get('/api/auth/status').subscribe({ error: noop });
-    httpTesting.expectOne('/api/auth/status').flush(null, { status: 401, statusText: 'Unauthorized' });
+    httpTesting
+      .expectOne('/api/auth/status')
+      .flush(null, { status: 401, statusText: 'Unauthorized' });
 
     // Assert
     expect(authService.isAuthenticated()).toBe(true);
@@ -81,7 +81,9 @@ describe('authInterceptor', () => {
 
     // Act
     httpClient.get('/api/data').subscribe({ error: noop });
-    httpTesting.expectOne('/api/data').flush(null, { status: 500, statusText: 'Internal Server Error' });
+    httpTesting
+      .expectOne('/api/data')
+      .flush(null, { status: 500, statusText: 'Internal Server Error' });
 
     // Assert
     expect(authService.isAuthenticated()).toBe(true);
@@ -93,7 +95,9 @@ describe('authInterceptor', () => {
 
     // Act
     httpClient.get('https://external.com/api').subscribe({ error: noop });
-    httpTesting.expectOne('https://external.com/api').flush(null, { status: 401, statusText: 'Unauthorized' });
+    httpTesting
+      .expectOne('https://external.com/api')
+      .flush(null, { status: 401, statusText: 'Unauthorized' });
 
     // Assert
     expect(authService.isAuthenticated()).toBe(true);

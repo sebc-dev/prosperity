@@ -5,7 +5,7 @@ import { AuthService } from './auth.service';
 import { catchError, throwError } from 'rxjs';
 
 const AUTH_CHECK_URLS = ['/api/auth/me', '/api/auth/status'];
-const isAuthCheckUrl = (url: string): boolean => AUTH_CHECK_URLS.some(u => url.includes(u));
+const isAuthCheckUrl = (url: string): boolean => AUTH_CHECK_URLS.some((u) => url.includes(u));
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const router = inject(Router);
@@ -18,6 +18,6 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         router.navigate(['/login']);
       }
       return throwError(() => error);
-    })
+    }),
   );
 };

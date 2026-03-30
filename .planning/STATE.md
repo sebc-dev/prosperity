@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-14-PLAN.md
-last_updated: "2026-03-29T12:21:10.194Z"
-last_activity: 2026-03-29
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-03-30T04:50:02.795Z"
+last_activity: 2026-03-30 -- Completed 02-01
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 14
-  completed_plans: 14
+  completed_plans: 15
   percent: 0
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Un foyer peut suivre ses finances au quotidien (soldes, transactions, budgets enveloppes) sans effort manuel excessif, grace a la synchronisation bancaire automatique et une interface claire.
-**Current focus:** Phase 01 — project-foundation
+**Current focus:** Phase 02 — authentication-setup-wizard
 
 ## Current Position
 
-Phase: 2
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-03-29
+Phase: 02 (authentication-setup-wizard) — EXECUTING
+Plan: 2 of 7
+Status: Executing Phase 02
+Last activity: 2026-03-30 -- Completed 02-01
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -59,6 +59,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P05 | 1min | 1 tasks | 2 files |
 | Phase 01 P11 | 1min | 1 tasks | 1 files |
 | Phase 01 P14 | 1min | 1 tasks | 1 files |
+| Phase 02 P01 | 1min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,7 @@ Recent decisions affecting current work:
 - [Phase 01]: TransactionState column added to Transaction entity for reconciliation workflow (not in database.md schema but required by plan)
 - [Phase 01]: Reflection annotation test pattern: validate Spring annotations without loading context
 - [Phase 01]: INFR-08 requirement overrides D-08: JaCoCo coverage thresholds now enforced (70% instruction, 50% branch)
+- [Phase 02]: initialize-schema: never to let Flyway own session table lifecycle
 
 ### Pending Todos
 
@@ -91,6 +93,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-29T12:16:40.342Z
-Stopped at: Completed 01-14-PLAN.md
+Last session: 2026-03-30T04:50:02.792Z
+Stopped at: Completed 02-01-PLAN.md
 Resume file: None

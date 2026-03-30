@@ -66,12 +66,17 @@ Plans:
   3. User can log out from any page and is redirected to the login screen
   4. User session persists after browser refresh without re-login
   5. CSRF token is active on all mutating endpoints (POST/PUT/DELETE return 403 without valid token)
-**Plans**: TBD
+**Plans**: 7 plans
 **UI hint**: yes
 
 Plans:
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
+- [ ] 02-01-PLAN.md — Backend deps + Flyway session tables + application.yml session config
+- [ ] 02-02-PLAN.md — DTOs + CustomUserDetailsService + SecurityConfig (filter chain, beans)
+- [ ] 02-03-PLAN.md — AuthService + AuthController (setup, login, logout, me, status endpoints)
+- [ ] 02-04-PLAN.md — Backend integration tests (AuthController, AuthService, SecurityConfig, UserDetailsService)
+- [ ] 02-05-PLAN.md — Frontend auth infra: AuthService, guards, interceptor, proxy, app.config wiring
+- [ ] 02-06-PLAN.md — Setup wizard + Login page components (PrimeNG forms, UI-SPEC)
+- [ ] 02-07-PLAN.md — Layout shell (header, sidebar, dashboard) + routing with guards
 
 ### Phase 3: Accounts & Access Control
 **Goal**: Users can create and manage bank accounts (personal and shared) with per-user access permissions enforced at every level
@@ -211,7 +216,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Project Foundation | 0/14 | Planning | - |
-| 2. Authentication & Setup Wizard | 0/2 | Not started | - |
+| 2. Authentication & Setup Wizard | 0/7 | Planning | - |
 | 3. Accounts & Access Control | 0/2 | Not started | - |
 | 4. Categories | 0/1 | Not started | - |
 | 5. Transactions | 0/2 | Not started | - |

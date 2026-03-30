@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
-import { AuthService, UserResponse } from './auth.service';
+import { AuthService, AuthError, UserResponse } from './auth.service';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -89,5 +89,34 @@ describe('AuthService', () => {
     req.flush({ setupComplete: true });
 
     expect(result).toBe(true);
+  });
+
+  it('login_returns_typed_auth_error_on_failure', () => {
+    // Arrange
+    let error: AuthError | undefined;
+
+    // Act
+    service.login({ email: 'bad@test.com', password: 'wrong' }).subscribe({ error: e => error = e });
+    httpTesting.expectOne('/api/auth/login').flush({ error: 'Identifiants invalides' }, { status: 401, statusText: 'Unauthorized' });
+
+    // Assert
+    expect(error).toBeDefined();
+    expect(error!.status).toBe(401);
+    expect(error!.message).toBe('Identifiants invalides');
+    expect(service.isAuthenticated()).toBe(false);
+  });
+
+  it('setup_returns_typed_auth_error_on_conflict', () => {
+    // Arrange
+    let error: AuthError | undefined;
+
+    // Act
+    service.setup({ email: 'admin@test.com', password: 'SecurePass123!', displayName: 'Admin' }).subscribe({ error: e => error = e });
+    httpTesting.expectOne('/api/auth/setup').flush({ error: 'Admin already exists' }, { status: 409, statusText: 'Conflict' });
+
+    // Assert
+    expect(error).toBeDefined();
+    expect(error!.status).toBe(409);
+    expect(error!.message).toBe('Admin already exists');
   });
 });

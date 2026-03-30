@@ -1,7 +1,7 @@
 import { CanActivateFn, Router } from '@angular/router';
 import { inject } from '@angular/core';
 import { AuthService } from './auth.service';
-import { map } from 'rxjs';
+import { catchError, map, of } from 'rxjs';
 
 export const authGuard: CanActivateFn = () => {
   const authService = inject(AuthService);
@@ -27,7 +27,7 @@ export const unauthenticatedGuard: CanActivateFn = () => {
   );
 };
 
-export const noAdminGuard: CanActivateFn = () => {
+export const setupGuard: CanActivateFn = () => {
   const authService = inject(AuthService);
   const router = inject(Router);
 
@@ -35,6 +35,7 @@ export const noAdminGuard: CanActivateFn = () => {
     map(status => {
       if (!status.setupComplete) return true;
       return router.createUrlTree(['/login']);
-    })
+    }),
+    catchError(() => of(router.createUrlTree(['/login'])))
   );
 };

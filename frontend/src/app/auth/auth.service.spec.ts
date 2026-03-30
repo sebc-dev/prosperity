@@ -1,0 +1,93 @@
+import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
+import { AuthService, UserResponse } from './auth.service';
+
+describe('AuthService', () => {
+  let service: AuthService;
+  let httpTesting: HttpTestingController;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [provideHttpClient(), provideHttpClientTesting()],
+    });
+    service = TestBed.inject(AuthService);
+    httpTesting = TestBed.inject(HttpTestingController);
+  });
+
+  afterEach(() => {
+    httpTesting.verify();
+  });
+
+  it('login_sets_current_user_on_success', () => {
+    const mockUser: UserResponse = { displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' };
+
+    service.login({ email: 'admin@test.com', password: 'SecurePass123!' }).subscribe();
+
+    const req = httpTesting.expectOne('/api/auth/login');
+    expect(req.request.method).toBe('POST');
+    req.flush(mockUser);
+
+    expect(service.isAuthenticated()).toBe(true);
+    expect(service.user()?.email).toBe('admin@test.com');
+  });
+
+  it('logout_clears_current_user', () => {
+    // Arrange: set user via login first
+    const mockUser: UserResponse = { displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' };
+    service.login({ email: 'admin@test.com', password: 'SecurePass123!' }).subscribe();
+    httpTesting.expectOne('/api/auth/login').flush(mockUser);
+
+    // Act
+    service.logout().subscribe();
+
+    const req = httpTesting.expectOne('/api/auth/logout');
+    req.flush(null);
+
+    // Assert
+    expect(service.isAuthenticated()).toBe(false);
+    expect(service.user()).toBeNull();
+  });
+
+  it('check_session_sets_user_when_authenticated', () => {
+    const mockUser: UserResponse = { displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' };
+
+    service.checkSession().subscribe();
+
+    const req = httpTesting.expectOne('/api/auth/me');
+    req.flush(mockUser);
+
+    expect(service.isAuthenticated()).toBe(true);
+  });
+
+  it('check_session_clears_user_on_401', () => {
+    service.checkSession().subscribe();
+
+    const req = httpTesting.expectOne('/api/auth/me');
+    req.flush(null, { status: 401, statusText: 'Unauthorized' });
+
+    expect(service.isAuthenticated()).toBe(false);
+  });
+
+  it('setup_does_not_set_current_user', () => {
+    const mockUser: UserResponse = { displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' };
+
+    service.setup({ email: 'admin@test.com', password: 'SecurePass123!', displayName: 'Admin' }).subscribe();
+
+    const req = httpTesting.expectOne('/api/auth/setup');
+    req.flush(mockUser);
+
+    expect(service.isAuthenticated()).toBe(false);
+  });
+
+  it('check_status_returns_setup_complete', () => {
+    let result: boolean | undefined;
+
+    service.checkStatus().subscribe(status => result = status.setupComplete);
+
+    const req = httpTesting.expectOne('/api/auth/status');
+    req.flush({ setupComplete: true });
+
+    expect(result).toBe(true);
+  });
+});

@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-05-PLAN.md
-last_updated: "2026-03-30T05:47:36.981Z"
-last_activity: 2026-03-30
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-03-31T13:50:40.732Z"
+last_activity: 2026-03-31
 progress:
   total_phases: 10
   completed_phases: 1
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 02 (authentication-setup-wizard) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 Status: Executing Phase 02
-Last activity: 2026-03-30 -- Completed 02-05
+Last activity: 2026-03-31 -- Completed 02-02
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -61,6 +61,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 01 P14 | 1min | 1 tasks | 1 files |
 | Phase 02 P01 | 1min | 2 tasks | 3 files |
 | Phase 02 P05 | 2min | 3 tasks | 8 files |
+| Phase 02 P02 | 1min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,8 @@ Recent decisions affecting current work:
 - [Phase 02]: initialize-schema: never to let Flyway own session table lifecycle
 - [Phase 02]: Angular signals (not BehaviorSubject) for reactive auth state -- Angular 21 modern pattern
 - [Phase 02]: setup() does NOT set currentUser (per D-03: no auto-login after setup)
+- [Phase 02]: CSRF SPA mode with ignoringRequestMatchers for login/setup POST endpoints
+- [Phase 02]: DelegatingPasswordEncoder for future algorithm migration (bcrypt default)
 
 ### Pending Todos
 
@@ -96,6 +99,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-30T05:47:36.978Z
-Stopped at: Completed 02-05-PLAN.md
+Last session: 2026-03-31T13:50:40.729Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None

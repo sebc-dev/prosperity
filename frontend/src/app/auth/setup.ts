@@ -1,6 +1,7 @@
-import { Component, inject, OnInit, signal, computed } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, OnInit, signal, computed } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
-import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { AuthService, SetupRequest, AuthError } from './auth.service';
 import { FloatLabel } from 'primeng/floatlabel';
 import { InputText } from 'primeng/inputtext';
@@ -10,7 +11,7 @@ import { Message } from 'primeng/message';
 
 @Component({
   selector: 'app-setup',
-  standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ReactiveFormsModule, FloatLabel, InputText, Password, Button, Message],
   template: `
     <div class="min-h-screen flex items-center justify-center bg-surface-50">
@@ -88,12 +89,18 @@ export class Setup implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
 
   readonly loading = signal(false);
   readonly successMessage = signal<string | null>(null);
   readonly errorMessage = signal<string | null>(null);
+  private redirectTimer?: ReturnType<typeof setTimeout>;
 
-  form!: FormGroup;
+  readonly form = this.fb.nonNullable.group({
+    email: ['', [Validators.required, Validators.email]],
+    password: ['', [Validators.required]],
+    displayName: ['', [Validators.required, Validators.minLength(2)]],
+  });
 
   private readonly password = signal('');
 
@@ -110,13 +117,13 @@ export class Setup implements OnInit {
   readonly allPasswordRulesMet = computed(() => this.passwordRules().every((r) => r.met));
 
   ngOnInit(): void {
-    this.form = this.fb.group({
-      email: ['', [Validators.required, Validators.email]],
-      password: ['', [Validators.required]],
-      displayName: ['', [Validators.required, Validators.minLength(2)]],
+    this.destroyRef.onDestroy(() => {
+      if (this.redirectTimer) clearTimeout(this.redirectTimer);
     });
 
-    this.form.get('password')?.valueChanges.subscribe((value: string) => {
+    this.form.get('password')?.valueChanges.pipe(
+      takeUntilDestroyed(this.destroyRef),
+    ).subscribe((value: string | null) => {
       this.password.set(value ?? '');
     });
   }
@@ -134,7 +141,7 @@ export class Setup implements OnInit {
       next: () => {
         this.loading.set(false);
         this.successMessage.set('Compte cree avec succes. Vous pouvez maintenant vous connecter.');
-        setTimeout(() => this.router.navigate(['/login']), 2000);
+        this.redirectTimer = setTimeout(() => this.router.navigate(['/login']), 2000);
       },
       error: (err: AuthError) => {
         this.loading.set(false);

@@ -1,6 +1,6 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { AuthService, LoginRequest, AuthError } from './auth.service';
 import { FloatLabel } from 'primeng/floatlabel';
 import { InputText } from 'primeng/inputtext';
@@ -10,7 +10,7 @@ import { Message } from 'primeng/message';
 
 @Component({
   selector: 'app-login',
-  standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [ReactiveFormsModule, FloatLabel, InputText, Password, Button, Message],
   template: `
     <div class="min-h-screen flex items-center justify-center bg-surface-50">
@@ -58,7 +58,7 @@ import { Message } from 'primeng/message';
     </div>
   `,
 })
-export class Login implements OnInit {
+export class Login {
   private readonly fb = inject(FormBuilder);
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
@@ -66,14 +66,10 @@ export class Login implements OnInit {
   readonly loading = signal(false);
   readonly errorMessage = signal<string | null>(null);
 
-  form!: FormGroup;
-
-  ngOnInit(): void {
-    this.form = this.fb.group({
-      email: ['', [Validators.required, Validators.email]],
-      password: ['', [Validators.required]],
-    });
-  }
+  readonly form = this.fb.nonNullable.group({
+    email: ['', [Validators.required, Validators.email]],
+    password: ['', [Validators.required]],
+  });
 
   onSubmit(): void {
     if (this.form.invalid) return;

@@ -1,4 +1,15 @@
-import { afterNextRender, ChangeDetectionStrategy, Component, DestroyRef, ElementRef, inject, OnInit, signal, computed, viewChild } from '@angular/core';
+import {
+  afterNextRender,
+  ChangeDetectionStrategy,
+  Component,
+  DestroyRef,
+  ElementRef,
+  inject,
+  OnInit,
+  signal,
+  computed,
+  viewChild,
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
@@ -27,17 +38,30 @@ import { Message } from 'primeng/message';
             <label for="email">Adresse email</label>
           </p-floatlabel>
           @if (form.get('email')?.touched && form.get('email')?.hasError('required')) {
-            <small class="text-sm font-normal" style="color: var(--p-red-500)">L'adresse email est requise</small>
+            <small class="text-sm font-normal" style="color: var(--p-red-500)"
+              >L'adresse email est requise</small
+            >
           } @else if (form.get('email')?.touched && form.get('email')?.hasError('email')) {
-            <small class="text-sm font-normal" style="color: var(--p-red-500)">Format d'email invalide</small>
+            <small class="text-sm font-normal" style="color: var(--p-red-500)"
+              >Format d'email invalide</small
+            >
           }
 
           <p-floatlabel variant="on">
-            <p-password id="password" formControlName="password" [toggleMask]="true" [feedback]="true" styleClass="w-full" inputStyleClass="w-full" />
+            <p-password
+              id="password"
+              formControlName="password"
+              [toggleMask]="true"
+              [feedback]="true"
+              styleClass="w-full"
+              inputStyleClass="w-full"
+            />
             <label for="password">Mot de passe</label>
           </p-floatlabel>
           @if (form.get('password')?.touched && form.get('password')?.hasError('required')) {
-            <small class="text-sm font-normal" style="color: var(--p-red-500)">Le mot de passe est requis</small>
+            <small class="text-sm font-normal" style="color: var(--p-red-500)"
+              >Le mot de passe est requis</small
+            >
           }
 
           <div class="flex flex-col gap-1">
@@ -48,7 +72,10 @@ import { Message } from 'primeng/message';
                 } @else {
                   <i class="pi pi-times" style="color: var(--p-text-muted-color)"></i>
                 }
-                <span [style.color]="rule.met ? 'var(--p-green-500)' : 'var(--p-text-muted-color)'">{{ rule.label }}</span>
+                <span
+                  [style.color]="rule.met ? 'var(--p-green-500)' : 'var(--p-text-muted-color)'"
+                  >{{ rule.label }}</span
+                >
               </div>
             }
           </div>
@@ -58,9 +85,15 @@ import { Message } from 'primeng/message';
             <label for="displayName">Nom d'affichage</label>
           </p-floatlabel>
           @if (form.get('displayName')?.touched && form.get('displayName')?.hasError('required')) {
-            <small class="text-sm font-normal" style="color: var(--p-red-500)">Le nom d'affichage est requis</small>
-          } @else if (form.get('displayName')?.touched && form.get('displayName')?.hasError('minlength')) {
-            <small class="text-sm font-normal" style="color: var(--p-red-500)">2 caracteres minimum</small>
+            <small class="text-sm font-normal" style="color: var(--p-red-500)"
+              >Le nom d'affichage est requis</small
+            >
+          } @else if (
+            form.get('displayName')?.touched && form.get('displayName')?.hasError('minlength')
+          ) {
+            <small class="text-sm font-normal" style="color: var(--p-red-500)"
+              >2 caracteres minimum</small
+            >
           }
 
           <p-button
@@ -126,11 +159,12 @@ export class Setup implements OnInit {
       if (this.redirectTimer) clearTimeout(this.redirectTimer);
     });
 
-    this.form.get('password')?.valueChanges.pipe(
-      takeUntilDestroyed(this.destroyRef),
-    ).subscribe((value: string | null) => {
-      this.password.set(value ?? '');
-    });
+    this.form
+      .get('password')
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((value: string | null) => {
+        this.password.set(value ?? '');
+      });
   }
 
   onSubmit(): void {
@@ -151,7 +185,9 @@ export class Setup implements OnInit {
       error: (err: AuthError) => {
         this.loading.set(false);
         if (err.status === 409) {
-          this.errorMessage.set('Le compte administrateur existe deja. Rendez-vous sur la page de connexion.');
+          this.errorMessage.set(
+            'Le compte administrateur existe deja. Rendez-vous sur la page de connexion.',
+          );
         } else {
           this.errorMessage.set('Impossible de joindre le serveur. Verifiez votre connexion.');
         }

@@ -1,4 +1,12 @@
-import { afterNextRender, ChangeDetectionStrategy, Component, ElementRef, inject, signal, viewChild } from '@angular/core';
+import {
+  afterNextRender,
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  inject,
+  signal,
+  viewChild,
+} from '@angular/core';
 import { Router } from '@angular/router';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { AuthService, LoginRequest, AuthError } from './auth.service';
@@ -26,17 +34,30 @@ import { Message } from 'primeng/message';
             <label for="email">Adresse email</label>
           </p-floatlabel>
           @if (form.get('email')?.touched && form.get('email')?.hasError('required')) {
-            <small class="text-sm font-normal" style="color: var(--p-red-500)">L'adresse email est requise</small>
+            <small class="text-sm font-normal" style="color: var(--p-red-500)"
+              >L'adresse email est requise</small
+            >
           } @else if (form.get('email')?.touched && form.get('email')?.hasError('email')) {
-            <small class="text-sm font-normal" style="color: var(--p-red-500)">Format d'email invalide</small>
+            <small class="text-sm font-normal" style="color: var(--p-red-500)"
+              >Format d'email invalide</small
+            >
           }
 
           <p-floatlabel variant="on">
-            <p-password id="password" formControlName="password" [toggleMask]="true" [feedback]="false" styleClass="w-full" inputStyleClass="w-full" />
+            <p-password
+              id="password"
+              formControlName="password"
+              [toggleMask]="true"
+              [feedback]="false"
+              styleClass="w-full"
+              inputStyleClass="w-full"
+            />
             <label for="password">Mot de passe</label>
           </p-floatlabel>
           @if (form.get('password')?.touched && form.get('password')?.hasError('required')) {
-            <small class="text-sm font-normal" style="color: var(--p-red-500)">Le mot de passe est requis</small>
+            <small class="text-sm font-normal" style="color: var(--p-red-500)"
+              >Le mot de passe est requis</small
+            >
           }
 
           <p-button

@@ -1,33 +1,15 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, tap, catchError, of, throwError } from 'rxjs';
+import {
+  AuthError,
+  LoginRequest,
+  SetupRequest,
+  StatusResponse,
+  UserResponse,
+} from './auth.types';
 
-export interface UserResponse {
-  displayName: string;
-  email: string;
-  role: string;
-}
-
-export interface SetupRequest {
-  email: string;
-  password: string;
-  displayName: string;
-}
-
-export interface LoginRequest {
-  email: string;
-  password: string;
-}
-
-export interface StatusResponse {
-  setupComplete: boolean;
-}
-
-export interface AuthError {
-  status: number;
-  message: string;
-  original: HttpErrorResponse;
-}
+export type { AuthError, LoginRequest, SetupRequest, StatusResponse, UserResponse } from './auth.types';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -79,7 +61,7 @@ export class AuthService {
       tap(() => this.currentUser.set(null)),
       catchError((err) => {
         this.currentUser.set(null);
-        return throwError(() => err);
+        return this.mapError(err);
       }),
     );
   }

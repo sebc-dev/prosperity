@@ -28,14 +28,10 @@ public class SecurityConfig {
   /** Configures the security filter chain with CSRF SPA mode and endpoint authorization. */
   @Bean
   public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-    http.csrf(
-            csrf ->
-                csrf.spa()
-                    .ignoringRequestMatchers("/api/auth/login", "/api/auth/setup"))
+    http.csrf(csrf -> csrf.spa().ignoringRequestMatchers("/api/auth/login", "/api/auth/setup"))
         .authorizeHttpRequests(
             auth ->
-                auth.requestMatchers(
-                        "/api/auth/login", "/api/auth/setup", "/api/auth/status")
+                auth.requestMatchers("/api/auth/login", "/api/auth/setup", "/api/auth/status")
                     .permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/auth/me")
                     .permitAll()
@@ -54,8 +50,7 @@ public class SecurityConfig {
         .exceptionHandling(
             ex ->
                 ex.authenticationEntryPoint(
-                    (req, res, authEx) ->
-                        res.sendError(HttpServletResponse.SC_UNAUTHORIZED)));
+                    (req, res, authEx) -> res.sendError(HttpServletResponse.SC_UNAUTHORIZED)));
     return http.build();
   }
 
@@ -69,8 +64,7 @@ public class SecurityConfig {
   @Bean
   public AuthenticationManager authenticationManager(
       UserDetailsService userDetailsService, PasswordEncoder passwordEncoder) {
-    var provider = new DaoAuthenticationProvider();
-    provider.setUserDetailsService(userDetailsService);
+    var provider = new DaoAuthenticationProvider(userDetailsService);
     provider.setPasswordEncoder(passwordEncoder);
     return new ProviderManager(provider);
   }

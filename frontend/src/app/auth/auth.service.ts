@@ -1,15 +1,15 @@
 import { Injectable, inject, signal, computed } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, tap, catchError, of, throwError } from 'rxjs';
-import {
+import { AuthError, LoginRequest, SetupRequest, StatusResponse, UserResponse } from './auth.types';
+
+export type {
   AuthError,
   LoginRequest,
   SetupRequest,
   StatusResponse,
   UserResponse,
 } from './auth.types';
-
-export type { AuthError, LoginRequest, SetupRequest, StatusResponse, UserResponse } from './auth.types';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {

@@ -3,7 +3,8 @@ import { provideHttpClient, withInterceptors, HttpClient } from '@angular/common
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { authInterceptor } from './auth.interceptor';
-import { AuthService, UserResponse } from './auth.service';
+import { AuthService } from './auth.service';
+import { UserResponse } from './auth.types';
 
 describe('authInterceptor', () => {
   let httpClient: HttpClient;

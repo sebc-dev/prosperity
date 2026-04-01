@@ -5,7 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import { Observable } from 'rxjs';
 import { authGuard, unauthenticatedGuard, setupGuard } from './auth.guard';
-import { UserResponse } from './auth.service';
+import { UserResponse } from './auth.types';
 
 const MOCK_ROUTE = {} as ActivatedRouteSnapshot;
 const MOCK_STATE = {} as RouterStateSnapshot;

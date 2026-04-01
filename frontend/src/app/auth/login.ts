@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { afterNextRender, ChangeDetectionStrategy, Component, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { Router } from '@angular/router';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { AuthService, LoginRequest, AuthError } from './auth.service';
@@ -22,7 +22,7 @@ import { Message } from 'primeng/message';
 
         <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
           <p-floatlabel variant="on">
-            <input id="email" pInputText formControlName="email" class="w-full" autofocus />
+            <input #emailInput id="email" pInputText formControlName="email" class="w-full" />
             <label for="email">Adresse email</label>
           </p-floatlabel>
           @if (form.get('email')?.touched && form.get('email')?.hasError('required')) {
@@ -62,6 +62,11 @@ export class Login {
   private readonly fb = inject(FormBuilder);
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly emailInput = viewChild<ElementRef<HTMLInputElement>>('emailInput');
+
+  constructor() {
+    afterNextRender(() => this.emailInput()?.nativeElement.focus());
+  }
 
   readonly loading = signal(false);
   readonly errorMessage = signal<string | null>(null);

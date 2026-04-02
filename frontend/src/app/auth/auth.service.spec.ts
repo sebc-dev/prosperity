@@ -59,7 +59,9 @@ describe('AuthService', () => {
 
     // Act
     service.logout().subscribe({ error: (e) => (error = e) });
-    httpTesting.expectOne('/api/auth/logout').flush(null, { status: 500, statusText: 'Internal Server Error' });
+    httpTesting
+      .expectOne('/api/auth/logout')
+      .flush(null, { status: 500, statusText: 'Internal Server Error' });
 
     // Assert
     expect(error).toBeDefined();

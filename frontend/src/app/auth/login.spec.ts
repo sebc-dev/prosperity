@@ -25,11 +25,7 @@ describe('Login', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       imports: [Login],
-      providers: [
-        provideRouter([]),
-        provideHttpClient(),
-        provideHttpClientTesting(),
-      ],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()],
     });
     authService = TestBed.inject(AuthService);
     router = TestBed.inject(Router);

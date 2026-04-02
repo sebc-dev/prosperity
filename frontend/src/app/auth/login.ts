@@ -41,9 +41,7 @@ import { Message } from 'primeng/message';
               >L'adresse email est requise</small
             >
           } @else if (form.get('email')?.touched && form.get('email')?.hasError('email')) {
-            <small class="text-sm font-normal text-[--p-red-500]"
-              >Format d'email invalide</small
-            >
+            <small class="text-sm font-normal text-[--p-red-500]">Format d'email invalide</small>
           }
 
           <p-floatlabel variant="on">
@@ -58,9 +56,7 @@ import { Message } from 'primeng/message';
             <label for="password">Mot de passe</label>
           </p-floatlabel>
           @if (form.get('password')?.touched && form.get('password')?.hasError('required')) {
-            <small class="text-sm font-normal text-[--p-red-500]"
-              >Le mot de passe est requis</small
-            >
+            <small class="text-sm font-normal text-[--p-red-500]">Le mot de passe est requis</small>
           }
 
           <p-button
@@ -109,19 +105,22 @@ export class Login {
 
     const request: LoginRequest = this.form.getRawValue();
 
-    this.authService.login(request).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: () => {
-        this.loading.set(false);
-        this.router.navigate(['/dashboard']);
-      },
-      error: (err: AuthError) => {
-        this.loading.set(false);
-        if (err.status === 401) {
-          this.errorMessage.set('Identifiants invalides');
-        } else {
-          this.errorMessage.set('Impossible de joindre le serveur. Vérifiez votre connexion.');
-        }
-      },
-    });
+    this.authService
+      .login(request)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.loading.set(false);
+          this.router.navigate(['/dashboard']);
+        },
+        error: (err: AuthError) => {
+          this.loading.set(false);
+          if (err.status === 401) {
+            this.errorMessage.set('Identifiants invalides');
+          } else {
+            this.errorMessage.set('Impossible de joindre le serveur. Vérifiez votre connexion.');
+          }
+        },
+      });
   }
 }

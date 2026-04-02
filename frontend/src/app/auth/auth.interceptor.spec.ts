@@ -44,7 +44,9 @@ describe('authInterceptor', () => {
     loginFirst();
     // Precondition: verify loginFirst() successfully authenticated the user
     expect(authService.isAuthenticated()).toBe(true);
-    const navigateSpy = vi.spyOn(router, 'navigate').mockImplementation(() => Promise.resolve(true));
+    const navigateSpy = vi
+      .spyOn(router, 'navigate')
+      .mockImplementation(() => Promise.resolve(true));
 
     // Act
     httpClient.get('/api/data').subscribe({ error: noop });

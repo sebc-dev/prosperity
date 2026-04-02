@@ -30,7 +30,10 @@ export class Header {
   onLogout(): void {
     this.loggingOut.set(true);
     this.authService.logout().subscribe({
-      next: () => { this.loggingOut.set(false); this.router.navigate(['/login']); },
+      next: () => {
+        this.loggingOut.set(false);
+        this.router.navigate(['/login']);
+      },
       error: () => {
         this.loggingOut.set(false);
         this.router.navigate(['/login']);

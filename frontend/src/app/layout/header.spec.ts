@@ -12,9 +12,7 @@ describe('Header', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       imports: [Header],
-      providers: [
-        provideRouter([]),
-      ],
+      providers: [provideRouter([])],
       schemas: [NO_ERRORS_SCHEMA],
     });
     authService = TestBed.inject(AuthService);

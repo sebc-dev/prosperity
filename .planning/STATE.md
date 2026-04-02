@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-06-PLAN.md
-last_updated: "2026-04-02T20:10:42.978Z"
+stopped_at: Completed 02-03-PLAN.md
+last_updated: "2026-04-02T20:13:46.707Z"
 last_activity: 2026-04-02
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 21
-  completed_plans: 19
+  completed_plans: 20
   percent: 0
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 02 (authentication-setup-wizard) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Last activity: 2026-04-02
 
@@ -63,6 +63,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P05 | 2min | 3 tasks | 8 files |
 | Phase 02 P02 | 1min | 2 tasks | 5 files |
 | Phase 02 P06 | 1min | 2 tasks | 2 files |
+| Phase 02 P03 | 2min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -89,6 +90,8 @@ Recent decisions affecting current work:
 - [Phase 02]: CSRF SPA mode with ignoringRequestMatchers for login/setup POST endpoints
 - [Phase 02]: DelegatingPasswordEncoder for future algorithm migration (bcrypt default)
 - [Phase 02]: OnPush + signals for auth components, afterNextRender for autofocus
+- [Phase 02]: Explicit SecurityContext session save per Spring Security 7 BFF cookie flow
+- [Phase 02]: Generic error 'Identifiants invalides' on login failure to prevent user enumeration
 
 ### Pending Todos
 
@@ -101,6 +104,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-02T20:10:42.971Z
-Stopped at: Completed 02-06-PLAN.md
+Last session: 2026-04-02T20:13:46.701Z
+Stopped at: Completed 02-03-PLAN.md
 Resume file: None

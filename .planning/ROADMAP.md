@@ -72,7 +72,7 @@ Plans:
 Plans:
 - [x] 02-01-PLAN.md — Backend deps + Flyway session tables + application.yml session config
 - [x] 02-02-PLAN.md — DTOs + CustomUserDetailsService + SecurityConfig (filter chain, beans)
-- [ ] 02-03-PLAN.md — AuthService + AuthController (setup, login, logout, me, status endpoints)
+- [x] 02-03-PLAN.md — AuthService + AuthController (setup, login, logout, me, status endpoints)
 - [ ] 02-04-PLAN.md — Backend integration tests (AuthController, AuthService, SecurityConfig, UserDetailsService)
 - [x] 02-05-PLAN.md — Frontend auth infra: AuthService, guards, interceptor, proxy, app.config wiring
 - [x] 02-06-PLAN.md — Setup wizard + Login page components (PrimeNG forms, UI-SPEC)

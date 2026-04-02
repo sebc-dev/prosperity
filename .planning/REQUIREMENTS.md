@@ -7,7 +7,7 @@
 
 ### Setup & Authentication
 
-- [ ] **AUTH-01**: Premier lancement affiche un setup wizard pour creer le compte administrateur
+- [x] **AUTH-01**: Premier lancement affiche un setup wizard pour creer le compte administrateur
 - [x] **AUTH-02**: Utilisateur peut se connecter avec email et mot de passe (BFF cookie flow, JWT cote serveur, cookies httpOnly)
 - [x] **AUTH-03**: Utilisateur peut se deconnecter depuis n'importe quelle page
 - [x] **AUTH-04**: Session utilisateur persiste apres rafraichissement du navigateur
@@ -146,7 +146,7 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| AUTH-01 | Phase 2 | Pending |
+| AUTH-01 | Phase 2 | Complete |
 | AUTH-02 | Phase 2 | Complete |
 | AUTH-03 | Phase 2 | Complete |
 | AUTH-04 | Phase 2 | Complete |

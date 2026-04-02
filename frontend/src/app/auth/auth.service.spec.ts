@@ -1,7 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
-import { AuthService, AuthError, UserResponse } from './auth.service';
+import { AuthService } from './auth.service';
+import { AuthError, UserResponse } from './auth.types';
 
 describe('AuthService', () => {
   let service: AuthService;
@@ -47,6 +48,23 @@ describe('AuthService', () => {
     // Assert
     expect(service.isAuthenticated()).toBe(false);
     expect(service.user()).toBeNull();
+  });
+
+  it('logout_clears_user_and_returns_typed_error_on_failure', () => {
+    // Arrange
+    const mockUser: UserResponse = { displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' };
+    let error: AuthError | undefined;
+    service.login({ email: 'a@b.com', password: 'p' }).subscribe();
+    httpTesting.expectOne('/api/auth/login').flush(mockUser);
+
+    // Act
+    service.logout().subscribe({ error: (e) => (error = e) });
+    httpTesting.expectOne('/api/auth/logout').flush(null, { status: 500, statusText: 'Internal Server Error' });
+
+    // Assert
+    expect(error).toBeDefined();
+    expect(error!.status).toBe(500);
+    expect(service.isAuthenticated()).toBe(false);
   });
 
   it('check_session_sets_user_when_authenticated', () => {

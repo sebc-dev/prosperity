@@ -1,11 +1,10 @@
-import { ChangeDetectionStrategy, Component, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { Header } from './header';
 import { Sidebar } from './sidebar';
 
 @Component({
   selector: 'app-layout',
-  standalone: true,
   imports: [RouterOutlet, Header, Sidebar],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -20,6 +19,4 @@ import { Sidebar } from './sidebar';
     </div>
   `,
 })
-export class Layout {
-  readonly sidebar = viewChild<Sidebar>('sidebar');
-}
+export class Layout {}

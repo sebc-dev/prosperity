@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient, withInterceptors, HttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { authInterceptor } from './auth.interceptor';
 import { AuthService } from './auth.service';
 import { UserResponse } from './auth.types';
@@ -10,6 +10,7 @@ describe('authInterceptor', () => {
   let httpClient: HttpClient;
   let httpTesting: HttpTestingController;
   let authService: AuthService;
+  let router: Router;
 
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -22,6 +23,7 @@ describe('authInterceptor', () => {
     httpClient = TestBed.inject(HttpClient);
     httpTesting = TestBed.inject(HttpTestingController);
     authService = TestBed.inject(AuthService);
+    router = TestBed.inject(Router);
   });
 
   afterEach(() => {
@@ -40,7 +42,9 @@ describe('authInterceptor', () => {
   it('clears_user_on_401_for_api_routes', () => {
     // Arrange
     loginFirst();
+    // Precondition: verify loginFirst() successfully authenticated the user
     expect(authService.isAuthenticated()).toBe(true);
+    const navigateSpy = vi.spyOn(router, 'navigate').mockImplementation(() => Promise.resolve(true));
 
     // Act
     httpClient.get('/api/data').subscribe({ error: noop });
@@ -48,6 +52,7 @@ describe('authInterceptor', () => {
 
     // Assert
     expect(authService.isAuthenticated()).toBe(false);
+    expect(navigateSpy).toHaveBeenCalledWith(['/login']);
   });
 
   it('does_not_clear_user_on_401_for_auth_me', () => {

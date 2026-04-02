@@ -1,9 +1,12 @@
+// Auth module type contracts. Application code (components, services) imports directly from this file. The auth.service barrel re-export is being removed.
 import { HttpErrorResponse } from '@angular/common/http';
+
+export type UserRole = 'ADMIN' | 'USER';
 
 export interface UserResponse {
   displayName: string;
   email: string;
-  role: string;
+  role: UserRole;
 }
 
 export interface SetupRequest {

@@ -1,11 +1,10 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { AuthService } from '../auth/auth.service';
 import { ButtonModule } from 'primeng/button';
 
 @Component({
   selector: 'app-header',
-  standalone: true,
   imports: [ButtonModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -18,7 +17,7 @@ import { ButtonModule } from 'primeng/button';
         [text]="true"
         severity="secondary"
         (onClick)="onLogout()"
-        [loading]="loggingOut"
+        [loading]="loggingOut()"
       />
     </header>
   `,
@@ -26,14 +25,14 @@ import { ButtonModule } from 'primeng/button';
 export class Header {
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
-  loggingOut = false;
+  loggingOut = signal(false);
 
   onLogout(): void {
-    this.loggingOut = true;
+    this.loggingOut.set(true);
     this.authService.logout().subscribe({
-      next: () => this.router.navigate(['/login']),
+      next: () => { this.loggingOut.set(false); this.router.navigate(['/login']); },
       error: () => {
-        this.loggingOut = false;
+        this.loggingOut.set(false);
         this.router.navigate(['/login']);
       },
     });

@@ -3,13 +3,6 @@ import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, tap, catchError, of, throwError } from 'rxjs';
 import { AuthError, LoginRequest, SetupRequest, StatusResponse, UserResponse } from './auth.types';
 
-export type {
-  AuthError,
-  LoginRequest,
-  SetupRequest,
-  StatusResponse,
-  UserResponse,
-} from './auth.types';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
@@ -23,7 +16,7 @@ export class AuthService {
   private mapError(err: HttpErrorResponse): Observable<never> {
     const authError: AuthError = {
       status: err.status,
-      message: typeof err.error === 'string' ? err.error : (err.error?.error ?? err.statusText),
+      message: (typeof err.error === 'string' ? err.error : (err.error?.error ?? err.statusText)) || 'Erreur réseau',
       original: err,
     };
     return throwError(() => authError);

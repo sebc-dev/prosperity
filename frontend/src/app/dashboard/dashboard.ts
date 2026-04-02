@@ -8,7 +8,7 @@ import { AuthService } from '../auth/auth.service';
   template: `
     <div class="max-w-2xl">
       <h1 class="text-2xl font-semibold leading-tight mb-2">
-        Bienvenue {{ authService.user()?.displayName }}
+        Bienvenue {{ user()?.displayName }}
       </h1>
       <p class="text-muted-color">
         Votre espace est pret. Les fonctionnalites arrivent dans les prochaines phases.
@@ -17,5 +17,5 @@ import { AuthService } from '../auth/auth.service';
   `,
 })
 export class Dashboard {
-  protected readonly authService = inject(AuthService);
+  protected readonly user = inject(AuthService).user;
 }

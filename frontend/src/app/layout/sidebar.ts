@@ -3,7 +3,6 @@ import { DrawerModule } from 'primeng/drawer';
 
 @Component({
   selector: 'app-sidebar',
-  standalone: true,
   imports: [DrawerModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
@@ -17,12 +16,12 @@ import { DrawerModule } from 'primeng/drawer';
       <ng-template pTemplate="header">
         <span class="text-lg font-semibold">Menu</span>
       </ng-template>
-      <div class="p-4 text-muted-color text-sm">Navigation a venir dans les prochaines phases.</div>
+      <div class="p-4 text-muted-color text-sm">Navigation à venir dans les prochaines phases.</div>
     </p-drawer>
   `,
 })
 export class Sidebar {
-  visible = false;
+  protected visible = false;
 
   toggle(): void {
     this.visible = !this.visible;

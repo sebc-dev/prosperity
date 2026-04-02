@@ -10,10 +10,11 @@ import {
   computed,
   viewChild,
 } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
-import { AuthService, SetupRequest, AuthError } from './auth.service';
+import { AuthService } from './auth.service';
+import { SetupRequest, AuthError } from './auth.types';
 import { FloatLabel } from 'primeng/floatlabel';
 import { InputText } from 'primeng/inputtext';
 import { Password } from 'primeng/password';
@@ -38,11 +39,11 @@ import { Message } from 'primeng/message';
             <label for="email">Adresse email</label>
           </p-floatlabel>
           @if (form.get('email')?.touched && form.get('email')?.hasError('required')) {
-            <small class="text-sm font-normal" style="color: var(--p-red-500)"
+            <small class="text-sm font-normal text-[--p-red-500]"
               >L'adresse email est requise</small
             >
           } @else if (form.get('email')?.touched && form.get('email')?.hasError('email')) {
-            <small class="text-sm font-normal" style="color: var(--p-red-500)"
+            <small class="text-sm font-normal text-[--p-red-500]"
               >Format d'email invalide</small
             >
           }
@@ -59,7 +60,7 @@ import { Message } from 'primeng/message';
             <label for="password">Mot de passe</label>
           </p-floatlabel>
           @if (form.get('password')?.touched && form.get('password')?.hasError('required')) {
-            <small class="text-sm font-normal" style="color: var(--p-red-500)"
+            <small class="text-sm font-normal text-[--p-red-500]"
               >Le mot de passe est requis</small
             >
           }
@@ -85,13 +86,13 @@ import { Message } from 'primeng/message';
             <label for="displayName">Nom d'affichage</label>
           </p-floatlabel>
           @if (form.get('displayName')?.touched && form.get('displayName')?.hasError('required')) {
-            <small class="text-sm font-normal" style="color: var(--p-red-500)"
+            <small class="text-sm font-normal text-[--p-red-500]"
               >Le nom d'affichage est requis</small
             >
           } @else if (
             form.get('displayName')?.touched && form.get('displayName')?.hasError('minlength')
           ) {
-            <small class="text-sm font-normal" style="color: var(--p-red-500)"
+            <small class="text-sm font-normal text-[--p-red-500]"
               >2 caracteres minimum</small
             >
           }
@@ -140,7 +141,7 @@ export class Setup implements OnInit {
     displayName: ['', [Validators.required, Validators.minLength(2)]],
   });
 
-  private readonly password = signal('');
+  private readonly password = toSignal(this.form.get('password')!.valueChanges, { initialValue: '' });
 
   readonly passwordRules = computed(() => {
     const pwd = this.password();
@@ -159,12 +160,6 @@ export class Setup implements OnInit {
       if (this.redirectTimer) clearTimeout(this.redirectTimer);
     });
 
-    this.form
-      .get('password')
-      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((value: string | null) => {
-        this.password.set(value ?? '');
-      });
   }
 
   onSubmit(): void {

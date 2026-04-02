@@ -2,14 +2,17 @@ import {
   afterNextRender,
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   ElementRef,
   inject,
   signal,
   viewChild,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
-import { AuthService, LoginRequest, AuthError } from './auth.service';
+import { AuthService } from './auth.service';
+import { LoginRequest, AuthError } from './auth.types';
 import { FloatLabel } from 'primeng/floatlabel';
 import { InputText } from 'primeng/inputtext';
 import { Password } from 'primeng/password';
@@ -25,7 +28,7 @@ import { Message } from 'primeng/message';
       <div class="w-full max-w-md mx-auto p-8 rounded-xl shadow-md bg-surface-0">
         <div class="text-center mb-6">
           <h1 class="text-2xl font-semibold leading-tight">Connexion</h1>
-          <p class="text-sm text-muted-color mt-2">Connectez-vous a votre espace Prosperity.</p>
+          <p class="text-sm text-muted-color mt-2">Connectez-vous à votre espace Prosperity.</p>
         </div>
 
         <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
@@ -34,13 +37,11 @@ import { Message } from 'primeng/message';
             <label for="email">Adresse email</label>
           </p-floatlabel>
           @if (form.get('email')?.touched && form.get('email')?.hasError('required')) {
-            <small class="text-sm font-normal" style="color: var(--p-red-500)"
+            <small class="text-sm font-normal text-[--p-red-500]"
               >L'adresse email est requise</small
             >
           } @else if (form.get('email')?.touched && form.get('email')?.hasError('email')) {
-            <small class="text-sm font-normal" style="color: var(--p-red-500)"
-              >Format d'email invalide</small
-            >
+            <small class="text-sm font-normal text-[--p-red-500]">Format d'email invalide</small>
           }
 
           <p-floatlabel variant="on">
@@ -55,9 +56,7 @@ import { Message } from 'primeng/message';
             <label for="password">Mot de passe</label>
           </p-floatlabel>
           @if (form.get('password')?.touched && form.get('password')?.hasError('required')) {
-            <small class="text-sm font-normal" style="color: var(--p-red-500)"
-              >Le mot de passe est requis</small
-            >
+            <small class="text-sm font-normal text-[--p-red-500]">Le mot de passe est requis</small>
           }
 
           <p-button
@@ -83,6 +82,7 @@ export class Login {
   private readonly fb = inject(FormBuilder);
   private readonly authService = inject(AuthService);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly emailInput = viewChild<ElementRef<HTMLInputElement>>('emailInput');
 
   constructor() {
@@ -105,19 +105,22 @@ export class Login {
 
     const request: LoginRequest = this.form.getRawValue();
 
-    this.authService.login(request).subscribe({
-      next: () => {
-        this.loading.set(false);
-        this.router.navigate(['/dashboard']);
-      },
-      error: (err: AuthError) => {
-        this.loading.set(false);
-        if (err.status === 401) {
-          this.errorMessage.set('Identifiants invalides');
-        } else {
-          this.errorMessage.set('Impossible de joindre le serveur. Verifiez votre connexion.');
-        }
-      },
-    });
+    this.authService
+      .login(request)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.loading.set(false);
+          this.router.navigate(['/dashboard']);
+        },
+        error: (err: AuthError) => {
+          this.loading.set(false);
+          if (err.status === 401) {
+            this.errorMessage.set('Identifiants invalides');
+          } else {
+            this.errorMessage.set('Impossible de joindre le serveur. Vérifiez votre connexion.');
+          }
+        },
+      });
   }
 }

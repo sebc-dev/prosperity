@@ -71,12 +71,12 @@ Plans:
 
 Plans:
 - [x] 02-01-PLAN.md — Backend deps + Flyway session tables + application.yml session config
-- [ ] 02-02-PLAN.md — DTOs + CustomUserDetailsService + SecurityConfig (filter chain, beans)
+- [x] 02-02-PLAN.md — DTOs + CustomUserDetailsService + SecurityConfig (filter chain, beans)
 - [ ] 02-03-PLAN.md — AuthService + AuthController (setup, login, logout, me, status endpoints)
 - [ ] 02-04-PLAN.md — Backend integration tests (AuthController, AuthService, SecurityConfig, UserDetailsService)
 - [x] 02-05-PLAN.md — Frontend auth infra: AuthService, guards, interceptor, proxy, app.config wiring
-- [ ] 02-06-PLAN.md — Setup wizard + Login page components (PrimeNG forms, UI-SPEC)
-- [ ] 02-07-PLAN.md — Layout shell (header, sidebar, dashboard) + routing with guards
+- [x] 02-06-PLAN.md — Setup wizard + Login page components (PrimeNG forms, UI-SPEC)
+- [x] 02-07-PLAN.md — Layout shell (header, sidebar, dashboard) + routing with guards
 
 ### Phase 3: Accounts & Access Control
 **Goal**: Users can create and manage bank accounts (personal and shared) with per-user access permissions enforced at every level

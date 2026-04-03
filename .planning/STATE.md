@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-02-PLAN.md
-last_updated: "2026-03-31T13:50:40.732Z"
-last_activity: 2026-03-31
+stopped_at: Completed 02-04-PLAN.md
+last_updated: "2026-04-02T20:35:57.577Z"
+last_activity: 2026-04-02
 progress:
   total_phases: 10
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 21
-  completed_plans: 16
+  completed_plans: 21
   percent: 0
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 
 ## Current Position
 
-Phase: 02 (authentication-setup-wizard) — EXECUTING
-Plan: 4 of 7
-Status: Executing Phase 02
-Last activity: 2026-03-31 -- Completed 02-02
+Phase: 3
+Plan: Not started
+Status: Ready to execute
+Last activity: 2026-04-02
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -62,6 +62,9 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P01 | 1min | 2 tasks | 3 files |
 | Phase 02 P05 | 2min | 3 tasks | 8 files |
 | Phase 02 P02 | 1min | 2 tasks | 5 files |
+| Phase 02 P06 | 1min | 2 tasks | 2 files |
+| Phase 02 P03 | 2min | 2 tasks | 3 files |
+| Phase 02 P04 | 11min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -87,6 +90,11 @@ Recent decisions affecting current work:
 - [Phase 02]: setup() does NOT set currentUser (per D-03: no auto-login after setup)
 - [Phase 02]: CSRF SPA mode with ignoringRequestMatchers for login/setup POST endpoints
 - [Phase 02]: DelegatingPasswordEncoder for future algorithm migration (bcrypt default)
+- [Phase 02]: OnPush + signals for auth components, afterNextRender for autofocus
+- [Phase 02]: Explicit SecurityContext session save per Spring Security 7 BFF cookie flow
+- [Phase 02]: Generic error 'Identifiants invalides' on login failure to prevent user enumeration
+- [Phase 02]: Testcontainers PostgreSQL 2.0 for integration tests (artifact: testcontainers-postgresql)
+- [Phase 02]: Spring Boot 4 @AutoConfigureMockMvc in spring-boot-webmvc-test module
 
 ### Pending Todos
 
@@ -99,6 +107,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-31T13:50:40.729Z
-Stopped at: Completed 02-02-PLAN.md
+Last session: 2026-04-02T20:27:43.504Z
+Stopped at: Completed 02-04-PLAN.md
 Resume file: None

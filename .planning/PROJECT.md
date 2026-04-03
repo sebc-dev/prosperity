@@ -19,10 +19,13 @@ Un foyer peut suivre ses finances au quotidien (soldes, transactions, budgets en
 - [x] Docker Compose + Caddy : stack conteneurisee — Validated in Phase 1: Project Foundation
 - [x] CI pipeline : GitHub Actions avec quality gates — Validated in Phase 1: Project Foundation
 - [x] Pre-commit hooks : lefthook lint/format — Validated in Phase 1: Project Foundation
+- [x] Setup wizard au premier lancement (creation compte admin) — Validated in Phase 2: Authentication Setup Wizard
+- [x] Authentification session (Spring Security 7, cookies httpOnly, CSRF SPA mode) — Validated in Phase 2: Authentication Setup Wizard
+- [x] Route guards Angular (authGuard, unauthenticatedGuard, setupGuard) — Validated in Phase 2: Authentication Setup Wizard
+- [x] Layout shell + dashboard placeholder + routing lazy-loaded — Validated in Phase 2: Authentication Setup Wizard
 
 ### Active
 
-- [ ] Setup wizard au premier lancement (creation compte admin)
 - [ ] Authentification BFF cookie flow (JWT cote serveur, cookies httpOnly)
 - [ ] Gestion des utilisateurs (invitation, droits, comptes propres/communs)
 - [ ] Administration (users, droits, connexions Plaid, monitoring)
@@ -108,4 +111,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-29 after Phase 1 completion*
+*Last updated: 2026-04-02 after Phase 2 completion — auth system (setup wizard, login/logout, sessions, guards) complete*

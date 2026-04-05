@@ -111,11 +111,14 @@ Plans:
   2. User can create custom categories and sub-categories (parent/child hierarchy)
   3. User can change the category assigned to any transaction
   4. Categories are displayed hierarchically in selection UI (parent > sub-category)
-**Plans**: TBD
+**Plans**: 4 plans
 **UI hint**: yes
 
 Plans:
-- [ ] 04-01: TBD
+- [ ] 04-01-PLAN.md — Flyway migrations (is_system + seed Plaid categories) + entity + DTOs + repository
+- [ ] 04-02-PLAN.md — CategoryService + CategoryController + integration tests
+- [ ] 04-03-PLAN.md — PATCH /api/transactions/{id}/category endpoint + tests
+- [ ] 04-04-PLAN.md — Frontend categories page, dialog, shared CategorySelector, sidebar, routing
 
 ### Phase 5: Transactions
 **Goal**: Users can manage their financial transactions manually with full CRUD, search, and reconciliation support
@@ -223,7 +226,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Project Foundation | 0/14 | Planning | - |
-| 2. Authentication & Setup Wizard | 0/7 | Planning | - |
+| 4. Categories | 0/4 | Planning | - |
 | 3. Accounts & Access Control | 9/9 | Complete   | 2026-04-05 |
 | 4. Categories | 0/1 | Not started | - |
 | 5. Transactions | 0/2 | Not started | - |

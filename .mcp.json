@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "angular-cli": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "@angular/cli",
+        "mcp"
+      ],
+      "env": {}
+    },
+    "spring-docs": {
+      "command": "npx",
+      "args": [
+        "@enokdev/springdocs-mcp@latest"
+      ]
+    },
+"primeng": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@primeng/mcp@21.1.3"],
+      "env": {}
+    }
+  }
+}

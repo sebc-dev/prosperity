@@ -31,7 +31,12 @@ describe('authInterceptor', () => {
   });
 
   function loginFirst(): void {
-    const mockUser: UserResponse = { displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' };
+    const mockUser: UserResponse = {
+      id: 'user-1',
+      displayName: 'Admin',
+      email: 'admin@test.com',
+      role: 'ADMIN',
+    };
     authService.login({ email: 'admin@test.com', password: 'pass' }).subscribe();
     httpTesting.expectOne('/api/auth/login').flush(mockUser);
   }

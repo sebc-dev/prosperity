@@ -1,0 +1,185 @@
+{
+  "session_id": "phase-02-auth-20260330-0600",
+  "type": "review",
+  "version": "2.0.0",
+  "branch": "gsd/phase-02-authentication-setup-wizard",
+  "base_branch": "main",
+  "merge_base": "2320959198b9a56a5037253692e7d0601b6db4d5",
+  "head_at_start": "85e688d",
+  "created_at": "2026-03-30T06:00:00Z",
+  "status": "validating",
+  "config_snapshot": {
+    "model_profile": "balanced",
+    "default_output": "fix",
+    "max_parallel_agents": 5,
+    "validator_threshold": 0.75
+  },
+  "context_sources": [],
+  "files": [
+    {
+      "index": 0,
+      "path": "backend/src/main/resources/db/migration/V008__create_spring_session_tables.sql",
+      "category": "database-migrations",
+      "risk_score": 0.60,
+      "status": "reviewed",
+      "green": 2, "yellow": 2, "red": 1, "blocking": 1,
+      "observations": [
+        {"id":"obs-v008-1","criterion":"conventions","severity":"bloquant","level":"red","line_start":12,"line_end":12,"text":"PRINCIPAL_NAME VARCHAR(100) < users.email VARCHAR(255) — echec d'insertion de session au login","correction_prompt":"File: backend/src/main/resources/db/migration/V008__create_spring_session_tables.sql, line 12. Replace: PRINCIPAL_NAME VARCHAR(100). With: PRINCIPAL_NAME VARCHAR(255). Verify: users.email is VARCHAR(255) in V001."},
+        {"id":"obs-v008-2","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":5,"line_end":27,"text":"Nommage UPPER_CASE inconsistant avec les 7 migrations precedentes en snake_case","correction_prompt":"Replace all UPPER_CASE identifiers with lowercase. Update application.yml table-name accordingly."},
+        {"id":"obs-v008-3","criterion":"security","severity":"suggestion","level":"yellow","line_start":22,"line_end":25,"text":"Attribut Secure absent du cookie de session dans application.yml","correction_prompt":"File: backend/src/main/resources/application.yml, after same-site: lax. Add: secure: true."}
+      ],
+      "note": "Schema Spring Session correct, PRINCIPAL_NAME(100) < email(255) risque erreur login"
+    },
+    {
+      "index": 1,
+      "path": "backend/pom.xml",
+      "category": "build-config",
+      "risk_score": 0.64,
+      "status": "reviewed",
+      "green": 2, "yellow": 1, "red": 2, "blocking": 2,
+      "observations": [
+        {"id":"obs-pom-1","criterion":"security","severity":"bloquant","level":"red","line_start":58,"line_end":61,"text":"spring-boot-starter-security actif sans SecurityConfig — auto-config non maitrise","correction_prompt":"Create SecurityConfig.java with SecurityFilterChain that explicitly configures access. Do not rely on auto-config defaults."},
+        {"id":"obs-pom-2","criterion":"test-coverage","severity":"bloquant","level":"red","line_start":92,"line_end":96,"text":"spring-security-test ajoute sans test validant le comportement 401 post-activation","correction_prompt":"Create SecurityDefaultsTest.java verifying endpoints return 401 without credentials."},
+        {"id":"obs-pom-3","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":63,"line_end":63,"text":"Reference D-06 non tracable dans le repo","correction_prompt":"Replace D-06 reference with descriptive text."}
+      ],
+      "note": "Dependances BOM correctes, activation Security sans config est bloquant"
+    },
+    {
+      "index": 2,
+      "path": "backend/src/main/resources/application.yml",
+      "category": "build-config",
+      "risk_score": 0.63,
+      "status": "reviewed",
+      "green": 2, "yellow": 2, "red": 2, "blocking": 2,
+      "observations": [
+        {"id":"obs-yml-1","criterion":"security","severity":"bloquant","level":"red","line_start":22,"line_end":25,"text":"Attribut secure manquant sur le cookie SESSION","correction_prompt":"File: backend/src/main/resources/application.yml, after same-site: lax. Add: secure: true."},
+        {"id":"obs-yml-2","criterion":"security","severity":"bloquant","level":"red","line_start":3,"line_end":5,"text":"Credentials base de donnees en clair sans separation dev/prod","correction_prompt":"Replace with env var references: ${DB_URL:jdbc:postgresql://localhost:5432/prosperity}, ${DB_USERNAME:prosperity}, ${DB_PASSWORD:prosperity}."},
+        {"id":"obs-yml-3","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":16,"line_end":16,"text":"table-name SPRING_SESSION en majuscules inconsistant avec convention snake_case","correction_prompt":"Replace table-name: SPRING_SESSION with table-name: spring_session and update V008 migration."},
+        {"id":"obs-yml-4","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":21,"line_end":21,"text":"Timeout de session 30m non configurable via variable d'environnement","correction_prompt":"Replace timeout: 30m with timeout: ${SESSION_TIMEOUT:30m}."}
+      ],
+      "note": "Config session JDBC coherente avec Flyway, cookie non secure et credentials en clair bloquants"
+    },
+    {
+      "index": 3,
+      "path": "frontend/src/app/auth/auth.service.ts",
+      "category": "business-logic",
+      "risk_score": 0.52,
+      "status": "reviewed",
+      "green": 2, "yellow": 3, "red": 2, "blocking": 2,
+      "observations": [
+        {"id":"obs-svc-1","criterion":"security","severity":"bloquant","level":"red","line_start":55,"line_end":57,"text":"setup() envoie SetupRequest sans validation cote client","correction_prompt":"Validation is the caller's responsibility (form validators). Add catchError mapping to typed error."},
+        {"id":"obs-svc-2","criterion":"error-handling","severity":"bloquant","level":"red","line_start":59,"line_end":63,"text":"logout() ne gere pas les erreurs HTTP — etat signal potentiellement incoherent","correction_prompt":"File: frontend/src/app/auth/auth.service.ts, lines 59-63. Add catchError that forces currentUser.set(null) even on error, then rethrows."},
+        {"id":"obs-svc-3","criterion":"architecture","severity":"suggestion","level":"yellow","line_start":10,"line_end":15,"text":"authGuard declenche checkSession() HTTP a chaque navigation sans consulter le signal","correction_prompt":"In auth.guard.ts, check isAuthenticated() before calling checkSession()."},
+        {"id":"obs-svc-4","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":65,"line_end":67,"text":"clearUser() methode publique exposant mutation interne du signal","correction_prompt":"Add JSDoc @internal comment or replace with logout() call from interceptor."},
+        {"id":"obs-svc-5","criterion":"test-coverage","severity":"suggestion","level":"yellow","line_start":35,"line_end":50,"text":"Aucun test pour logout() en cas d'erreur serveur","correction_prompt":"Add test logout_clears_user_even_on_server_error in auth.service.spec.ts."}
+      ],
+      "note": "Service auth Angular 21 solide en Signals, logout sans catchError et guard sans cache bloquants"
+    },
+    {
+      "index": 4,
+      "path": "frontend/src/app/auth/auth.guard.ts",
+      "category": "business-logic",
+      "risk_score": 0.46,
+      "status": "reviewed",
+      "green": 2, "yellow": 2, "red": 2, "blocking": 2,
+      "observations": [
+        {"id":"obs-guard-1","criterion":"error-handling","severity":"bloquant","level":"red","line_start":34,"line_end":38,"text":"noAdminGuard ne gere pas l'erreur HTTP de checkStatus() — peut bloquer la navigation","correction_prompt":"File: frontend/src/app/auth/auth.guard.ts. Add catchError to noAdminGuard that redirects to /login on error. Add of and catchError to rxjs import."},
+        {"id":"obs-guard-2","criterion":"test-coverage","severity":"bloquant","level":"red","line_start":84,"line_end":107,"text":"Cas d'erreur reseau de noAdminGuard absent du spec","correction_prompt":"Add test redirects_to_login_when_status_endpoint_errors in auth.guard.spec.ts."},
+        {"id":"obs-guard-3","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":30,"line_end":39,"text":"Nom noAdminGuard ambigu — ne reflete pas son role de protection du setup wizard","correction_prompt":"Rename noAdminGuard to setupGuard in auth.guard.ts and auth.guard.spec.ts."},
+        {"id":"obs-guard-4","criterion":"performance","severity":"suggestion","level":"yellow","line_start":6,"line_end":16,"text":"authGuard et unauthenticatedGuard ignorent le signal currentUser — appel HTTP a chaque navigation","correction_prompt":"Check isAuthenticated() before calling checkSession() in authGuard and unauthenticatedGuard."}
+      ],
+      "note": "Guards fonctionnels solides, checkStatus sans catchError peut bloquer navigation setup"
+    },
+    {
+      "index": 5,
+      "path": "frontend/src/app/auth/auth.interceptor.ts",
+      "category": "infrastructure",
+      "risk_score": 0.47,
+      "status": "reviewed",
+      "green": 2, "yellow": 2, "red": 1, "blocking": 1,
+      "observations": [
+        {"id":"obs-int-1","criterion":"test-coverage","severity":"bloquant","level":"red","line_start":7,"line_end":20,"text":"Aucun fichier spec pour auth.interceptor.ts — logique de redirection 401 non testee","correction_prompt":"Create frontend/src/app/auth/auth.interceptor.spec.ts. Test: 401 on /api/data navigates to /login; 401 on /api/auth/me does NOT navigate; 500 does NOT navigate."},
+        {"id":"obs-int-2","criterion":"error-handling","severity":"suggestion","level":"yellow","line_start":12,"line_end":16,"text":"Parametre error non type et navigate fire-and-forget","correction_prompt":"Type error as HttpErrorResponse. Merge HttpInterceptorFn import."},
+        {"id":"obs-int-3","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":13,"line_end":13,"text":"Liste des URLs exclues codee en dur, fragile et non extensible","correction_prompt":"Extract AUTH_CHECK_URLS constant and isAuthCheckUrl predicate."}
+      ],
+      "note": "Intercepteur 401 fonctionnel, absence totale de tests sur chemin critique"
+    },
+    {
+      "index": 6,
+      "path": "frontend/src/app/app.config.ts",
+      "category": "integration-wiring",
+      "risk_score": 0.22,
+      "status": "reviewed",
+      "green": 2, "yellow": 1, "red": 1, "blocking": 1,
+      "observations": [
+        {"id":"obs-cfg-1","criterion":"security","severity":"bloquant","level":"red","line_start":13,"line_end":16,"text":"authInterceptor reagit aux 401 de tous domaines, pas seulement /api/","correction_prompt":"File: frontend/src/app/auth/auth.interceptor.ts, lines 12-17. Add condition: req.url.startsWith('/api/') before treating 401."},
+        {"id":"obs-cfg-2","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":13,"line_end":13,"text":"Valeurs XSRF identiques aux defaults Angular, mieux comme constantes nommees","correction_prompt":"Either remove withXsrfConfiguration (use Angular defaults) or extract to auth.constants.ts."}
+      ],
+      "note": "Config HTTP solide alignee Spring Security 7, intercepteur trop large sur scope domaines"
+    },
+    {
+      "index": 7,
+      "path": "frontend/angular.json",
+      "category": "build-config",
+      "risk_score": 0.61,
+      "status": "reviewed",
+      "green": 2, "yellow": 2, "red": 0, "blocking": 0,
+      "observations": [
+        {"id":"obs-angular-1","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":57,"line_end":57,"text":"proxyConfig sans prefixe ./","correction_prompt":"File: frontend/angular.json, line 57. Replace proxyConfig: proxy.conf.json With: proxyConfig: ./proxy.conf.json"},
+        {"id":"obs-angular-2","criterion":"security","severity":"suggestion","level":"yellow","line_start":2,"line_end":5,"text":"changeOrigin absent dans proxy.conf.json","correction_prompt":"File: frontend/proxy.conf.json. Add changeOrigin: true in /api block."}
+      ],
+      "note": "Proxy dev-server bien configure, deux ameliorations mineures"
+    },
+    {
+      "index": 8,
+      "path": "frontend/proxy.conf.json",
+      "category": "build-config",
+      "risk_score": 0.61,
+      "status": "reviewed",
+      "green": 1, "yellow": 2, "red": 0, "blocking": 0,
+      "observations": [
+        {"id":"obs-proxy-1","criterion":"security","severity":"suggestion","level":"yellow","line_start":2,"line_end":5,"text":"changeOrigin absent — header Host original transmis au backend","correction_prompt":"File: frontend/proxy.conf.json. Add changeOrigin: true."},
+        {"id":"obs-proxy-2","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":2,"line_end":2,"text":"Pattern /api sans wildcard — intention ambigue","correction_prompt":"Replace /api with /api/** for explicit sub-path matching."}
+      ],
+      "note": "Proxy dev fonctionnel, changeOrigin et pattern wildcard recommandes"
+    },
+    {
+      "index": 9,
+      "path": "frontend/src/app/auth/auth.service.spec.ts",
+      "category": "tests",
+      "risk_score": 0.35,
+      "status": "reviewed",
+      "green": 3, "yellow": 4, "red": 2, "blocking": 0,
+      "observations": [
+        {"id":"obs-svcspec-1","criterion":"test-quality","severity":"bloquant","level":"red","line_start":65,"line_end":68,"text":"clearUser() methode publique sans aucun test","correction_prompt":"Add test clear_user_resets_authenticated_state in auth.service.spec.ts."},
+        {"id":"obs-svcspec-2","criterion":"test-quality","severity":"bloquant","level":"red","line_start":22,"line_end":33,"text":"Aucun test pour le cas d'erreur de login()","correction_prompt":"Add test login_does_not_set_user_on_error flushing 401."},
+        {"id":"obs-svcspec-3","criterion":"test-structure","severity":"suggestion","level":"yellow","line_start":52,"line_end":61,"text":"check_session assertion partielle — ne verifie pas contenu user()","correction_prompt":"Add expect(service.user()?.email).toBe('admin@test.com') after isAuthenticated assertion."},
+        {"id":"obs-svcspec-4","criterion":"test-structure","severity":"suggestion","level":"yellow","line_start":22,"line_end":93,"text":"Structure AAA absente dans 5/6 tests","correction_prompt":"Add // Arrange, // Act, // Assert separators in each test."},
+        {"id":"obs-svcspec-5","criterion":"test-structure","severity":"suggestion","level":"yellow","line_start":83,"line_end":92,"text":"check_status utilise variable locale d'effet de bord — prefer firstValueFrom","correction_prompt":"Replace with firstValueFrom pattern. Add test for setupComplete: false."},
+        {"id":"obs-svcspec-6","criterion":"test-quality","severity":"suggestion","level":"yellow","line_start":22,"line_end":33,"text":"login test ne verifie pas le corps de la requete HTTP","correction_prompt":"Add expect(req.request.body).toEqual({ email: 'admin@test.com', password: 'SecurePass123!' })."}
+      ],
+      "note": "Nommage et doubles corrects, clearUser non testee, cas erreur login manquants"
+    },
+    {
+      "index": 10,
+      "path": "frontend/src/app/auth/auth.guard.spec.ts",
+      "category": "tests",
+      "risk_score": 0.39,
+      "status": "reviewed",
+      "green": 3, "yellow": 3, "red": 0, "blocking": 0,
+      "observations": [
+        {"id":"obs-gspec-1","criterion":"test-structure","severity":"suggestion","level":"yellow","line_start":33,"line_end":107,"text":"Separation AAA absente dans tous les tests","correction_prompt":"Add // Arrange, // Act, // Assert separators."},
+        {"id":"obs-gspec-2","criterion":"test-quality","severity":"suggestion","level":"yellow","line_start":53,"line_end":54,"text":"Assertions instanceof UrlTree inspectent type interne Angular — fragile","correction_prompt":"Remove instanceof UrlTree assertions. Keep only .toString() assertions."},
+        {"id":"obs-gspec-3","criterion":"test-coverage","severity":"suggestion","level":"yellow","line_start":84,"line_end":107,"text":"noAdminGuard cas erreur reseau non teste","correction_prompt":"Add test redirects_to_login_when_status_endpoint_errors flushing 500."}
+      ],
+      "note": "Tests bien nommes et minimalistes, supprimer instanceof UrlTree, ajouter cas erreur noAdminGuard"
+    }
+  ],
+  "agent_tasks": {},
+  "summary": {
+    "total_files": 11, "completed": 11,
+    "green": 23, "yellow": 23, "red": 11, "blocking": 11,
+    "fixed": 0, "posted": 0, "skipped": 0, "escalated": 0
+  },
+  "user_comments": []
+}

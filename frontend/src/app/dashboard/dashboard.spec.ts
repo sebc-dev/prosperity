@@ -24,7 +24,12 @@ describe('Dashboard', () => {
   });
 
   it('displays_user_displayName_when_user_is_authenticated', () => {
-    mockAuthService.user.set({ displayName: 'Alice', email: 'a@b.com', role: 'USER' });
+    mockAuthService.user.set({
+      id: 'user-1',
+      displayName: 'Alice',
+      email: 'a@b.com',
+      role: 'USER',
+    });
 
     fixture.detectChanges();
 

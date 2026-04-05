@@ -32,18 +32,19 @@ public class AuthService {
       throw new SetupAlreadyCompleteException();
     }
 
-    var user = new User(
-        request.email(),
-        passwordEncoder.encode(request.password()),
-        request.displayName());
+    var user =
+        new User(
+            request.email(), passwordEncoder.encode(request.password()), request.displayName());
     user.setRole(Role.ADMIN);
     var saved = userRepository.save(user);
 
-    return new UserResponse(saved.getDisplayName(), saved.getEmail(), saved.getRole().name());
+    return new UserResponse(
+        saved.getId(), saved.getDisplayName(), saved.getEmail(), saved.getRole().name());
   }
 
   /** Maps a User entity to a safe UserResponse DTO. */
   public UserResponse toUserResponse(User user) {
-    return new UserResponse(user.getDisplayName(), user.getEmail(), user.getRole().name());
+    return new UserResponse(
+        user.getId(), user.getDisplayName(), user.getEmail(), user.getRole().name());
   }
 }

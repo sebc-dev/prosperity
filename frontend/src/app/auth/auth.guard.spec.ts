@@ -42,6 +42,7 @@ describe('Auth Guards', () => {
   describe('authGuard', () => {
     it('allows_access_when_authenticated', () => {
       const mockUser: UserResponse = {
+        id: 'user-1',
         displayName: 'Admin',
         email: 'admin@test.com',
         role: 'ADMIN',
@@ -80,6 +81,7 @@ describe('Auth Guards', () => {
 
     it('redirects_to_dashboard_when_authenticated', () => {
       const mockUser: UserResponse = {
+        id: 'user-1',
         displayName: 'Admin',
         email: 'admin@test.com',
         role: 'ADMIN',

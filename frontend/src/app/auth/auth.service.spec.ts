@@ -21,7 +21,12 @@ describe('AuthService', () => {
   });
 
   it('login_sets_current_user_on_success', () => {
-    const mockUser: UserResponse = { displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' };
+    const mockUser: UserResponse = {
+      id: 'user-1',
+      displayName: 'Admin',
+      email: 'admin@test.com',
+      role: 'ADMIN',
+    };
 
     service.login({ email: 'admin@test.com', password: 'SecurePass123!' }).subscribe();
 
@@ -35,7 +40,12 @@ describe('AuthService', () => {
 
   it('logout_clears_current_user', () => {
     // Arrange: set user via login first
-    const mockUser: UserResponse = { displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' };
+    const mockUser: UserResponse = {
+      id: 'user-1',
+      displayName: 'Admin',
+      email: 'admin@test.com',
+      role: 'ADMIN',
+    };
     service.login({ email: 'admin@test.com', password: 'SecurePass123!' }).subscribe();
     httpTesting.expectOne('/api/auth/login').flush(mockUser);
 
@@ -52,7 +62,12 @@ describe('AuthService', () => {
 
   it('logout_clears_user_and_returns_typed_error_on_failure', () => {
     // Arrange
-    const mockUser: UserResponse = { displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' };
+    const mockUser: UserResponse = {
+      id: 'user-1',
+      displayName: 'Admin',
+      email: 'admin@test.com',
+      role: 'ADMIN',
+    };
     let error: AuthError | undefined;
     service.login({ email: 'a@b.com', password: 'p' }).subscribe();
     httpTesting.expectOne('/api/auth/login').flush(mockUser);
@@ -70,7 +85,12 @@ describe('AuthService', () => {
   });
 
   it('check_session_sets_user_when_authenticated', () => {
-    const mockUser: UserResponse = { displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' };
+    const mockUser: UserResponse = {
+      id: 'user-1',
+      displayName: 'Admin',
+      email: 'admin@test.com',
+      role: 'ADMIN',
+    };
 
     service.checkSession().subscribe();
 
@@ -90,7 +110,12 @@ describe('AuthService', () => {
   });
 
   it('setup_does_not_set_current_user', () => {
-    const mockUser: UserResponse = { displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' };
+    const mockUser: UserResponse = {
+      id: 'user-1',
+      displayName: 'Admin',
+      email: 'admin@test.com',
+      role: 'ADMIN',
+    };
 
     service
       .setup({ email: 'admin@test.com', password: 'SecurePass123!', displayName: 'Admin' })

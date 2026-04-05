@@ -29,6 +29,9 @@ importers:
       '@primeng/themes':
         specifier: ^21.0.4
         version: 21.0.4
+      primeicons:
+        specifier: ^7.0.0
+        version: 7.0.0
       primeng:
         specifier: ^21.1.4
         version: 21.1.4(768a8dd827af0bf928b897dde79865a0)
@@ -2800,6 +2803,9 @@ packages:
     resolution: {integrity: sha512-UOnG6LftzbdaHZcKoPFtOcCKztrQ57WkHDeRD9t/PTQtmT0NHSeWWepj6pS0z/N7+08BHFDQVUrfmfMRcZwbMg==}
     engines: {node: '>=14'}
     hasBin: true
+
+  primeicons@7.0.0:
+    resolution: {integrity: sha512-jK3Et9UzwzTsd6tzl2RmwrVY/b8raJ3QZLzoDACj+oTJ0oX7L9Hy+XnVwgo4QVKlKpnP/Ur13SXV/pVh4LzaDw==}
 
   primeng@21.1.4:
     resolution: {integrity: sha512-7W9Q91TuEJTF8I1PZybOiZRu8wtBT/EfFFPvuTOfBRlLYNJkUdQszpDUhDyfK9g4VdbL5nzMxfDAYlp4/1TsQA==}
@@ -5988,6 +5994,8 @@ snapshots:
   prelude-ls@1.2.1: {}
 
   prettier@3.8.1: {}
+
+  primeicons@7.0.0: {}
 
   primeng@21.1.4(768a8dd827af0bf928b897dde79865a0):
     dependencies:

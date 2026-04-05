@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 02-04-PLAN.md
-last_updated: "2026-04-02T20:35:57.577Z"
-last_activity: 2026-04-02
+status: verifying
+stopped_at: Completed 03-09-PLAN.md
+last_updated: "2026-04-05T15:24:45.114Z"
+last_activity: 2026-04-05
 progress:
   total_phases: 10
-  completed_phases: 2
-  total_plans: 21
-  completed_plans: 21
+  completed_phases: 3
+  total_plans: 30
+  completed_plans: 30
   percent: 0
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Un foyer peut suivre ses finances au quotidien (soldes, transactions, budgets enveloppes) sans effort manuel excessif, grace a la synchronisation bancaire automatique et une interface claire.
-**Current focus:** Phase 02 — authentication-setup-wizard
+**Current focus:** Phase 03 — accounts-access-control
 
 ## Current Position
 
-Phase: 3
+Phase: 4
 Plan: Not started
-Status: Ready to execute
-Last activity: 2026-04-02
+Status: Phase complete — ready for verification
+Last activity: 2026-04-05
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -65,6 +65,15 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P06 | 1min | 2 tasks | 2 files |
 | Phase 02 P03 | 2min | 2 tasks | 3 files |
 | Phase 02 P04 | 11min | 2 tasks | 7 files |
+| Phase 03 P01 | 1 | 2 tasks | 3 files |
+| Phase 03 P02 | 3 | 2 tasks | 7 files |
+| Phase 03 P03 | 1min | 2 tasks | 2 files |
+| Phase 03 P04 | 2 | 2 tasks | 1 files |
+| Phase 03 P05 | 1 | 2 tasks | 2 files |
+| Phase 03 P06 | 14min | 2 tasks | 4 files |
+| Phase 03 P07 | 5min | 3 tasks | 7 files |
+| Phase 03 P08 | 4 | 2 tasks | 4 files |
+| Phase 03 P09 | 40 | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -95,6 +104,22 @@ Recent decisions affecting current work:
 - [Phase 02]: Generic error 'Identifiants invalides' on login failure to prevent user enumeration
 - [Phase 02]: Testcontainers PostgreSQL 2.0 for integration tests (artifact: testcontainers-postgresql)
 - [Phase 02]: Spring Boot 4 @AutoConfigureMockMvc in spring-boot-webmvc-test module
+- [Phase 03]: archived column added via ALTER TABLE in V009 (not in initial schema V002 per D-06)
+- [Phase 03]: AccessLevel.isAtLeast() uses ordinal comparison — enum declaration order READ(0) < WRITE(1) < ADMIN(2) must never change
+- [Phase 03]: UpdateAccountRequest uses all-nullable fields for partial PATCH semantics (D-08)
+- [Phase 03]: AccountAccessDeniedException returns 403 (not 404) per D-02 to avoid leaking account existence
+- [Phase 03]: AccountRepository returns Object[] pairs [Account, AccessLevel] to avoid N+1 when projecting access level alongside account
+- [Phase 03]: AccountAccessRepository uses Spring Data derived queries (no @Query) — method names map directly to JPA property navigation
+- [Phase 03]: orElseThrow lambda in getAccount/updateAccount distinguishes 403 vs 404 via existsById check
+- [Phase 03]: AccountService.setAccess uses orElseGet to create new AccountAccess lazily only when entry does not exist
+- [Phase 03]: UserController separate from AuthController: Spring MVC concatenates class-level and method-level paths — @GetMapping("/api/users") on AuthController (@RequestMapping("/api/auth")) produces /api/auth/api/users, not /api/users
+- [Phase 03]: findByIdAndUserId returns List<Object[]> not Optional<Object[]> to avoid Hibernate multi-projection wrapping bug
+- [Phase 03]: HttpParams used for conditional query params: conditional object literal {} causes TypeScript to pick ArrayBuffer overload on http.get, HttpParams avoids the ambiguity
+- [Phase 03]: provideRouter([]) required in Angular component tests when RouterLink is imported in the component under test
+- [Phase 03]: p-toggleswitch uses plain boolean property (not signal) for ngModel two-way binding compatibility
+- [Phase 03]: ConfirmationService provided at component level in providers array to scope confirm dialogs
+- [Phase 03]: UserResponse.id added as UUID in backend record and string in frontend interface — required for add-user dropdown in access dialog
+- [Phase 03]: Immediate-save access dialog: each ngModelChange fires individual setAccess call, savingRowId signal tracks per-row loading
 
 ### Pending Todos
 
@@ -107,6 +132,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-02T20:27:43.504Z
-Stopped at: Completed 02-04-PLAN.md
+Last session: 2026-04-05T15:09:39.701Z
+Stopped at: Completed 03-09-PLAN.md
 Resume file: None

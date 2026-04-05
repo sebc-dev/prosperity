@@ -4,6 +4,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 export type UserRole = 'ADMIN' | 'USER';
 
 export interface UserResponse {
+  id: string;
   displayName: string;
   email: string;
   role: UserRole;

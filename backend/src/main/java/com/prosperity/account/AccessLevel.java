@@ -4,5 +4,13 @@ package com.prosperity.account;
 public enum AccessLevel {
   READ,
   WRITE,
-  ADMIN
+  ADMIN;
+
+  /**
+   * Returns true if this access level is at least the required level.
+   * Ordering: READ &lt; WRITE &lt; ADMIN.
+   */
+  public boolean isAtLeast(AccessLevel required) {
+    return this.ordinal() >= required.ordinal();
+  }
 }

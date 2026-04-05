@@ -93,7 +93,7 @@ Plans:
 
 Plans:
 - [x] 03-01-PLAN.md — Flyway V009 migration (archived column) + Account entity update + AccessLevel hierarchy
-- [ ] 03-02-PLAN.md — DTO records (request/response) + custom exceptions
+- [x] 03-02-PLAN.md — DTO records (request/response) + custom exceptions
 - [ ] 03-03-PLAN.md — Repository JPQL queries (access-filtered account retrieval)
 - [ ] 03-04-PLAN.md — AccountService business logic (CRUD + access enforcement)
 - [ ] 03-05-PLAN.md — AccountController REST endpoints + users list endpoint
@@ -224,7 +224,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 |-------|----------------|--------|-----------|
 | 1. Project Foundation | 0/14 | Planning | - |
 | 2. Authentication & Setup Wizard | 0/7 | Planning | - |
-| 3. Accounts & Access Control | 0/9 | Planning | - |
+| 3. Accounts & Access Control | 2/9 | In Progress|  |
 | 4. Categories | 0/1 | Not started | - |
 | 5. Transactions | 0/2 | Not started | - |
 | 6. Envelope Budgets | 0/2 | Not started | - |

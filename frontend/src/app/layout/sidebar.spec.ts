@@ -19,24 +19,14 @@ describe('Sidebar', () => {
     fixture.detectChanges();
   });
 
-  it('toggle_when_hidden_shows_sidebar', () => {
-    // Arrange — visible starts as false (default)
-
-    // Act
-    component.toggle();
-
-    // Assert
-    expect(component['visible']).toBe(true);
-  });
-
-  it('toggle_when_visible_hides_sidebar', () => {
+  it('renders_navigation_link_to_accounts', () => {
     // Arrange
-    component['visible'] = true;
+    const compiled = fixture.nativeElement as HTMLElement;
 
-    // Act
-    component.toggle();
+    // Act — component already rendered in beforeEach
 
     // Assert
-    expect(component['visible']).toBe(false);
+    const link = compiled.querySelector('a[routerLink="/accounts"]');
+    expect(link).toBeTruthy();
   });
 });

@@ -25,7 +25,14 @@ import { UserResponse } from '../auth/auth.types';
 @Component({
   selector: 'app-access-dialog',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ReactiveFormsModule, FormsModule, DialogModule, SelectModule, ButtonModule, MessageModule],
+  imports: [
+    ReactiveFormsModule,
+    FormsModule,
+    DialogModule,
+    SelectModule,
+    ButtonModule,
+    MessageModule,
+  ],
   template: `
     <p-dialog
       [header]="'Gerer les acces — ' + (account()?.name ?? '')"
@@ -69,7 +76,9 @@ import { UserResponse } from '../auth/auth.types';
                       [options]="levelOptions"
                       optionLabel="label"
                       optionValue="value"
-                      [disabled]="entry.userEmail === currentUserEmail() || savingRowId() === entry.id"
+                      [disabled]="
+                        entry.userEmail === currentUserEmail() || savingRowId() === entry.id
+                      "
                       styleClass="w-32"
                     />
                   </td>
@@ -215,18 +224,21 @@ export class AccessDialog {
     if (!acct) return;
 
     this.savingRowId.set(entry.id);
-    this.accountService.setAccess(acct.id, { userId: entry.userId, accessLevel: newLevel }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: (updated) => {
-        this.accessEntries.update((entries) =>
-          entries.map((e) => (e.id === entry.id ? updated : e)),
-        );
-        this.savingRowId.set(null);
-      },
-      error: () => {
-        this.error.set("Impossible d'enregistrer les modifications. Veuillez reessayer.");
-        this.savingRowId.set(null);
-      },
-    });
+    this.accountService
+      .setAccess(acct.id, { userId: entry.userId, accessLevel: newLevel })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (updated) => {
+          this.accessEntries.update((entries) =>
+            entries.map((e) => (e.id === entry.id ? updated : e)),
+          );
+          this.savingRowId.set(null);
+        },
+        error: () => {
+          this.error.set("Impossible d'enregistrer les modifications. Veuillez reessayer.");
+          this.savingRowId.set(null);
+        },
+      });
   }
 
   protected addUser(): void {
@@ -257,19 +269,22 @@ export class AccessDialog {
     if (!acct) return;
 
     this.savingRowId.set(entry.id);
-    this.accountService.removeAccess(acct.id, entry.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: () => {
-        this.accessEntries.update((entries) => entries.filter((e) => e.id !== entry.id));
-        this.savingRowId.set(null);
-      },
-      error: (err) => {
-        const msg =
-          err?.status === 409
-            ? 'Impossible de retirer le dernier administrateur du compte.'
-            : "Impossible de retirer l'acces. Veuillez reessayer.";
-        this.error.set(msg);
-        this.savingRowId.set(null);
-      },
-    });
+    this.accountService
+      .removeAccess(acct.id, entry.id)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => {
+          this.accessEntries.update((entries) => entries.filter((e) => e.id !== entry.id));
+          this.savingRowId.set(null);
+        },
+        error: (err) => {
+          const msg =
+            err?.status === 409
+              ? 'Impossible de retirer le dernier administrateur du compte.'
+              : "Impossible de retirer l'acces. Veuillez reessayer.";
+          this.error.set(msg);
+          this.savingRowId.set(null);
+        },
+      });
   }
 }

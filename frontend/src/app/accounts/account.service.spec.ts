@@ -69,7 +69,9 @@ describe('AccountService', () => {
 
     const req = httpTesting.expectOne(
       (r) =>
-        r.url === '/api/accounts' && r.method === 'GET' && r.params.get('includeArchived') === 'true',
+        r.url === '/api/accounts' &&
+        r.method === 'GET' &&
+        r.params.get('includeArchived') === 'true',
     );
     req.flush(mockAccounts);
 

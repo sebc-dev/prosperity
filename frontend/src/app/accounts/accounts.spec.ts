@@ -138,9 +138,9 @@ describe('Accounts', () => {
     const fixture = TestBed.createComponent(Accounts);
 
     // Act
-    httpMock.expectOne('/api/accounts').flush([
-      makeAccount({ accountType: 'SHARED', currentUserAccessLevel: 'ADMIN' }),
-    ]);
+    httpMock
+      .expectOne('/api/accounts')
+      .flush([makeAccount({ accountType: 'SHARED', currentUserAccessLevel: 'ADMIN' })]);
     fixture.detectChanges();
 
     // Assert

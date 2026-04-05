@@ -44,13 +44,17 @@ describe('AccessDialog', () => {
     accountService = {
       getAccessEntries: () => of([makeEntry()]),
       loadUsers: () => of([]),
-      setAccess: (_, req) =>
-        of(makeEntry({ userId: req.userId, accessLevel: req.accessLevel })),
+      setAccess: (_, req) => of(makeEntry({ userId: req.userId, accessLevel: req.accessLevel })),
       removeAccess: () => of(undefined),
     };
 
     authService = {
-      user: signal({ id: 'user-1', displayName: 'Alice', email: 'alice@example.com', role: 'ADMIN' }),
+      user: signal({
+        id: 'user-1',
+        displayName: 'Alice',
+        email: 'alice@example.com',
+        role: 'ADMIN',
+      }),
     };
 
     await TestBed.configureTestingModule({
@@ -100,9 +104,7 @@ describe('AccessDialog', () => {
     fixture.detectChanges();
 
     // Assert — the p-select for the current user row has [disabled]=true
-    const selects = fixture.debugElement.queryAll(
-      (el) => el.componentInstance instanceof Select,
-    );
+    const selects = fixture.debugElement.queryAll((el) => el.componentInstance instanceof Select);
     expect(selects.length).toBeGreaterThan(0);
     expect(selects[0].componentInstance.disabled()).toBe(true);
   });

@@ -76,12 +76,7 @@ import { AccountResponse, AccountType } from './account.types';
 
       <ng-template pTemplate="footer">
         <div class="flex justify-end gap-2">
-          <p-button
-            label="Annuler"
-            [text]="true"
-            severity="secondary"
-            (onClick)="onHide()"
-          />
+          <p-button label="Annuler" [text]="true" severity="secondary" (onClick)="onHide()" />
           <p-button
             [label]="loading() ? 'Enregistrement...' : 'Enregistrer le compte'"
             [loading]="loading()"
@@ -113,7 +108,9 @@ export class AccountDialog {
   protected error = signal<string | null>(null);
 
   protected isEdit = computed(() => this.account() !== null);
-  protected dialogHeader = computed(() => (this.isEdit() ? 'Modifier le compte' : 'Ajouter un compte'));
+  protected dialogHeader = computed(() =>
+    this.isEdit() ? 'Modifier le compte' : 'Ajouter un compte',
+  );
 
   protected typeOptions = [
     { label: 'Personnel', value: 'PERSONAL' },

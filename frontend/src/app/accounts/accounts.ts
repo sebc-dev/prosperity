@@ -37,11 +37,7 @@ import { AccessDialog } from './access-dialog';
       <!-- Header row -->
       <div class="flex items-center justify-between mb-6">
         <h1 class="text-2xl font-semibold">Comptes bancaires</h1>
-        <p-button
-          label="Ajouter un compte"
-          icon="pi pi-plus"
-          (onClick)="openCreateDialog()"
-        />
+        <p-button label="Ajouter un compte" icon="pi pi-plus" (onClick)="openCreateDialog()" />
       </div>
 
       <!-- Archive toggle -->
@@ -64,7 +60,9 @@ import { AccessDialog } from './access-dialog';
       @if (!loading() && accounts().length === 0) {
         <div role="status" class="text-center py-12">
           <h2 class="text-lg font-semibold mb-2">Aucun compte</h2>
-          <p class="text-muted-color mb-4">Creez votre premier compte bancaire pour commencer a suivre vos finances.</p>
+          <p class="text-muted-color mb-4">
+            Creez votre premier compte bancaire pour commencer a suivre vos finances.
+          </p>
           <p-button label="Ajouter un compte" icon="pi pi-plus" (onClick)="openCreateDialog()" />
         </div>
       }
@@ -100,7 +98,7 @@ import { AccessDialog } from './access-dialog';
                 />
               </td>
               <td class="font-tabular-nums">
-                {{ account.balance | number:'1.2-2':'fr-FR' }} {{ account.currency }}
+                {{ account.balance | number: '1.2-2' : 'fr-FR' }} {{ account.currency }}
               </td>
               <td>
                 <p-tag
@@ -110,7 +108,10 @@ import { AccessDialog } from './access-dialog';
               </td>
               <td>
                 <div class="flex gap-1">
-                  @if (account.currentUserAccessLevel === 'WRITE' || account.currentUserAccessLevel === 'ADMIN') {
+                  @if (
+                    account.currentUserAccessLevel === 'WRITE' ||
+                    account.currentUserAccessLevel === 'ADMIN'
+                  ) {
                     <p-button
                       icon="pi pi-pencil"
                       [text]="true"
@@ -120,7 +121,9 @@ import { AccessDialog } from './access-dialog';
                       [attr.aria-label]="'Modifier ' + account.name"
                     />
                   }
-                  @if (account.currentUserAccessLevel === 'ADMIN' && account.accountType === 'SHARED') {
+                  @if (
+                    account.currentUserAccessLevel === 'ADMIN' && account.accountType === 'SHARED'
+                  ) {
                     <p-button
                       icon="pi pi-users"
                       [text]="true"
@@ -204,13 +207,18 @@ export class Accounts {
   protected loadData(): void {
     this.loading.set(true);
     this.error.set(null);
-    this.accountService.loadAccounts(this.includeArchived).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: () => this.loading.set(false),
-      error: () => {
-        this.loading.set(false);
-        this.error.set('Impossible de charger les comptes. Verifiez votre connexion et reessayez.');
-      },
-    });
+    this.accountService
+      .loadAccounts(this.includeArchived)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => this.loading.set(false),
+        error: () => {
+          this.loading.set(false);
+          this.error.set(
+            'Impossible de charger les comptes. Verifiez votre connexion et reessayez.',
+          );
+        },
+      });
   }
 
   protected onToggleArchived(): void {
@@ -238,19 +246,25 @@ export class Accounts {
       acceptLabel: 'Archiver',
       rejectLabel: 'Annuler',
       accept: () => {
-        this.accountService.updateAccount(account.id, { archived: true }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-          next: () => this.loadData(),
-          error: () => this.error.set('Impossible d\'archiver le compte. Veuillez reessayer.'),
-        });
+        this.accountService
+          .updateAccount(account.id, { archived: true })
+          .pipe(takeUntilDestroyed(this.destroyRef))
+          .subscribe({
+            next: () => this.loadData(),
+            error: () => this.error.set("Impossible d'archiver le compte. Veuillez reessayer."),
+          });
       },
     });
   }
 
   protected unarchive(account: AccountResponse): void {
-    this.accountService.updateAccount(account.id, { archived: false }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-      next: () => this.loadData(),
-      error: () => this.error.set('Impossible de désarchiver le compte. Veuillez reessayer.'),
-    });
+    this.accountService
+      .updateAccount(account.id, { archived: false })
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: () => this.loadData(),
+        error: () => this.error.set('Impossible de désarchiver le compte. Veuillez reessayer.'),
+      });
   }
 
   protected openAccessDialog(account: AccountResponse): void {

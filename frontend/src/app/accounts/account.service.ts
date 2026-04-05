@@ -22,9 +22,9 @@ export class AccountService {
     if (includeArchived) {
       params = params.set('includeArchived', 'true');
     }
-    return this.http.get<AccountResponse[]>('/api/accounts', { params }).pipe(
-      tap((accounts: AccountResponse[]) => this.accountsSignal.set(accounts)),
-    );
+    return this.http
+      .get<AccountResponse[]>('/api/accounts', { params })
+      .pipe(tap((accounts: AccountResponse[]) => this.accountsSignal.set(accounts)));
   }
 
   createAccount(request: CreateAccountRequest): Observable<AccountResponse> {

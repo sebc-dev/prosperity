@@ -47,6 +47,9 @@ public class Account {
   @Column(name = "updated_at", nullable = false, columnDefinition = "TIMESTAMPTZ")
   private Instant updatedAt;
 
+  @Column(nullable = false)
+  private boolean archived = false;
+
   protected Account() {}
 
   public Account(String name, AccountType accountType) {
@@ -119,5 +122,13 @@ public class Account {
 
   public void setUpdatedAt(Instant updatedAt) {
     this.updatedAt = updatedAt;
+  }
+
+  public boolean isArchived() {
+    return archived;
+  }
+
+  public void setArchived(boolean archived) {
+    this.archived = archived;
   }
 }

@@ -1,0 +1,248 @@
+{
+  "session_id": "phase-03-accounts-20260405",
+  "type": "review",
+  "version": "2.0.0",
+  "branch": "gsd/phase-03-accounts-access-control",
+  "base_branch": "main",
+  "merge_base": "a0a886314fb6a58cb68f484fdfcf09a842da66d7",
+  "head_at_start": "f2feac2",
+  "head_after_fixes": "99cd5c3",
+  "created_at": "2026-04-05T00:00:00Z",
+  "status": "completed",
+  "config_snapshot": {
+    "model_profile": "balanced",
+    "default_output": "fix",
+    "max_parallel_agents": 5,
+    "validator_threshold": 0.75
+  },
+  "context_sources": [],
+  "files": [
+    {
+      "index": 0,
+      "path": "backend/src/main/resources/db/migration/V009__add_archived_to_bank_accounts.sql",
+      "category": "database-migrations",
+      "risk_score": 0.30,
+      "status": "reviewed",
+      "green": 1, "yellow": 1, "red": 0, "blocking": 0,
+      "observations": [
+        {"id":"obs-db-1","criterion":"performance","severity":"suggestion","level":"yellow","line_start":1,"line_end":2,"text":"Index partiel sur archived absent — requetes filtrées AND a.archived=false sans index","correction_prompt":"Add to V009: CREATE INDEX idx_bank_accounts_not_archived ON bank_accounts (id) WHERE archived = false;","verdict":"skip","verdict_reason":"Micro-optimisation negligeable pour un foyer de 2-3 utilisateurs"}
+      ],
+      "note": "Migration correcte, DEFAULT FALSE assure retrocompatibilite. Index partiel suggere mais skip."
+    },
+    {
+      "index": 1,
+      "path": "backend/src/main/java/com/prosperity/account/AccessLevel.java",
+      "category": "domain-models",
+      "risk_score": 0.30,
+      "status": "reviewed",
+      "green": 0, "yellow": 1, "red": 0, "blocking": 0,
+      "observations": [
+        {"id":"obs-db-3","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":13,"line_end":15,"text":"isAtLeast() repose sur ordinal implicite — fragile si l'ordre des constantes change","correction_prompt":"Replace ordinal-based comparison with explicit rank field: READ(0), WRITE(1), ADMIN(2).","verdict":"skip","verdict_reason":"Fragilite theorique documentee en Javadoc, projet mono-contributeur, 3 valeurs stables"}
+      ],
+      "note": "Enum propre, isAtLeast() fonctionnel. Ordinal documente explicitement."
+    },
+    {
+      "index": 2,
+      "path": "backend/src/main/java/com/prosperity/account/AccountRepository.java",
+      "category": "infrastructure",
+      "risk_score": 0.55,
+      "status": "reviewed",
+      "green": 0, "yellow": 1, "red": 0, "blocking": 0,
+      "observations": [
+        {"id":"obs-db-2","criterion":"architecture","severity":"suggestion","level":"yellow","line_start":17,"line_end":57,"text":"Retour Object[] non type — cast (Account)row[0] et (AccessLevel)row[1] non verifies a la compilation","correction_prompt":"Create AccountWithAccess record, use SELECT new com.prosperity.account.AccountWithAccess(a, aa.accessLevel) FROM ...","verdict":"apply","verdict_reason":"Fix chirurgical, record + JPQL constructor expression contourne le bug Hibernate Optional<Object[]>"}
+      ],
+      "note": "Queries JPQL correctes, pas de N+1. Object[] migre vers AccountWithAccess record. APPLIED."
+    },
+    {
+      "index": 3,
+      "path": "backend/src/main/java/com/prosperity/account/AccountService.java",
+      "category": "business-logic",
+      "risk_score": 0.80,
+      "status": "reviewed",
+      "green": 3, "yellow": 3, "red": 4, "blocking": 4,
+      "observations": [
+        {"id":"obs-1","criterion":"error-handling","severity":"blocking","level":"red","line_start":226,"line_end":229,"text":"resolveUser() leve RuntimeException generique non interceptee → HTTP 500","correction_prompt":"Replace RuntimeException with UserNotFoundException. Add @ExceptionHandler(UserNotFoundException.class) → 404 in AccountController.","verdict":"apply","verdict_reason":"RuntimeException confirmee, produit 500, fix chirurgical UserNotFoundException. APPLIED."},
+        {"id":"obs-2","criterion":"error-handling","severity":"blocking","level":"red","line_start":159,"line_end":163,"text":"setAccess() leve RuntimeException pour userId inconnu → HTTP 500","correction_prompt":"Replace RuntimeException with UserNotFoundException. Add @ExceptionHandler → 404.","verdict":"apply","verdict_reason":"Meme pattern que obs-1, reutilise UserNotFoundException. APPLIED."},
+        {"id":"obs-3","criterion":"error-handling","severity":"blocking","level":"red","line_start":198,"line_end":207,"text":"removeAccess() leve RuntimeException + IllegalArgumentException non interceptees → HTTP 500","correction_prompt":"Create AccessEntryNotFoundException. Add @ExceptionHandler(AccessEntryNotFoundException.class) → 404 and @ExceptionHandler(IllegalArgumentException.class) → 400.","verdict":"apply","verdict_reason":"Deux cas clients valides retournant 500. APPLIED."},
+        {"id":"obs-4","criterion":"security","severity":"blocking","level":"red","line_start":150,"line_end":183,"text":"setAccess() permet au dernier ADMIN de se retrograder — compte orphelin possible","correction_prompt":"Before access.setAccessLevel(), check if ADMIN→non-ADMIN and adminCount<=1, throw IllegalStateException.","verdict":"apply","verdict_reason":"Trou metier confirme, countByBankAccountIdAndAccessLevel existe deja. APPLIED."},
+        {"id":"obs-5","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":101,"line_end":109,"text":"POST /access pour un upsert — semantique REST ambigue","verdict":"skip","verdict_reason":"Preference stylistique sans impact fonctionnel pour ce contexte"},
+        {"id":"obs-6","criterion":"performance","severity":"suggestion","level":"yellow","line_start":78,"line_end":83,"text":"Double requete DB pour D-02 — index account_accesses a verifier","verdict":"skip","verdict_reason":"Negligeable pour foyer 2-3 utilisateurs, index UNIQUE(user_id, bank_account_id) couvre les lookups"},
+        {"id":"obs-7","criterion":"test-coverage","severity":"suggestion","level":"yellow","line_start":188,"line_end":237,"text":"Test manquant: setAccess() retrogradation dernier ADMIN","correction_prompt":"Add test set_access_prevents_demoting_last_admin in AccountServiceTest.","verdict":"apply","verdict_reason":"Directement lie a obs-4, fix chirurgical 1 test unitaire. APPLIED."}
+      ],
+      "note": "Logique acces solide (D-02, D-04, D-07). 4 bloquants RuntimeException et faille setAccess last-admin corriges."
+    },
+    {
+      "index": 4,
+      "path": "backend/src/main/java/com/prosperity/account/AccountController.java",
+      "category": "controllers-api",
+      "risk_score": 0.55,
+      "status": "reviewed",
+      "green": 2, "yellow": 0, "red": 0, "blocking": 0,
+      "observations": [],
+      "note": "Separation HTTP/metier propre. Handlers manquants corriges dans obs-1/2/3 d'AccountService."
+    },
+    {
+      "index": 5,
+      "path": "backend/src/main/java/com/prosperity/account/UpdateAccountRequest.java",
+      "category": "domain-models",
+      "risk_score": 0.40,
+      "status": "reviewed",
+      "green": 0, "yellow": 1, "red": 0, "blocking": 0,
+      "observations": [
+        {"id":"obs-dto-4","criterion":"error-handling","severity":"suggestion","level":"yellow","line_start":7,"line_end":8,"text":"name='' accepte par @Size(max=100) sans @NotBlank en PATCH — nom de compte vide persiste en base","correction_prompt":"Change @Size(max=100) to @Size(min=1, max=100) on name field.","verdict":"apply","verdict_reason":"Bug de donnees confirme, fix d'un parametre d'annotation. APPLIED."}
+      ],
+      "note": "PATCH semantique correct (null = ne pas modifier). name='' maintenant rejete. APPLIED."
+    },
+    {
+      "index": 6,
+      "path": "backend/src/main/java/com/prosperity/auth/UserController.java",
+      "category": "controllers-api",
+      "risk_score": 0.45,
+      "status": "reviewed",
+      "green": 0, "yellow": 2, "red": 0, "blocking": 0,
+      "observations": [
+        {"id":"obs-dto-2","criterion":"architecture","severity":"suggestion","level":"yellow","line_start":19,"line_end":30,"text":"UserController accede directement a UserRepository, court-circuitant la couche service","correction_prompt":"Move listUsers() to AuthService. Remove UserRepository injection from UserController.","verdict":"skip","verdict_reason":"Architecture layered non stricte acceptable pour cas trivial findAll+map"},
+        {"id":"obs-dto-3","criterion":"security","severity":"suggestion","level":"yellow","line_start":30,"line_end":32,"text":"GET /api/users expose le champ role a tous les utilisateurs authentifies","correction_prompt":"Create UserSummaryResponse(UUID id, String displayName) for /api/users.","verdict":"skip","verdict_reason":"Sur-exposition non critique dans contexte foyer authentifie, intentionnel pour le dropdown"}
+      ],
+      "note": "Endpoint intentionnel pour le dropdown d'acces. Layer skip acceptable. Role expose acceptable."
+    },
+    {
+      "index": 7,
+      "path": "backend/src/test/java/com/prosperity/account/AccountServiceTest.java",
+      "category": "tests",
+      "risk_score": 0.60,
+      "status": "reviewed",
+      "green": 3, "yellow": 3, "red": 2, "blocking": 2,
+      "observations": [
+        {"id":"test-obs-1","criterion":"anti-patterns","severity":"suggestion","level":"yellow","line_start":56,"line_end":56,"text":"Free Ride: verify(accountRepository).save() redondant avec assertions sur result","correction_prompt":"Remove verify(accountRepository).save(any(Account.class)); line.","verdict":"apply","verdict_reason":"Redondance confirmee, suppression d'1 ligne sans risque. APPLIED."},
+        {"id":"test-obs-2","criterion":"coverage","severity":"suggestion","level":"yellow","line_start":138,"line_end":154,"text":"update_account ne verifie pas immutabilite des champs null — test part d'un compte PERSONAL","correction_prompt":"Add test update_account_preserves_type_when_not_included_in_patch with SHARED account.","verdict":"apply","verdict_reason":"Cas non couvert confirme. APPLIED."},
+        {"id":"test-obs-3","criterion":"coverage","severity":"suggestion","level":"yellow","line_start":188,"line_end":237,"text":"4 stubs actifs dans set_access — seuil de refactoring signal","verdict":"skip","verdict_reason":"Note de design informatif, 4 stubs justifies par complexite reelle de setAccess"},
+        {"id":"test-obs-4","criterion":"coverage","severity":"blocking","level":"red","line_start":null,"line_end":null,"text":"removeAccess: branche URL-tamper non testee — garde entry.getBankAccount().getId().equals(accountId)","correction_prompt":"Add test remove_access_throws_when_access_belongs_to_different_account.","verdict":"apply","verdict_reason":"Code de securite actif non couvert. APPLIED."},
+        {"id":"test-obs-5","criterion":"coverage","severity":"suggestion","level":"yellow","line_start":null,"line_end":null,"text":"updateAccount: chemin not-found (existsById=false) absent des tests unitaires","correction_prompt":"Add test update_account_throws_not_found_when_account_missing.","verdict":"apply","verdict_reason":"Branche confirmee dans service, 1 test a ajouter. APPLIED."}
+      ],
+      "note": "Nommage exemplaire. 5 corrections appliquees. 17 tests unitaires, 0 echec."
+    },
+    {
+      "index": 8,
+      "path": "backend/src/test/java/com/prosperity/account/AccountControllerTest.java",
+      "category": "tests",
+      "risk_score": 0.65,
+      "status": "reviewed",
+      "green": 0, "yellow": 3, "red": 2, "blocking": 2,
+      "observations": [
+        {"id":"test-obs-6","criterion":"coverage","severity":"blocking","level":"red","line_start":null,"line_end":null,"text":"Aucun test unauthenticated — mauvaise config SecurityFilterChain passerait inapercue","correction_prompt":"Add unauthenticated_request_returns_401() and unauthenticated_post_without_csrf_returns_403().","verdict":"apply","verdict_reason":"Angle mort de regression securite confirme. APPLIED. Note: POST sans CSRF → 403 (pas 401)."},
+        {"id":"test-obs-7","criterion":"coverage","severity":"blocking","level":"red","line_start":null,"line_end":null,"text":"Aucun test @Valid — validation Bean Validation non verifiee","correction_prompt":"Add create_account_returns_400_when_name_is_blank() and create_account_returns_400_when_name_is_null().","verdict":"apply","verdict_reason":"@Valid confirme, aucun test payload invalide. APPLIED."},
+        {"id":"test-obs-8","criterion":"first-properties","severity":"suggestion","level":"yellow","line_start":34,"line_end":34,"text":"@DirtiesContext(AFTER_EACH_TEST_METHOD) — 22 redemarrages de contexte Spring","correction_prompt":"Replace with @Transactional at class level.","verdict":"escalate","verdict_reason":"@Transactional ne rollback pas les transactions du thread HTTP MockMvc — decision humaine. GARDE TEL QUEL."},
+        {"id":"test-obs-9","criterion":"structure","severity":"suggestion","level":"yellow","line_start":287,"line_end":295,"text":"list_users_returns_all_users hors perimetre dans AccountControllerTest","correction_prompt":"Move to UserControllerTest.java (new file).","verdict":"apply","verdict_reason":"Test deplace dans UserControllerTest cree. APPLIED."},
+        {"id":"test-obs-10","criterion":"coverage","severity":"suggestion","level":"yellow","line_start":null,"line_end":null,"text":"GET /api/accounts/{id} happy path absent des tests integration","correction_prompt":"Add get_account_returns_200_with_correct_fields().","verdict":"apply","verdict_reason":"Seul le 403 couvert. APPLIED."},
+        {"id":"test-obs-11","criterion":"coverage","severity":"suggestion","level":"yellow","line_start":null,"line_end":null,"text":"Liste vide non testee pour GET /api/accounts","correction_prompt":"Add list_accounts_returns_empty_array_when_no_accounts_accessible().","verdict":"apply","verdict_reason":"Cas limite valide non redondant. APPLIED."}
+      ],
+      "note": "7 tests ajoutes, 1 deplace vers UserControllerTest. 22 tests integration, 0 echec. @DirtiesContext conserve."
+    },
+    {
+      "index": 9,
+      "path": "frontend/src/app/accounts/accounts.ts",
+      "category": "views-ui",
+      "risk_score": 0.60,
+      "status": "reviewed",
+      "green": 2, "yellow": 3, "red": 1, "blocking": 1,
+      "observations": [
+        {"id":"fe-obs-1","criterion":"performance","severity":"blocking","level":"red","line_start":203,"line_end":209,"text":"3 subscriptions HTTP non protegees — memory leak sur navigation rapide","correction_prompt":"Add DestroyRef + takeUntilDestroyed on loadData(), confirmArchive(), unarchive().","verdict":"apply","verdict_reason":"Probleme confirme, fix chirurgical pattern standard Angular 16+. APPLIED."},
+        {"id":"fe-obs-4","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":184,"line_end":184,"text":"includeArchived champ ordinaire dans composant OnPush — fragile en zoneless","verdict":"skip","verdict_reason":"Faux positif: Zone.js actif garantit CD via ngModel events, projet pas encore zoneless"},
+        {"id":"fe-obs-5","criterion":"error-handling","severity":"suggestion","level":"yellow","line_start":239,"line_end":249,"text":"Messages d'erreur incorrects dans confirmArchive() et unarchive() — copie depuis loadData","correction_prompt":"Line 239: 'Impossible d'archiver le compte.' Line 249: 'Impossible de désarchiver le compte.'","verdict":"apply","verdict_reason":"Bug confirme factuellement, fix de 2 strings. APPLIED."},
+        {"id":"angular-bp-1","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":21,"line_end":21,"text":"standalone: true present — Angular v20+ default implicite","correction_prompt":"Remove standalone: true from @Component decorator.","verdict":"apply","verdict_reason":"Violation best practice Angular 21 officielle. APPLIED."},
+        {"id":"angular-bp-2","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":22,"line_end":22,"text":"CommonModule importe pour un seul pipe — importer DirectPipe","correction_prompt":"Replace CommonModule with DecimalPipe from @angular/common.","verdict":"apply","verdict_reason":"Import chirurgical, CommonModule inutilement large. APPLIED."},
+        {"id":"a11y-1","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":83,"line_end":88,"text":"p-table sans caption ni aria-label — WCAG AA","correction_prompt":"Add ng-template pTemplate='caption' with sr-only span + scope='col' on all th.","verdict":"apply","verdict_reason":"Violation WCAG AA. APPLIED."}
+      ],
+      "note": "Feature comptes solide. Memory leaks corriges. standalone/CommonModule/a11y appliques. 9 tests."
+    },
+    {
+      "index": 10,
+      "path": "frontend/src/app/accounts/account-dialog.ts",
+      "category": "views-ui",
+      "risk_score": 0.40,
+      "status": "reviewed",
+      "green": 2, "yellow": 1, "red": 1, "blocking": 1,
+      "observations": [
+        {"id":"fe-obs-2","criterion":"performance","severity":"blocking","level":"red","line_start":145,"line_end":155,"text":"Subscription HTTP non protegee dans onSave() — emissions sur composant detruit","correction_prompt":"Inject DestroyRef + takeUntilDestroyed on request$.subscribe().","verdict":"apply","verdict_reason":"Probleme confirme, fix chirurgical. APPLIED."},
+        {"id":"angular-bp-3","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":26,"line_end":26,"text":"standalone: true present — Angular v20+ default implicite","correction_prompt":"Remove standalone: true.","verdict":"apply","verdict_reason":"APPLIED."}
+      ],
+      "note": "ReactiveFormsModule correct. Memory leak et standalone corriges."
+    },
+    {
+      "index": 11,
+      "path": "frontend/src/app/accounts/access-dialog.ts",
+      "category": "views-ui",
+      "risk_score": 0.65,
+      "status": "reviewed",
+      "green": 2, "yellow": 4, "red": 1, "blocking": 1,
+      "observations": [
+        {"id":"fe-obs-3","criterion":"performance","severity":"blocking","level":"red","line_start":176,"line_end":249,"text":"4 subscriptions HTTP non protegees: forkJoin, onLevelChange, addUser, removeAccess","correction_prompt":"Inject DestroyRef + takeUntilDestroyed on all 4 subscriptions.","verdict":"apply","verdict_reason":"Confirme, savingRowId incoherent sur fermeture. APPLIED."},
+        {"id":"fe-obs-6","criterion":"error-handling","severity":"suggestion","level":"yellow","line_start":176,"line_end":189,"text":"forkJoin sans degradation gracieuse — echec loadUsers masque entrees d'acces existantes","correction_prompt":"Add catchError per source: forkJoin([getAccessEntries.pipe(catchError()), loadUsers.pipe(catchError())]).","verdict":"apply","verdict_reason":"Degradation gracieuse avec warning partiel choisie. APPLIED."},
+        {"id":"angular-bp-4","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":29,"line_end":29,"text":"standalone: true present","verdict":"apply","verdict_reason":"APPLIED."},
+        {"id":"angular-bp-5","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":30,"line_end":30,"text":"CommonModule importe sans utilisation dans le template","correction_prompt":"Remove CommonModule import.","verdict":"apply","verdict_reason":"APPLIED."},
+        {"id":"angular-bp-6","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":14,"line_end":14,"text":"FormsModule pour formulaire d'ajout — Reactive Forms preferees","correction_prompt":"Migrate add-user form to ReactiveFormsModule + FormBuilder. Keep FormsModule for per-row ngModel (ControlValueAccessor PrimeNG).","verdict":"apply","verdict_reason":"Formulaire d'ajout migre vers FormBuilder. FormsModule conserve pour p-select par ligne. APPLIED."},
+        {"id":"a11y-2","criterion":"conventions","severity":"suggestion","level":"yellow","line_start":56,"line_end":60,"text":"<th> sans scope=col + bouton icon-only sans aria-label — WCAG AA","correction_prompt":"Add scope='col' on all th. Add aria-label='Ajouter l utilisateur' on pi-plus button.","verdict":"apply","verdict_reason":"WCAG AA. APPLIED."}
+      ],
+      "note": "4 memory leaks corriges, forkJoin degrade gracieusement, ReactiveFormsModule, a11y. APPLIED."
+    },
+    {
+      "index": 12,
+      "path": "frontend/src/app/accounts/accounts.spec.ts",
+      "category": "tests",
+      "risk_score": 0.50,
+      "status": "reviewed",
+      "green": 0, "yellow": 1, "red": 0, "blocking": 0,
+      "observations": [
+        {"id":"fe-obs-7","criterion":"test-coverage","severity":"suggestion","level":"yellow","line_start":1,"line_end":45,"text":"Chemins critiques non testes: etat erreur, toggle archives, etat vide, conditionnels ADMIN","correction_prompt":"Add 6 tests: error state, toggle includeArchived, empty state, ADMIN buttons, READ no-archive, access management button.","verdict":"apply","verdict_reason":"Lacune de couverture reelle. 6 tests ajoutes + locale fr-FR enregistree. APPLIED."}
+      ],
+      "note": "9 tests total, 0 echec. Locale fr-FR requise: registerLocaleData + LOCALE_ID provider."
+    },
+    {
+      "index": 13,
+      "path": "frontend/src/app/accounts/access-dialog.spec.ts",
+      "category": "tests",
+      "risk_score": 0.45,
+      "status": "reviewed",
+      "green": 0, "yellow": 1, "red": 0, "blocking": 0,
+      "observations": [
+        {"id":"fe-obs-8","criterion":"test-coverage","severity":"suggestion","level":"yellow","line_start":83,"line_end":100,"text":"Test Liar: 'disable level select for current user row' termine par expect(component).toBeTruthy()","correction_prompt":"Option C: split en 2 tests — (1) currentUserEmail signal state-based, (2) p-select disabled via componentInstance.disabled() (signal input PrimeNG 21).","verdict":"apply","verdict_reason":"Anti-pattern Liar confirme. Split option C. APPLIED. Note: disabled() appel fonction car signal input PrimeNG 21."}
+      ],
+      "note": "4 tests total, 0 echec. Piege PrimeNG 21: disabled est un signal input, appeler .disabled()."
+    }
+  ],
+  "agent_tasks": [
+    {"agent": "scd-review:code-reviewer", "files": ["AccountService.java", "AccountController.java"], "status": "completed"},
+    {"agent": "scd-review:code-reviewer", "files": ["AccountRepository.java", "AccountAccessRepository.java", "AccessLevel.java", "V009.sql"], "status": "completed"},
+    {"agent": "scd-review:code-reviewer", "files": ["DTOs", "AccountNotFoundException", "AuthService", "UserController", "UserResponse"], "status": "completed"},
+    {"agent": "scd-review:code-reviewer", "files": ["Frontend accounts.ts", "account-dialog.ts", "access-dialog.ts", "account.service.ts", "sidebar.ts", "app.config.ts"], "status": "completed"},
+    {"agent": "scd-review:test-reviewer", "files": ["AccountServiceTest.java", "AccountControllerTest.java"], "status": "completed"},
+    {"agent": "scd-review:review-validator", "files": ["backend-all"], "status": "completed"},
+    {"agent": "scd-review:review-validator", "files": ["frontend-all"], "status": "completed"},
+    {"agent": "scd-review:review-validator", "files": ["tests-all"], "status": "completed"},
+    {"agent": "scd-review:fix-applier", "files": ["AccountService.java", "AccountController.java", "UserNotFoundException.java", "AccessEntryNotFoundException.java"], "status": "completed"},
+    {"agent": "scd-review:fix-applier", "files": ["AccountServiceTest.java"], "status": "completed"},
+    {"agent": "scd-review:fix-applier", "files": ["AccountControllerTest.java", "UserControllerTest.java"], "status": "completed"},
+    {"agent": "scd-review:fix-applier", "files": ["accounts.ts", "account-dialog.ts", "access-dialog.ts"], "status": "completed"},
+    {"agent": "scd-review:fix-applier", "files": ["AccountRepository.java", "AccountWithAccess.java", "AccountService.java", "AccountServiceTest.java"], "status": "completed"}
+  ],
+  "summary": {
+    "total_files": 14,
+    "completed": 14,
+    "green": 14,
+    "yellow": 29,
+    "red": 9,
+    "blocking": 9,
+    "fixed": 17,
+    "posted": 0,
+    "skipped": 6,
+    "escalated": 1
+  },
+  "user_comments": [
+    {"at": "escalation-obs-8", "comment": "Garder @DirtiesContext tel quel — @Transactional ne rollback pas les transactions MockMvc"},
+    {"at": "escalation-obs-db-2", "comment": "Faire le refactoring Object[] → AccountWithAccess record"},
+    {"at": "escalation-fe-obs-6", "comment": "Degradation gracieuse avec avertissement partiel"},
+    {"at": "escalation-fe-obs-7", "comment": "Ajouter les tests manquants"},
+    {"at": "escalation-fe-obs-8", "comment": "Option C — split en 2 tests"}
+  ]
+}

@@ -1,9 +1,10 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { RouterLink, RouterLinkActive } from '@angular/router';
 import { DrawerModule } from 'primeng/drawer';
 
 @Component({
   selector: 'app-sidebar',
-  imports: [DrawerModule],
+  imports: [DrawerModule, RouterLink, RouterLinkActive],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <p-drawer
@@ -16,7 +17,17 @@ import { DrawerModule } from 'primeng/drawer';
       <ng-template pTemplate="header">
         <span class="text-lg font-semibold">Menu</span>
       </ng-template>
-      <div class="p-4 text-muted-color text-sm">Navigation à venir dans les prochaines phases.</div>
+      <nav class="flex flex-col gap-1 p-2">
+        <a
+          routerLink="/accounts"
+          routerLinkActive="bg-surface-100 text-primary font-semibold border-l-3 border-primary"
+          class="flex items-center gap-3 px-3 py-2 rounded-md text-muted-color hover:bg-surface-50 transition-colors"
+          (click)="visible = false"
+        >
+          <i class="pi pi-wallet"></i>
+          <span>Comptes</span>
+        </a>
+      </nav>
     </p-drawer>
   `,
 })

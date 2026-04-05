@@ -16,18 +16,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/users")
 public class UserController {
 
-  private final UserRepository userRepository;
   private final AuthService authService;
 
-  public UserController(UserRepository userRepository, AuthService authService) {
-    this.userRepository = userRepository;
+  public UserController(AuthService authService) {
     this.authService = authService;
   }
 
   /** Returns all users for account access management. Authenticated users only. */
   @GetMapping
   public ResponseEntity<List<UserResponse>> listUsers() {
-    var users = userRepository.findAll().stream().map(authService::toUserResponse).toList();
-    return ResponseEntity.ok(users);
+    return ResponseEntity.ok(authService.listAllUsers());
   }
 }

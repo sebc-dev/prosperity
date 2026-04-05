@@ -4,6 +4,8 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
 
+import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
@@ -61,22 +63,20 @@ class ArchitectureTest {
       noClasses()
           .that()
           .haveSimpleNameEndingWith("Controller")
-          .and()
-          .resideOutsideOfPackage("com.prosperity.auth..")
           .should()
-          .dependOnClassesThat()
-          .haveSimpleNameEndingWith("Repository")
-          .as(
-              "Controllers (outside auth) should not depend on Repository classes"
-                  + " — use Services instead");
+          .dependOnClassesThat(
+              DescribedPredicate.describe(
+                  "are Prosperity Repository classes",
+                  (JavaClass c) ->
+                      c.getSimpleName().endsWith("Repository")
+                          && c.getPackageName().startsWith("com.prosperity")))
+          .as("Controllers should not depend on Repository classes — use Services instead");
 
   @ArchTest
   static final ArchRule repositoriesShouldNotDependOnControllersOrServices =
       noClasses()
           .that()
           .haveSimpleNameEndingWith("Repository")
-          .and()
-          .resideInAnyPackage("com.prosperity..")
           .should()
           .dependOnClassesThat()
           .haveSimpleNameEndingWith("Controller")
@@ -96,7 +96,8 @@ class ArchitectureTest {
               "com.prosperity.account..",
               "com.prosperity.transaction..",
               "com.prosperity.category..",
-              "com.prosperity.envelope..")
+              "com.prosperity.envelope..",
+              "com.prosperity.banking..")
           .as("Auth package should not depend on feature packages (account, transaction, etc.)");
 
   @ArchTest

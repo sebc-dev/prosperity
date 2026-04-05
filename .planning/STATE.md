@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-stopped_at: Phase 4 context gathered (discuss mode)
-last_updated: "2026-04-05T19:44:12.362Z"
+status: executing
+stopped_at: Completed 04-01-PLAN.md
+last_updated: "2026-04-05T20:32:02.207Z"
 last_activity: 2026-04-05
 progress:
   total_phases: 10
   completed_phases: 3
-  total_plans: 30
-  completed_plans: 30
+  total_plans: 34
+  completed_plans: 31
   percent: 0
 ---
 
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Un foyer peut suivre ses finances au quotidien (soldes, transactions, budgets enveloppes) sans effort manuel excessif, grace a la synchronisation bancaire automatique et une interface claire.
-**Current focus:** Phase 03 — accounts-access-control
+**Current focus:** Phase 04 — categories
 
 ## Current Position
 
-Phase: 4
-Plan: Not started
-Status: Phase complete — ready for verification
+Phase: 04 (categories) — EXECUTING
+Plan: 2 of 4
+Status: Ready to execute
 Last activity: 2026-04-05
 
 Progress: [░░░░░░░░░░] 0%
@@ -74,6 +74,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03 P07 | 5min | 3 tasks | 7 files |
 | Phase 03 P08 | 4 | 2 tasks | 4 files |
 | Phase 03 P09 | 40 | 3 tasks | 8 files |
+| Phase 04 P01 | 4min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -120,6 +121,8 @@ Recent decisions affecting current work:
 - [Phase 03]: ConfirmationService provided at component level in providers array to scope confirm dialogs
 - [Phase 03]: UserResponse.id added as UUID in backend record and string in frontend interface — required for add-user dropdown in access dialog
 - [Phase 03]: Immediate-save access dialog: each ngModelChange fires individual setAccess call, savingRowId signal tracks per-row loading
+- [Phase 04]: Deterministic UUID pattern a0000000-0000-0000-0000-00000000XXYY for Flyway seed categories
+- [Phase 04]: 49 curated categories (14 roots + 35 children) for French household mapped to Plaid PFCv2
 
 ### Pending Todos
 
@@ -132,6 +135,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-05T19:44:12.358Z
-Stopped at: Phase 4 context gathered (discuss mode)
-Resume file: .planning/phases/04-categories/04-CONTEXT.md
+Last session: 2026-04-05T20:32:02.203Z
+Stopped at: Completed 04-01-PLAN.md
+Resume file: None

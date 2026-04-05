@@ -115,7 +115,7 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 04-01-PLAN.md — Flyway migrations (is_system + seed Plaid categories) + entity + DTOs + repository
+- [x] 04-01-PLAN.md — Flyway migrations (is_system + seed Plaid categories) + entity + DTOs + repository
 - [ ] 04-02-PLAN.md — CategoryService + CategoryController + integration tests
 - [ ] 04-03-PLAN.md — PATCH /api/transactions/{id}/category endpoint + tests
 - [ ] 04-04-PLAN.md — Frontend categories page, dialog, shared CategorySelector, sidebar, routing

@@ -4,7 +4,6 @@ import { provideRouter } from '@angular/router';
 import { Sidebar } from './sidebar';
 
 describe('Sidebar', () => {
-  let component: Sidebar;
   let fixture: ComponentFixture<Sidebar>;
 
   beforeEach(async () => {
@@ -15,7 +14,6 @@ describe('Sidebar', () => {
     }).compileComponents();
 
     fixture = TestBed.createComponent(Sidebar);
-    component = fixture.componentInstance;
     fixture.detectChanges();
   });
 

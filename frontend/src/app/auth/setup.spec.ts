@@ -39,7 +39,7 @@ describe('Setup', () => {
 
   it('onSubmit_calls_authService_setup_with_form_raw_value', () => {
     // Arrange
-    const mockUser = { displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' as const };
+    const mockUser = { id: 'user-1', displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' as const };
     const setupSpy = vi.spyOn(authService, 'setup').mockReturnValue(of(mockUser));
     const validPassword = 'Secure123!pass';
     component.form.setValue({
@@ -62,7 +62,7 @@ describe('Setup', () => {
   it('shows_success_message_and_navigates_after_delay_on_success', async () => {
     // Arrange
     vi.useFakeTimers();
-    const mockUser = { displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' as const };
+    const mockUser = { id: 'user-1', displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' as const };
     vi.spyOn(authService, 'setup').mockReturnValue(of(mockUser));
     const navigateSpy = vi
       .spyOn(router, 'navigate')

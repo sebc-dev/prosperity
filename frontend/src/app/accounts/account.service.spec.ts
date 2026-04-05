@@ -150,7 +150,7 @@ describe('AccountService', () => {
   it('loadUsers_should_GET_api_users', () => {
     // Arrange
     const mockUsers: UserResponse[] = [
-      { displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' },
+      { id: 'user-1', displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' },
     ];
 
     // Act

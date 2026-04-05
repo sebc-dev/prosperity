@@ -8,7 +8,7 @@ import { AuthService } from './auth.service';
 import { AuthError, UserResponse } from './auth.types';
 import { HttpErrorResponse } from '@angular/common/http';
 
-const MOCK_USER: UserResponse = { displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' };
+const MOCK_USER: UserResponse = { id: 'user-1', displayName: 'Admin', email: 'admin@test.com', role: 'ADMIN' };
 
 function makeAuthError(status: number): AuthError {
   return {

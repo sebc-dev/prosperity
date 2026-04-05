@@ -12,6 +12,7 @@ import { ConfirmationService } from 'primeng/api';
 import { AccountService } from './account.service';
 import { AccountResponse } from './account.types';
 import { AccountDialog } from './account-dialog';
+import { AccessDialog } from './access-dialog';
 
 @Component({
   selector: 'app-accounts',
@@ -28,6 +29,7 @@ import { AccountDialog } from './account-dialog';
     MessageModule,
     TooltipModule,
     AccountDialog,
+    AccessDialog,
   ],
   providers: [ConfirmationService],
   template: `
@@ -163,6 +165,13 @@ import { AccountDialog } from './account-dialog';
         (visibleChange)="dialogVisible.set($event)"
         (saved)="onDialogSaved()"
       />
+
+      <!-- Access management dialog -->
+      <app-access-dialog
+        [visible]="accessDialogVisible()"
+        [account]="accessDialogAccount()"
+        (visibleChange)="accessDialogVisible.set($event)"
+      />
     </div>
   `,
 })
@@ -240,7 +249,6 @@ export class Accounts {
     });
   }
 
-  // TODO(Plan 09): implement access management dialog
   protected openAccessDialog(account: AccountResponse): void {
     this.accessDialogAccount.set(account);
     this.accessDialogVisible.set(true);

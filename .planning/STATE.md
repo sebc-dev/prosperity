@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-07-PLAN.md
-last_updated: "2026-04-05T13:29:33.115Z"
+stopped_at: Completed 03-08-PLAN.md
+last_updated: "2026-04-05T13:35:37.141Z"
 last_activity: 2026-04-05
 progress:
   total_phases: 10
   completed_phases: 2
   total_plans: 30
-  completed_plans: 28
+  completed_plans: 29
   percent: 0
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 03 (accounts-access-control) — EXECUTING
-Plan: 8 of 9
+Plan: 9 of 9
 Status: Ready to execute
 Last activity: 2026-04-05
 
@@ -72,6 +72,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03 P05 | 1 | 2 tasks | 2 files |
 | Phase 03 P06 | 14min | 2 tasks | 4 files |
 | Phase 03 P07 | 5min | 3 tasks | 7 files |
+| Phase 03 P08 | 4 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -114,6 +115,8 @@ Recent decisions affecting current work:
 - [Phase 03]: findByIdAndUserId returns List<Object[]> not Optional<Object[]> to avoid Hibernate multi-projection wrapping bug
 - [Phase 03]: HttpParams used for conditional query params: conditional object literal {} causes TypeScript to pick ArrayBuffer overload on http.get, HttpParams avoids the ambiguity
 - [Phase 03]: provideRouter([]) required in Angular component tests when RouterLink is imported in the component under test
+- [Phase 03]: p-toggleswitch uses plain boolean property (not signal) for ngModel two-way binding compatibility
+- [Phase 03]: ConfirmationService provided at component level in providers array to scope confirm dialogs
 
 ### Pending Todos
 
@@ -126,6 +129,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-05T13:29:33.111Z
-Stopped at: Completed 03-07-PLAN.md
+Last session: 2026-04-05T13:35:37.137Z
+Stopped at: Completed 03-08-PLAN.md
 Resume file: None

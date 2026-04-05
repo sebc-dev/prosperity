@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 1: Project Foundation** - Scaffolding, domain model, dev infrastructure (Docker Compose, Flyway, CI), comprehensive quality gates (lint, format, static analysis, coverage, security scanning)
 - [ ] **Phase 2: Authentication & Setup Wizard** - BFF cookie auth, CSRF protection, session persistence, first-launch wizard
-- [ ] **Phase 3: Accounts & Access Control** - Bank account CRUD (personal + shared), per-user permissions, repository-level filtering
+- [x] **Phase 3: Accounts & Access Control** - Bank account CRUD (personal + shared), per-user permissions, repository-level filtering (completed 2026-04-05)
 - [ ] **Phase 4: Categories** - Hierarchical category system with Plaid base categories and custom user categories
 - [ ] **Phase 5: Transactions** - Manual entry, edit, delete, recurring templates, pointage, split, search, pagination
 - [ ] **Phase 6: Envelope Budgets** - Per-account envelopes with allocation, auto-imputation, rollover, visual indicators
@@ -100,7 +100,7 @@ Plans:
 - [x] 03-06-PLAN.md — Backend tests (AccountServiceTest unit + AccountControllerTest integration)
 - [x] 03-07-PLAN.md — Frontend types, AccountService, sidebar navigation, routing
 - [x] 03-08-PLAN.md — Accounts list page (p-table) + create/edit dialog
-- [ ] 03-09-PLAN.md — Access management dialog + visual verification checkpoint
+- [x] 03-09-PLAN.md — Access management dialog + visual verification checkpoint
 
 ### Phase 4: Categories
 **Goal**: A hierarchical category system exists that transactions and envelopes will use for classification
@@ -224,7 +224,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 |-------|----------------|--------|-----------|
 | 1. Project Foundation | 0/14 | Planning | - |
 | 2. Authentication & Setup Wizard | 0/7 | Planning | - |
-| 3. Accounts & Access Control | 8/9 | In Progress|  |
+| 3. Accounts & Access Control | 9/9 | Complete   | 2026-04-05 |
 | 4. Categories | 0/1 | Not started | - |
 | 5. Transactions | 0/2 | Not started | - |
 | 6. Envelope Budgets | 0/2 | Not started | - |

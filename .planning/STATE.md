@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: "Checkpoint reached: 03-09 Task 3 awaiting human verification"
-last_updated: "2026-04-05T13:41:02.978Z"
+status: verifying
+stopped_at: Completed 03-09-PLAN.md
+last_updated: "2026-04-05T15:09:39.705Z"
 last_activity: 2026-04-05
 progress:
   total_phases: 10
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 30
-  completed_plans: 29
+  completed_plans: 30
   percent: 0
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 
 Phase: 03 (accounts-access-control) — EXECUTING
 Plan: 9 of 9
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-04-05
 
 Progress: [░░░░░░░░░░] 0%
@@ -73,6 +73,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03 P06 | 14min | 2 tasks | 4 files |
 | Phase 03 P07 | 5min | 3 tasks | 7 files |
 | Phase 03 P08 | 4 | 2 tasks | 4 files |
+| Phase 03 P09 | 40 | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -117,6 +118,8 @@ Recent decisions affecting current work:
 - [Phase 03]: provideRouter([]) required in Angular component tests when RouterLink is imported in the component under test
 - [Phase 03]: p-toggleswitch uses plain boolean property (not signal) for ngModel two-way binding compatibility
 - [Phase 03]: ConfirmationService provided at component level in providers array to scope confirm dialogs
+- [Phase 03]: UserResponse.id added as UUID in backend record and string in frontend interface — required for add-user dropdown in access dialog
+- [Phase 03]: Immediate-save access dialog: each ngModelChange fires individual setAccess call, savingRowId signal tracks per-row loading
 
 ### Pending Todos
 
@@ -129,6 +132,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-05T13:41:02.974Z
-Stopped at: Checkpoint reached: 03-09 Task 3 awaiting human verification
+Last session: 2026-04-05T15:09:39.701Z
+Stopped at: Completed 03-09-PLAN.md
 Resume file: None

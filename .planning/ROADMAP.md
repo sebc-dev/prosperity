@@ -92,7 +92,7 @@ Plans:
 **UI hint**: yes
 
 Plans:
-- [ ] 03-01-PLAN.md — Flyway V009 migration (archived column) + Account entity update + AccessLevel hierarchy
+- [x] 03-01-PLAN.md — Flyway V009 migration (archived column) + Account entity update + AccessLevel hierarchy
 - [ ] 03-02-PLAN.md — DTO records (request/response) + custom exceptions
 - [ ] 03-03-PLAN.md — Repository JPQL queries (access-filtered account retrieval)
 - [ ] 03-04-PLAN.md — AccountService business logic (CRUD + access enforcement)

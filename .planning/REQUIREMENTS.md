@@ -26,11 +26,11 @@
 - [ ] **ACCT-02**: Utilisateur peut creer un compte bancaire commun (partage entre utilisateurs)
 - [ ] **ACCT-03**: Utilisateur peut voir la liste de ses comptes avec soldes
 - [ ] **ACCT-04**: Utilisateur peut modifier les informations d'un compte (nom, type)
-- [ ] **ACCT-05**: Utilisateur peut archiver un compte (masque sans supprimer les donnees)
+- [x] **ACCT-05**: Utilisateur peut archiver un compte (masque sans supprimer les donnees)
 
 ### Controle d'Acces
 
-- [ ] **ACCS-01**: Chaque compte a des permissions par utilisateur (lecture/ecriture/admin)
+- [x] **ACCS-01**: Chaque compte a des permissions par utilisateur (lecture/ecriture/admin)
 - [ ] **ACCS-02**: Utilisateur ne voit que les comptes auxquels il a acces
 - [ ] **ACCS-03**: Admin peut modifier les permissions d'acces aux comptes pour chaque utilisateur
 - [ ] **ACCS-04**: Le controle d'acces s'applique aux requetes d'agregation (dashboard, recherche)
@@ -159,8 +159,8 @@
 | ACCT-02 | Phase 3 | Pending |
 | ACCT-03 | Phase 3 | Pending |
 | ACCT-04 | Phase 3 | Pending |
-| ACCT-05 | Phase 3 | Pending |
-| ACCS-01 | Phase 3 | Pending |
+| ACCT-05 | Phase 3 | Complete |
+| ACCS-01 | Phase 3 | Complete |
 | ACCS-02 | Phase 3 | Pending |
 | ACCS-03 | Phase 3 | Pending |
 | ACCS-04 | Phase 3 | Pending |

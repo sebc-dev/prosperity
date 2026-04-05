@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 3 context gathered (discuss mode)
-last_updated: "2026-04-05T11:07:43.560Z"
-last_activity: 2026-04-02
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-04-05T12:53:47.475Z"
+last_activity: 2026-04-05
 progress:
   total_phases: 10
   completed_phases: 2
-  total_plans: 21
-  completed_plans: 21
+  total_plans: 30
+  completed_plans: 22
   percent: 0
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Un foyer peut suivre ses finances au quotidien (soldes, transactions, budgets enveloppes) sans effort manuel excessif, grace a la synchronisation bancaire automatique et une interface claire.
-**Current focus:** Phase 02 — authentication-setup-wizard
+**Current focus:** Phase 03 — accounts-access-control
 
 ## Current Position
 
-Phase: 3
-Plan: Not started
+Phase: 03 (accounts-access-control) — EXECUTING
+Plan: 2 of 9
 Status: Ready to execute
-Last activity: 2026-04-02
+Last activity: 2026-04-05
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -65,6 +65,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 02 P06 | 1min | 2 tasks | 2 files |
 | Phase 02 P03 | 2min | 2 tasks | 3 files |
 | Phase 02 P04 | 11min | 2 tasks | 7 files |
+| Phase 03 P01 | 1 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -95,6 +96,8 @@ Recent decisions affecting current work:
 - [Phase 02]: Generic error 'Identifiants invalides' on login failure to prevent user enumeration
 - [Phase 02]: Testcontainers PostgreSQL 2.0 for integration tests (artifact: testcontainers-postgresql)
 - [Phase 02]: Spring Boot 4 @AutoConfigureMockMvc in spring-boot-webmvc-test module
+- [Phase 03]: archived column added via ALTER TABLE in V009 (not in initial schema V002 per D-06)
+- [Phase 03]: AccessLevel.isAtLeast() uses ordinal comparison — enum declaration order READ(0) < WRITE(1) < ADMIN(2) must never change
 
 ### Pending Todos
 
@@ -107,6 +110,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-05T11:07:43.557Z
-Stopped at: Phase 3 context gathered (discuss mode)
-Resume file: .planning/phases/03-accounts-access-control/03-CONTEXT.md
+Last session: 2026-04-05T12:53:47.472Z
+Stopped at: Completed 03-01-PLAN.md
+Resume file: None

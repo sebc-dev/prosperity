@@ -62,6 +62,7 @@ import { AccountResponse, AccountType } from './account.types';
             [options]="typeOptions"
             optionLabel="label"
             optionValue="value"
+            appendTo="body"
             styleClass="w-full"
           />
           <label for="accountType">Type de compte</label>

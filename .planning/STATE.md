@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-03-PLAN.md
-last_updated: "2026-04-05T12:59:17.849Z"
+stopped_at: Completed 03-04-PLAN.md
+last_updated: "2026-04-05T13:02:22.164Z"
 last_activity: 2026-04-05
 progress:
   total_phases: 10
   completed_phases: 2
   total_plans: 30
-  completed_plans: 24
+  completed_plans: 25
   percent: 0
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 03 (accounts-access-control) — EXECUTING
-Plan: 4 of 9
+Plan: 5 of 9
 Status: Ready to execute
 Last activity: 2026-04-05
 
@@ -68,6 +68,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03 P01 | 1 | 2 tasks | 3 files |
 | Phase 03 P02 | 3 | 2 tasks | 7 files |
 | Phase 03 P03 | 1min | 2 tasks | 2 files |
+| Phase 03 P04 | 2 | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -104,6 +105,8 @@ Recent decisions affecting current work:
 - [Phase 03]: AccountAccessDeniedException returns 403 (not 404) per D-02 to avoid leaking account existence
 - [Phase 03]: AccountRepository returns Object[] pairs [Account, AccessLevel] to avoid N+1 when projecting access level alongside account
 - [Phase 03]: AccountAccessRepository uses Spring Data derived queries (no @Query) — method names map directly to JPA property navigation
+- [Phase 03]: orElseThrow lambda in getAccount/updateAccount distinguishes 403 vs 404 via existsById check
+- [Phase 03]: AccountService.setAccess uses orElseGet to create new AccountAccess lazily only when entry does not exist
 
 ### Pending Todos
 
@@ -116,6 +119,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-05T12:59:17.846Z
-Stopped at: Completed 03-03-PLAN.md
+Last session: 2026-04-05T13:02:22.162Z
+Stopped at: Completed 03-04-PLAN.md
 Resume file: None

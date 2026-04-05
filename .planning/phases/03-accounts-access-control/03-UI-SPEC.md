@@ -1,10 +1,11 @@
 ---
 phase: 3
 slug: accounts-access-control
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-04-05
+reviewed_at: 2026-04-05
 ---
 
 # Phase 3 — UI Design Contract
@@ -62,7 +63,7 @@ Carried forward from Phase 2 (no changes):
 - Table cell content uses Body role (16px/400)
 - Balance amounts in table use Body role (16px/400) with `font-tabular-nums` for aligned digits
 - Dialog titles use Subheading role (18px/600)
-- Badge text (type, status) uses 12px/600: `text-xs font-semibold`
+- Badge text (type, status) uses Label role (14px/600): `text-sm font-semibold`
 
 ---
 
@@ -82,8 +83,7 @@ Carried forward from Phase 2 (PrimeNG Aura CSS variables):
 
 **Accent reserved for (explicit list):**
 - "Ajouter un compte" primary CTA button
-- "Enregistrer" button in create/edit dialog
-- "Enregistrer" button in access management dialog
+- "Enregistrer le compte" button in create/edit dialog
 - Focus rings on input fields and table selection
 - Active `/accounts` sidebar link indicator
 
@@ -164,7 +164,7 @@ Carried forward from Phase 2 (PrimeNG Aura CSS variables):
 - Dialog width: `max-w-lg` (512px)
 - Body padding: `p-6` (24px)
 - Vertical gap between fields: `gap-4` (16px)
-- Footer: right-aligned, "Annuler" secondary text button + "Enregistrer" primary filled button
+- Footer: right-aligned, "Annuler" secondary text button + "Enregistrer le compte" primary filled button
 - Edit mode: same dialog, heading changes to "Modifier le compte", fields pre-filled
 
 ### Layout: Access Management Dialog (D-12)
@@ -218,8 +218,8 @@ Carried forward from Phase 2 (PrimeNG Aura CSS variables):
 | State | Visual |
 |-------|--------|
 | Opening | PrimeNG default fade-in animation |
-| Form invalid | "Enregistrer" button disabled (opacity 0.6) |
-| Submitting | "Enregistrer" shows spinner + "Enregistrement...", button disabled |
+| Form invalid | "Enregistrer le compte" button disabled (opacity 0.6) |
+| Submitting | "Enregistrer le compte" shows spinner + "Enregistrement...", button disabled |
 | Error | `p-message` severity="error" below form fields |
 
 ### Sidebar Navigation
@@ -252,7 +252,7 @@ Carried forward from Phase 2 (PrimeNG Aura CSS variables):
 | **Account type label** | Type de compte |
 | **Account type: personal** | Personnel |
 | **Account type: shared** | Commun |
-| **Save CTA** | Enregistrer |
+| **Save CTA** | Enregistrer le compte |
 | **Save CTA loading** | Enregistrement... |
 | **Cancel button** | Annuler |
 | **Close button** | Fermer |
@@ -335,11 +335,11 @@ Carried forward from Phase 2 (PrimeNG Aura CSS variables):
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: FLAG (non-blocking — "Archiver" CTA contextually readable in confirm dialog)
+- [x] Dimension 2 Visuals: FLAG (non-blocking — row action icons have aria-labels; add `pTooltip` recommended)
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** APPROVED — 2026-04-05

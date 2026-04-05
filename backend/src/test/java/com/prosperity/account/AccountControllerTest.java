@@ -280,18 +280,97 @@ class AccountControllerTest {
   }
 
   // ---------------------------------------------------------------------------
-  // Users endpoint
+  // Unauthenticated requests
   // ---------------------------------------------------------------------------
 
   @Test
-  void list_users_returns_all_users() throws Exception {
-    setupUser("alice@test.com");
-    setupUser("bob@test.com");
+  void unauthenticated_request_returns_401() throws Exception {
+    mockMvc
+        .perform(get("/api/accounts"))
+        .andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void unauthenticated_post_without_csrf_returns_403() throws Exception {
+    mockMvc
+        .perform(
+            post("/api/accounts")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name":"Test","accountType":"PERSONAL"}
+                    """))
+        .andExpect(status().isForbidden());
+  }
+
+  // ---------------------------------------------------------------------------
+  // Validation (@Valid)
+  // ---------------------------------------------------------------------------
+
+  @Test
+  void create_account_returns_400_when_name_is_blank() throws Exception {
+    setupUser("user@test.com");
 
     mockMvc
-        .perform(get("/api/users").with(user("alice@test.com")))
+        .perform(
+            post("/api/accounts")
+                .with(user("user@test.com"))
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name":"","accountType":"PERSONAL"}
+                    """))
+        .andExpect(status().isBadRequest());
+  }
+
+  @Test
+  void create_account_returns_400_when_name_is_null() throws Exception {
+    setupUser("user@test.com");
+
+    mockMvc
+        .perform(
+            post("/api/accounts")
+                .with(user("user@test.com"))
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"accountType":"PERSONAL"}
+                    """))
+        .andExpect(status().isBadRequest());
+  }
+
+  // ---------------------------------------------------------------------------
+  // GET /{id} happy path
+  // ---------------------------------------------------------------------------
+
+  @Test
+  void get_account_returns_200_with_correct_fields() throws Exception {
+    User owner = setupUser("owner@test.com");
+    Account account = createAccount("My Account", AccountType.PERSONAL);
+    grantAccess(owner, account, AccessLevel.ADMIN);
+
+    mockMvc
+        .perform(
+            get("/api/accounts/{id}", account.getId())
+                .with(user("owner@test.com")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.length()").value(2));
+        .andExpect(jsonPath("$.name").value("My Account"))
+        .andExpect(jsonPath("$.accountType").value("PERSONAL"))
+        .andExpect(jsonPath("$.currentUserAccessLevel").value("ADMIN"))
+        .andExpect(jsonPath("$.archived").value(false));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Empty list
+  // ---------------------------------------------------------------------------
+
+  @Test
+  void list_accounts_returns_empty_array_when_no_accounts_accessible() throws Exception {
+    setupUser("loner@test.com");
+
+    mockMvc
+        .perform(get("/api/accounts").with(user("loner@test.com")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.length()").value(0));
   }
 
   // ---------------------------------------------------------------------------

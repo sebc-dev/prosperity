@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   computed,
   effect,
   inject,
@@ -8,9 +9,10 @@ import {
   output,
   signal,
 } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
-import { forkJoin } from 'rxjs';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ReactiveFormsModule, FormsModule, FormBuilder, Validators } from '@angular/forms';
+import { forkJoin, of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 import { DialogModule } from 'primeng/dialog';
 import { SelectModule } from 'primeng/select';
 import { ButtonModule } from 'primeng/button';
@@ -23,8 +25,7 @@ import { UserResponse } from '../auth/auth.types';
 @Component({
   selector: 'app-access-dialog',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  standalone: true,
-  imports: [CommonModule, FormsModule, DialogModule, SelectModule, ButtonModule, MessageModule],
+  imports: [ReactiveFormsModule, FormsModule, DialogModule, SelectModule, ButtonModule, MessageModule],
   template: `
     <p-dialog
       [header]="'Gerer les acces — ' + (account()?.name ?? '')"
@@ -42,15 +43,19 @@ import { UserResponse } from '../auth/auth.types';
           <p-message severity="error" [text]="error()!" />
         }
 
+        @if (usersWarning()) {
+          <p-message severity="warn" [text]="usersWarning()!" />
+        }
+
         @if (loading()) {
           <div class="text-center py-4 text-muted-color">Chargement...</div>
         } @else {
           <table class="w-full">
             <thead>
               <tr class="text-sm font-semibold text-left border-b">
-                <th class="pb-2">Utilisateur</th>
-                <th class="pb-2">Niveau</th>
-                <th class="pb-2 w-16">Action</th>
+                <th scope="col" class="pb-2">Utilisateur</th>
+                <th scope="col" class="pb-2">Niveau</th>
+                <th scope="col" class="pb-2 w-16">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -90,7 +95,7 @@ import { UserResponse } from '../auth/auth.types';
               <h3 class="text-sm font-semibold mb-2">Ajouter un utilisateur :</h3>
               <div class="flex gap-2 items-center">
                 <p-select
-                  [(ngModel)]="newUserId"
+                  [formControl]="addUserForm.controls.userId"
                   [options]="availableUsers()"
                   optionLabel="label"
                   optionValue="value"
@@ -98,7 +103,7 @@ import { UserResponse } from '../auth/auth.types';
                   styleClass="flex-1"
                 />
                 <p-select
-                  [(ngModel)]="newAccessLevel"
+                  [formControl]="addUserForm.controls.accessLevel"
                   [options]="levelOptions"
                   optionLabel="label"
                   optionValue="value"
@@ -106,8 +111,9 @@ import { UserResponse } from '../auth/auth.types';
                 />
                 <p-button
                   icon="pi pi-plus"
-                  [disabled]="!newUserId"
+                  [disabled]="addUserForm.controls.userId.invalid"
                   (onClick)="addUser()"
+                  aria-label="Ajouter l'utilisateur"
                 />
               </div>
             </div>
@@ -134,16 +140,20 @@ export class AccessDialog {
 
   private readonly accountService = inject(AccountService);
   private readonly authService = inject(AuthService);
+  private readonly destroyRef = inject(DestroyRef);
+  private readonly fb = inject(FormBuilder);
 
   protected accessEntries = signal<AccountAccessResponse[]>([]);
   protected allUsers = signal<UserResponse[]>([]);
   protected loading = signal(true);
   protected error = signal<string | null>(null);
+  protected usersWarning = signal<string | null>(null);
   protected savingRowId = signal<string | null>(null);
 
-  // Add user form
-  protected newUserId = '';
-  protected newAccessLevel: AccessLevel = 'READ';
+  protected addUserForm = this.fb.group({
+    userId: ['', Validators.required],
+    accessLevel: ['READ' as AccessLevel],
+  });
 
   protected currentUserEmail = computed(() => this.authService.user()?.email ?? '');
 
@@ -172,21 +182,32 @@ export class AccessDialog {
   private loadAccessData(accountId: string): void {
     this.loading.set(true);
     this.error.set(null);
+    this.usersWarning.set(null);
 
     forkJoin([
-      this.accountService.getAccessEntries(accountId),
-      this.accountService.loadUsers(),
-    ]).subscribe({
-      next: ([entries, users]) => {
-        this.accessEntries.set(entries);
-        this.allUsers.set(users);
-        this.loading.set(false);
-      },
-      error: () => {
-        this.error.set('Impossible de charger les acces.');
-        this.loading.set(false);
-      },
-    });
+      this.accountService.getAccessEntries(accountId).pipe(
+        catchError(() => {
+          this.error.set('Impossible de charger les acces.');
+          return of([] as AccountAccessResponse[]);
+        }),
+      ),
+      this.accountService.loadUsers().pipe(
+        catchError(() => {
+          this.usersWarning.set(
+            'Impossible de charger la liste des utilisateurs disponibles. Vous pouvez consulter les acces existants mais pas en ajouter.',
+          );
+          return of([] as UserResponse[]);
+        }),
+      ),
+    ])
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: ([entries, users]) => {
+          this.accessEntries.set(entries);
+          this.allUsers.set(users);
+          this.loading.set(false);
+        },
+      });
   }
 
   protected onLevelChange(entry: AccountAccessResponse, newLevel: AccessLevel): void {
@@ -194,7 +215,7 @@ export class AccessDialog {
     if (!acct) return;
 
     this.savingRowId.set(entry.id);
-    this.accountService.setAccess(acct.id, { userId: entry.userId, accessLevel: newLevel }).subscribe({
+    this.accountService.setAccess(acct.id, { userId: entry.userId, accessLevel: newLevel }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: (updated) => {
         this.accessEntries.update((entries) =>
           entries.map((e) => (e.id === entry.id ? updated : e)),
@@ -210,18 +231,20 @@ export class AccessDialog {
 
   protected addUser(): void {
     const acct = this.account();
-    if (!acct || !this.newUserId) return;
+    if (!acct || this.addUserForm.invalid) return;
+
+    const { userId, accessLevel } = this.addUserForm.getRawValue();
 
     this.accountService
       .setAccess(acct.id, {
-        userId: this.newUserId,
-        accessLevel: this.newAccessLevel,
+        userId: userId!,
+        accessLevel: accessLevel!,
       })
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (entry) => {
           this.accessEntries.update((entries) => [...entries, entry]);
-          this.newUserId = '';
-          this.newAccessLevel = 'READ';
+          this.addUserForm.reset({ userId: '', accessLevel: 'READ' });
         },
         error: () => {
           this.error.set("Impossible d'ajouter l'utilisateur.");
@@ -234,7 +257,7 @@ export class AccessDialog {
     if (!acct) return;
 
     this.savingRowId.set(entry.id);
-    this.accountService.removeAccess(acct.id, entry.id).subscribe({
+    this.accountService.removeAccess(acct.id, entry.id).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.accessEntries.update((entries) => entries.filter((e) => e.id !== entry.id));
         this.savingRowId.set(null);

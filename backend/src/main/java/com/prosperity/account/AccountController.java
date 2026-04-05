@@ -1,5 +1,6 @@
 package com.prosperity.account;
 
+import com.prosperity.auth.UserNotFoundException;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
@@ -135,5 +136,21 @@ public class AccountController {
   @ExceptionHandler(IllegalStateException.class)
   public ResponseEntity<Map<String, String>> handleConflict(IllegalStateException e) {
     return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", e.getMessage()));
+  }
+
+  @ExceptionHandler(UserNotFoundException.class)
+  public ResponseEntity<Map<String, String>> handleUserNotFound(UserNotFoundException e) {
+    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+  }
+
+  @ExceptionHandler(AccessEntryNotFoundException.class)
+  public ResponseEntity<Map<String, String>> handleAccessEntryNotFound(
+      AccessEntryNotFoundException e) {
+    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+  }
+
+  @ExceptionHandler(IllegalArgumentException.class)
+  public ResponseEntity<Map<String, String>> handleBadRequest(IllegalArgumentException e) {
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
   }
 }

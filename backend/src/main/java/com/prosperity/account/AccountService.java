@@ -1,6 +1,7 @@
 package com.prosperity.account;
 
 import com.prosperity.auth.User;
+import com.prosperity.auth.UserNotFoundException;
 import com.prosperity.auth.UserRepository;
 import java.time.Instant;
 import java.util.List;
@@ -57,13 +58,13 @@ public class AccountService {
   @Transactional(readOnly = true)
   public List<AccountResponse> getAccounts(boolean includeArchived, String userEmail) {
     User user = resolveUser(userEmail);
-    List<Object[]> results =
+    List<AccountWithAccess> results =
         includeArchived
             ? accountRepository.findAllAccessibleByUserIdIncludingArchived(user.getId())
             : accountRepository.findAllAccessibleByUserId(user.getId());
 
     return results.stream()
-        .map(row -> toResponse((Account) row[0], (AccessLevel) row[1]))
+        .map(row -> toResponse(row.account(), row.accessLevel()))
         .toList();
   }
 
@@ -74,15 +75,15 @@ public class AccountService {
   @Transactional(readOnly = true)
   public AccountResponse getAccount(UUID accountId, String userEmail) {
     User user = resolveUser(userEmail);
-    List<Object[]> results = accountRepository.findByIdAndUserId(accountId, user.getId());
+    List<AccountWithAccess> results = accountRepository.findByIdAndUserId(accountId, user.getId());
     if (results.isEmpty()) {
       if (accountRepository.existsById(accountId)) {
         throw new AccountAccessDeniedException("Access denied to account: " + accountId);
       }
       throw new AccountNotFoundException("Account not found: " + accountId);
     }
-    Object[] row = results.get(0);
-    return toResponse((Account) row[0], (AccessLevel) row[1]);
+    AccountWithAccess row = results.get(0);
+    return toResponse(row.account(), row.accessLevel());
   }
 
   /**
@@ -93,22 +94,22 @@ public class AccountService {
   public AccountResponse updateAccount(
       UUID accountId, UpdateAccountRequest request, String userEmail) {
     User user = resolveUser(userEmail);
-    List<Object[]> results = accountRepository.findByIdAndUserId(accountId, user.getId());
+    List<AccountWithAccess> results = accountRepository.findByIdAndUserId(accountId, user.getId());
     if (results.isEmpty()) {
       if (accountRepository.existsById(accountId)) {
         throw new AccountAccessDeniedException("Access denied to account: " + accountId);
       }
       throw new AccountNotFoundException("Account not found: " + accountId);
     }
-    Object[] row = results.get(0);
+    AccountWithAccess row = results.get(0);
 
-    AccessLevel accessLevel = (AccessLevel) row[1];
+    AccessLevel accessLevel = row.accessLevel();
     if (!accessLevel.isAtLeast(AccessLevel.WRITE)) {
       throw new AccountAccessDeniedException(
           "Write access required to update account: " + accountId);
     }
 
-    Account account = (Account) row[0];
+    Account account = row.account();
     if (request.name() != null) {
       account.setName(request.name());
     }
@@ -160,7 +161,7 @@ public class AccountService {
         userRepository
             .findById(request.userId())
             .orElseThrow(
-                () -> new RuntimeException("Target user not found: " + request.userId()));
+                () -> new UserNotFoundException("Target user not found: " + request.userId()));
 
     AccountAccess access =
         accountAccessRepository
@@ -177,6 +178,16 @@ public class AccountService {
                   return new AccountAccess(targetUser, account, request.accessLevel());
                 });
 
+    // Guard: prevent demoting the last admin
+    if (access.getAccessLevel() == AccessLevel.ADMIN
+        && request.accessLevel() != AccessLevel.ADMIN) {
+      long adminCount =
+          accountAccessRepository.countByBankAccountIdAndAccessLevel(
+              accountId, AccessLevel.ADMIN);
+      if (adminCount <= 1) {
+        throw new IllegalStateException("Cannot demote the last admin of an account");
+      }
+    }
     access.setAccessLevel(request.accessLevel());
     accountAccessRepository.save(access);
 
@@ -199,7 +210,7 @@ public class AccountService {
         accountAccessRepository
             .findById(accessId)
             .orElseThrow(
-                () -> new RuntimeException("Access entry not found: " + accessId));
+                () -> new AccessEntryNotFoundException("Access entry not found: " + accessId));
 
     if (!entry.getBankAccount().getId().equals(accountId)) {
       throw new IllegalArgumentException(
@@ -225,7 +236,7 @@ public class AccountService {
   private User resolveUser(String userEmail) {
     return userRepository
         .findByEmail(userEmail)
-        .orElseThrow(() -> new RuntimeException("User not found: " + userEmail));
+        .orElseThrow(() -> new UserNotFoundException("User not found: " + userEmail));
   }
 
   private AccountResponse toResponse(Account account, AccessLevel accessLevel) {

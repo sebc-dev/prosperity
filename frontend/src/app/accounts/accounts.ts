@@ -1,5 +1,6 @@
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { DecimalPipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { TableModule } from 'primeng/table';
 import { ButtonModule } from 'primeng/button';
@@ -17,9 +18,8 @@ import { AccessDialog } from './access-dialog';
 @Component({
   selector: 'app-accounts',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  standalone: true,
   imports: [
-    CommonModule,
+    DecimalPipe,
     FormsModule,
     TableModule,
     ButtonModule,
@@ -78,13 +78,16 @@ import { AccessDialog } from './access-dialog';
           [sortOrder]="1"
           styleClass="p-datatable-sm"
         >
+          <ng-template pTemplate="caption">
+            <span class="sr-only">Liste des comptes bancaires</span>
+          </ng-template>
           <ng-template pTemplate="header">
             <tr>
-              <th pSortableColumn="name">Nom <p-sortIcon field="name" /></th>
-              <th>Type</th>
-              <th pSortableColumn="balance">Solde <p-sortIcon field="balance" /></th>
-              <th>Statut</th>
-              <th>Actions</th>
+              <th pSortableColumn="name" scope="col">Nom <p-sortIcon field="name" /></th>
+              <th scope="col">Type</th>
+              <th pSortableColumn="balance" scope="col">Solde <p-sortIcon field="balance" /></th>
+              <th scope="col">Statut</th>
+              <th scope="col">Actions</th>
             </tr>
           </ng-template>
           <ng-template pTemplate="body" let-account>
@@ -178,6 +181,7 @@ import { AccessDialog } from './access-dialog';
 export class Accounts {
   private readonly accountService = inject(AccountService);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected includeArchived = false;
   protected loading = signal(true);
@@ -200,7 +204,7 @@ export class Accounts {
   protected loadData(): void {
     this.loading.set(true);
     this.error.set(null);
-    this.accountService.loadAccounts(this.includeArchived).subscribe({
+    this.accountService.loadAccounts(this.includeArchived).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => this.loading.set(false),
       error: () => {
         this.loading.set(false);
@@ -234,18 +238,18 @@ export class Accounts {
       acceptLabel: 'Archiver',
       rejectLabel: 'Annuler',
       accept: () => {
-        this.accountService.updateAccount(account.id, { archived: true }).subscribe({
+        this.accountService.updateAccount(account.id, { archived: true }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
           next: () => this.loadData(),
-          error: () => this.error.set('Impossible de charger les comptes. Verifiez votre connexion et reessayez.'),
+          error: () => this.error.set('Impossible d\'archiver le compte. Veuillez reessayer.'),
         });
       },
     });
   }
 
   protected unarchive(account: AccountResponse): void {
-    this.accountService.updateAccount(account.id, { archived: false }).subscribe({
+    this.accountService.updateAccount(account.id, { archived: false }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => this.loadData(),
-      error: () => this.error.set('Impossible de charger les comptes. Verifiez votre connexion et reessayez.'),
+      error: () => this.error.set('Impossible de désarchiver le compte. Veuillez reessayer.'),
     });
   }
 

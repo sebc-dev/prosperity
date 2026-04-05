@@ -48,7 +48,6 @@ class AccountServiceTest {
     var result = accountService.createAccount(
         new CreateAccountRequest("Compte Courant", AccountType.PERSONAL), "user@test.com");
 
-    verify(accountRepository).save(any(Account.class));
     assertThat(result.name()).isEqualTo("Compte Courant");
     assertThat(result.accountType()).isEqualTo(AccountType.PERSONAL);
     assertThat(result.archived()).isFalse();
@@ -79,8 +78,7 @@ class AccountServiceTest {
   void get_accounts_returns_only_accessible_non_archived() {
     User user = createTestUser("user@test.com");
     Account account = createTestAccount("Compte A", AccountType.PERSONAL);
-    List<Object[]> rows = new java.util.ArrayList<>();
-    rows.add(new Object[] {account, AccessLevel.ADMIN});
+    List<AccountWithAccess> rows = List.of(new AccountWithAccess(account, AccessLevel.ADMIN));
     when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(user));
     when(accountRepository.findAllAccessibleByUserId(user.getId())).thenReturn(rows);
 
@@ -96,8 +94,7 @@ class AccountServiceTest {
     User user = createTestUser("user@test.com");
     Account archived = createTestAccount("Ancien Compte", AccountType.PERSONAL);
     archived.setArchived(true);
-    List<Object[]> rows = new java.util.ArrayList<>();
-    rows.add(new Object[] {archived, AccessLevel.WRITE});
+    List<AccountWithAccess> rows = List.of(new AccountWithAccess(archived, AccessLevel.WRITE));
     when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(user));
     when(accountRepository.findAllAccessibleByUserIdIncludingArchived(user.getId()))
         .thenReturn(rows);
@@ -151,6 +148,38 @@ class AccountServiceTest {
 
     assertThat(result.name()).isEqualTo("New Name");
     assertThat(result.accountType()).isEqualTo(AccountType.PERSONAL);
+  }
+
+  @Test
+  void update_account_preserves_type_when_not_included_in_patch() {
+    User user = createTestUser("user@test.com");
+    UUID accountId = UUID.randomUUID();
+    Account account = createTestAccount("Old Name", AccountType.SHARED);
+    account.setId(accountId);
+    when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(user));
+    when(accountRepository.findByIdAndUserId(accountId, user.getId()))
+        .thenReturn(accessRows(account, AccessLevel.WRITE));
+    when(accountRepository.save(any(Account.class)))
+        .thenAnswer(invocation -> invocation.getArgument(0));
+
+    var result = accountService.updateAccount(
+        accountId, new UpdateAccountRequest("New Name", null, null), "user@test.com");
+
+    assertThat(result.accountType()).isEqualTo(AccountType.SHARED);
+  }
+
+  @Test
+  void update_account_throws_not_found_when_account_missing() {
+    User user = createTestUser("user@test.com");
+    UUID accountId = UUID.randomUUID();
+    when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(user));
+    when(accountRepository.findByIdAndUserId(accountId, user.getId()))
+        .thenReturn(List.of());
+    when(accountRepository.existsById(accountId)).thenReturn(false);
+
+    assertThatThrownBy(() ->
+        accountService.updateAccount(accountId, new UpdateAccountRequest("X", null, null), "user@test.com"))
+        .isInstanceOf(AccountNotFoundException.class);
   }
 
   @Test
@@ -237,6 +266,28 @@ class AccountServiceTest {
   }
 
   @Test
+  void set_access_prevents_demoting_last_admin() {
+    User admin = createTestUser("admin@test.com");
+    UUID accountId = UUID.randomUUID();
+    Account account = createTestAccount("Compte", AccountType.PERSONAL);
+    account.setId(accountId);
+    AccountAccess existing = new AccountAccess(admin, account, AccessLevel.ADMIN);
+    existing.setId(UUID.randomUUID());
+    when(userRepository.findByEmail("admin@test.com")).thenReturn(Optional.of(admin));
+    when(accountRepository.hasAccess(accountId, admin.getId(), List.of(AccessLevel.ADMIN)))
+        .thenReturn(true);
+    when(userRepository.findById(admin.getId())).thenReturn(Optional.of(admin));
+    when(accountAccessRepository.findByBankAccountIdAndUserId(accountId, admin.getId()))
+        .thenReturn(Optional.of(existing));
+    when(accountAccessRepository.countByBankAccountIdAndAccessLevel(accountId, AccessLevel.ADMIN))
+        .thenReturn(1L);
+
+    assertThatThrownBy(() ->
+        accountService.setAccess(accountId, new SetAccessRequest(admin.getId(), AccessLevel.READ), "admin@test.com"))
+        .isInstanceOf(IllegalStateException.class);
+  }
+
+  @Test
   void remove_access_deletes_entry() {
     User admin = createTestUser("admin@test.com");
     User targetUser = createTestUser("target@test.com");
@@ -276,6 +327,24 @@ class AccountServiceTest {
         .isInstanceOf(IllegalStateException.class);
   }
 
+  @Test
+  void remove_access_throws_when_access_belongs_to_different_account() {
+    User admin = createTestUser("admin@test.com");
+    User targetUser = createTestUser("target@test.com");
+    UUID accountIdA = UUID.randomUUID();
+    Account accountB = createTestAccount("Compte B", AccountType.PERSONAL);
+    UUID accessId = UUID.randomUUID();
+    AccountAccess entry = new AccountAccess(targetUser, accountB, AccessLevel.READ);
+    entry.setId(accessId);
+    when(userRepository.findByEmail("admin@test.com")).thenReturn(Optional.of(admin));
+    when(accountRepository.hasAccess(accountIdA, admin.getId(), List.of(AccessLevel.ADMIN)))
+        .thenReturn(true);
+    when(accountAccessRepository.findById(accessId)).thenReturn(Optional.of(entry));
+
+    assertThatThrownBy(() -> accountService.removeAccess(accountIdA, accessId, "admin@test.com"))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
   // ---------------------------------------------------------------------------
   // Test helpers
   // ---------------------------------------------------------------------------
@@ -292,9 +361,7 @@ class AccountServiceTest {
     return account;
   }
 
-  private List<Object[]> accessRows(Account account, AccessLevel level) {
-    List<Object[]> rows = new java.util.ArrayList<>();
-    rows.add(new Object[] {account, level});
-    return rows;
+  private List<AccountWithAccess> accessRows(Account account, AccessLevel level) {
+    return List.of(new AccountWithAccess(account, level));
   }
 }

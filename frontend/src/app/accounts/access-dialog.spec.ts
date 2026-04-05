@@ -7,6 +7,7 @@ import { AccountService } from './account.service';
 import { AuthService } from '../auth/auth.service';
 import { AccountAccessResponse, AccountResponse } from './account.types';
 import { of } from 'rxjs';
+import { Select } from 'primeng/select';
 
 function makeAccount(overrides: Partial<AccountResponse> = {}): AccountResponse {
   return {
@@ -80,22 +81,29 @@ describe('AccessDialog', () => {
     expect(compiled.querySelector('p-dialog')).toBeTruthy();
   });
 
-  it('should disable level select for current user row', () => {
-    const currentUserEntry = makeEntry({
-      userId: 'user-1',
-      userEmail: 'alice@example.com',
-      accessLevel: 'ADMIN',
-    });
-
-    accountService.getAccessEntries = () => of([currentUserEntry]);
-    accountService.loadUsers = () => of([]);
-
-    fixture.componentRef.setInput('account', makeAccount());
-    fixture.componentRef.setInput('visible', true);
+  it('should resolve current user email from auth service', () => {
+    // Arrange + Act
     fixture.detectChanges();
 
-    // The component marks current user email rows as disabled
-    // We verify the logic through component state
-    expect(component).toBeTruthy();
+    // Assert
+    expect(component['currentUserEmail']()).toBe('alice@example.com');
+  });
+
+  it('should mark current user row as disabled in the template', () => {
+    // Arrange
+    accountService.getAccessEntries = () =>
+      of([makeEntry({ userId: 'user-1', userEmail: 'alice@example.com' })]);
+    fixture.componentRef.setInput('account', makeAccount());
+    fixture.componentRef.setInput('visible', true);
+
+    // Act
+    fixture.detectChanges();
+
+    // Assert — the p-select for the current user row has [disabled]=true
+    const selects = fixture.debugElement.queryAll(
+      (el) => el.componentInstance instanceof Select,
+    );
+    expect(selects.length).toBeGreaterThan(0);
+    expect(selects[0].componentInstance.disabled()).toBe(true);
   });
 });

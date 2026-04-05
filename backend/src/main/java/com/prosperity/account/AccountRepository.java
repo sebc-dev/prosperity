@@ -12,48 +12,46 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
 
   /**
    * Returns non-archived accounts accessible by the given user, along with their access level.
-   * Each element of the returned list is an Object[] where [0] is Account and [1] is AccessLevel.
    */
   @Query(
       """
-      SELECT a, aa.accessLevel FROM Account a
+      SELECT new com.prosperity.account.AccountWithAccess(a, aa.accessLevel) FROM Account a
       JOIN AccountAccess aa ON aa.bankAccount = a
       WHERE aa.user.id = :userId
       AND a.archived = false
       ORDER BY a.name ASC
       """)
-  List<Object[]> findAllAccessibleByUserId(@Param("userId") UUID userId);
+  List<AccountWithAccess> findAllAccessibleByUserId(@Param("userId") UUID userId);
 
   /**
    * Returns all accounts accessible by the given user (including archived), along with their
-   * access level. Each element of the returned list is an Object[] where [0] is Account and [1]
-   * is AccessLevel.
+   * access level.
    */
   @Query(
       """
-      SELECT a, aa.accessLevel FROM Account a
+      SELECT new com.prosperity.account.AccountWithAccess(a, aa.accessLevel) FROM Account a
       JOIN AccountAccess aa ON aa.bankAccount = a
       WHERE aa.user.id = :userId
       ORDER BY a.name ASC
       """)
-  List<Object[]> findAllAccessibleByUserIdIncludingArchived(@Param("userId") UUID userId);
+  List<AccountWithAccess> findAllAccessibleByUserIdIncludingArchived(@Param("userId") UUID userId);
 
   /**
    * Returns a single account with its access level for the given user, used for detail/update
    * operations. Returns empty list if the user has no access to the account.
    *
-   * <p>Returns {@code List<Object[]>} instead of {@code Optional<Object[]>} to avoid a Hibernate
+   * <p>Returns {@code List<AccountWithAccess>} instead of {@code Optional} to avoid a Hibernate
    * behavior where {@code Optional<Object[]>} for multi-projection JPQL returns a 1-element
    * Object[] containing only the entity, dropping the scalar AccessLevel.
    */
   @Query(
       """
-      SELECT a, aa.accessLevel FROM Account a
+      SELECT new com.prosperity.account.AccountWithAccess(a, aa.accessLevel) FROM Account a
       JOIN AccountAccess aa ON aa.bankAccount = a
       WHERE a.id = :accountId
       AND aa.user.id = :userId
       """)
-  List<Object[]> findByIdAndUserId(
+  List<AccountWithAccess> findByIdAndUserId(
       @Param("accountId") UUID accountId, @Param("userId") UUID userId);
 
   /**

@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  DestroyRef,
   computed,
   effect,
   inject,
@@ -8,6 +9,7 @@ import {
   output,
   signal,
 } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormBuilder, Validators } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { FloatLabelModule } from 'primeng/floatlabel';
@@ -21,7 +23,6 @@ import { AccountResponse, AccountType } from './account.types';
 @Component({
   selector: 'app-account-dialog',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  standalone: true,
   imports: [
     ReactiveFormsModule,
     DialogModule,
@@ -101,6 +102,7 @@ export class AccountDialog {
 
   private readonly accountService = inject(AccountService);
   private readonly fb = inject(FormBuilder);
+  private readonly destroyRef = inject(DestroyRef);
 
   protected form = this.fb.group({
     name: ['', [Validators.required, Validators.maxLength(100)]],
@@ -142,7 +144,7 @@ export class AccountDialog {
       ? this.accountService.updateAccount(acct.id, { name: name!, accountType: accountType! })
       : this.accountService.createAccount({ name: name!, accountType: accountType! });
 
-    request$.subscribe({
+    request$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
       next: () => {
         this.loading.set(false);
         this.visibleChange.emit(false);

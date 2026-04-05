@@ -226,9 +226,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Project Foundation | 0/14 | Planning | - |
-| 4. Categories | 0/4 | Planning | - |
 | 3. Accounts & Access Control | 9/9 | Complete   | 2026-04-05 |
-| 4. Categories | 0/1 | Not started | - |
+| 4. Categories | 2/4 | In Progress | - |
 | 5. Transactions | 0/2 | Not started | - |
 | 6. Envelope Budgets | 0/2 | Not started | - |
 | 7. Plaid Integration | 0/3 | Not started | - |

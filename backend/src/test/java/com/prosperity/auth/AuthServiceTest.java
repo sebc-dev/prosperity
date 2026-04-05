@@ -44,8 +44,7 @@ class AuthServiceTest {
   void create_admin_hashes_password_and_sets_admin_role() {
     when(userRepository.count()).thenReturn(0L);
     when(passwordEncoder.encode("SecurePass123!")).thenReturn("{bcrypt}hashedpassword");
-    when(userRepository.save(any(User.class)))
-        .thenAnswer(invocation -> invocation.getArgument(0));
+    when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
     var result =
         authService.createAdmin(new SetupRequest("admin@test.com", "SecurePass123!", "Admin"));

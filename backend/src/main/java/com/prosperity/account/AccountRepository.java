@@ -10,9 +10,7 @@ import org.springframework.data.repository.query.Param;
 /** Spring Data JPA repository for Account entities. All queries filter by user access. */
 public interface AccountRepository extends JpaRepository<Account, UUID> {
 
-  /**
-   * Returns non-archived accounts accessible by the given user, along with their access level.
-   */
+  /** Returns non-archived accounts accessible by the given user, along with their access level. */
   @Query(
       """
       SELECT new com.prosperity.account.AccountWithAccess(a, aa.accessLevel) FROM Account a
@@ -24,8 +22,8 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
   List<AccountWithAccess> findAllAccessibleByUserId(@Param("userId") UUID userId);
 
   /**
-   * Returns all accounts accessible by the given user (including archived), along with their
-   * access level.
+   * Returns all accounts accessible by the given user (including archived), along with their access
+   * level.
    */
   @Query(
       """
@@ -55,8 +53,8 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
       @Param("accountId") UUID accountId, @Param("userId") UUID userId);
 
   /**
-   * Returns true if the user has access to the account at one of the given access levels.
-   * Used for authorization checks before mutation operations.
+   * Returns true if the user has access to the account at one of the given access levels. Used for
+   * authorization checks before mutation operations.
    */
   @Query(
       """

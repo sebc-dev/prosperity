@@ -36,8 +36,8 @@ public class AccountService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Creates a new account and automatically assigns ADMIN access to the creator (D-04).
-   * Shared accounts do not receive automatic access for other users (D-05).
+   * Creates a new account and automatically assigns ADMIN access to the creator (D-04). Shared
+   * accounts do not receive automatic access for other users (D-05).
    */
   @Transactional
   public AccountResponse createAccount(CreateAccountRequest request, String userEmail) {
@@ -52,8 +52,8 @@ public class AccountService {
   }
 
   /**
-   * Returns accounts accessible by the given user.
-   * D-07: archived accounts excluded by default, included when {@code includeArchived} is true.
+   * Returns accounts accessible by the given user. D-07: archived accounts excluded by default,
+   * included when {@code includeArchived} is true.
    */
   @Transactional(readOnly = true)
   public List<AccountResponse> getAccounts(boolean includeArchived, String userEmail) {
@@ -63,14 +63,12 @@ public class AccountService {
             ? accountRepository.findAllAccessibleByUserIdIncludingArchived(user.getId())
             : accountRepository.findAllAccessibleByUserId(user.getId());
 
-    return results.stream()
-        .map(row -> toResponse(row.account(), row.accessLevel()))
-        .toList();
+    return results.stream().map(row -> toResponse(row.account(), row.accessLevel())).toList();
   }
 
   /**
-   * Returns a single account for the given user.
-   * D-02: throws 403 when account exists but user has no access (avoids leaking existence).
+   * Returns a single account for the given user. D-02: throws 403 when account exists but user has
+   * no access (avoids leaking existence).
    */
   @Transactional(readOnly = true)
   public AccountResponse getAccount(UUID accountId, String userEmail) {
@@ -129,9 +127,7 @@ public class AccountService {
   // Access management (ADMIN-only)
   // ---------------------------------------------------------------------------
 
-  /**
-   * Returns all access entries for an account. Requires ADMIN access.
-   */
+  /** Returns all access entries for an account. Requires ADMIN access. */
   @Transactional(readOnly = true)
   public List<AccountAccessResponse> getAccessEntries(UUID accountId, String userEmail) {
     User user = resolveUser(userEmail);
@@ -145,8 +141,8 @@ public class AccountService {
   }
 
   /**
-   * Grants or updates access for a user on an account. Requires ADMIN access.
-   * Creates a new entry if none exists; updates the access level otherwise.
+   * Grants or updates access for a user on an account. Requires ADMIN access. Creates a new entry
+   * if none exists; updates the access level otherwise.
    */
   @Transactional
   public AccountAccessResponse setAccess(
@@ -173,8 +169,7 @@ public class AccountService {
                           .findById(accountId)
                           .orElseThrow(
                               () ->
-                                  new AccountNotFoundException(
-                                      "Account not found: " + accountId));
+                                  new AccountNotFoundException("Account not found: " + accountId));
                   return new AccountAccess(targetUser, account, request.accessLevel());
                 });
 
@@ -182,8 +177,7 @@ public class AccountService {
     if (access.getAccessLevel() == AccessLevel.ADMIN
         && request.accessLevel() != AccessLevel.ADMIN) {
       long adminCount =
-          accountAccessRepository.countByBankAccountIdAndAccessLevel(
-              accountId, AccessLevel.ADMIN);
+          accountAccessRepository.countByBankAccountIdAndAccessLevel(accountId, AccessLevel.ADMIN);
       if (adminCount <= 1) {
         throw new IllegalStateException("Cannot demote the last admin of an account");
       }
@@ -195,8 +189,8 @@ public class AccountService {
   }
 
   /**
-   * Removes an access entry from an account. Requires ADMIN access.
-   * Prevents removing the last ADMIN to avoid orphaning the account.
+   * Removes an access entry from an account. Requires ADMIN access. Prevents removing the last
+   * ADMIN to avoid orphaning the account.
    */
   @Transactional
   public void removeAccess(UUID accountId, UUID accessId, String userEmail) {
@@ -219,8 +213,7 @@ public class AccountService {
 
     if (entry.getAccessLevel() == AccessLevel.ADMIN) {
       long adminCount =
-          accountAccessRepository.countByBankAccountIdAndAccessLevel(
-              accountId, AccessLevel.ADMIN);
+          accountAccessRepository.countByBankAccountIdAndAccessLevel(accountId, AccessLevel.ADMIN);
       if (adminCount <= 1) {
         throw new IllegalStateException("Cannot remove the last admin from an account");
       }

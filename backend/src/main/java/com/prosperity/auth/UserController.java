@@ -9,8 +9,8 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * REST controller exposing user list for account access management.
  *
- * <p>Provides {@code GET /api/users} used by the access management dialog user dropdown.
- * Secured by the default {@code anyRequest().authenticated()} in SecurityConfig.
+ * <p>Provides {@code GET /api/users} used by the access management dialog user dropdown. Secured by
+ * the default {@code anyRequest().authenticated()} in SecurityConfig.
  */
 @RestController
 @RequestMapping("/api/users")
@@ -27,9 +27,7 @@ public class UserController {
   /** Returns all users for account access management. Authenticated users only. */
   @GetMapping
   public ResponseEntity<List<UserResponse>> listUsers() {
-    var users = userRepository.findAll().stream()
-        .map(authService::toUserResponse)
-        .toList();
+    var users = userRepository.findAll().stream().map(authService::toUserResponse).toList();
     return ResponseEntity.ok(users);
   }
 }

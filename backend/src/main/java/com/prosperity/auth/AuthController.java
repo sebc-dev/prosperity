@@ -23,8 +23,8 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * REST controller for authentication endpoints.
  *
- * <p>Provides setup wizard (admin creation), login with explicit session save (Spring Security 7 BFF
- * cookie flow), current user retrieval, and first-launch status check.
+ * <p>Provides setup wizard (admin creation), login with explicit session save (Spring Security 7
+ * BFF cookie flow), current user retrieval, and first-launch status check.
  */
 @RestController
 @RequestMapping("/api/auth")
@@ -69,8 +69,7 @@ public class AuthController {
       HttpServletResponse httpResponse) {
     try {
       var token =
-          UsernamePasswordAuthenticationToken.unauthenticated(
-              request.email(), request.password());
+          UsernamePasswordAuthenticationToken.unauthenticated(request.email(), request.password());
       var authentication = authenticationManager.authenticate(token);
 
       var context = SecurityContextHolder.createEmptyContext();

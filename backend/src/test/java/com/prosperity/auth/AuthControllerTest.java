@@ -175,10 +175,7 @@ class AuthControllerTest {
             .contentType(MediaType.APPLICATION_JSON)
             .content(VALID_SETUP_JSON));
 
-    var result =
-        mockMvc.perform(
-            get("/api/auth/me")
-                .with(user("admin@test.com").roles("ADMIN")));
+    var result = mockMvc.perform(get("/api/auth/me").with(user("admin@test.com").roles("ADMIN")));
 
     result
         .andExpect(status().isOk())
@@ -197,9 +194,7 @@ class AuthControllerTest {
   void status_returns_false_when_no_users() throws Exception {
     var result = mockMvc.perform(get("/api/auth/status"));
 
-    result
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.setupComplete").value(false));
+    result.andExpect(status().isOk()).andExpect(jsonPath("$.setupComplete").value(false));
   }
 
   @Test
@@ -212,8 +207,6 @@ class AuthControllerTest {
 
     var result = mockMvc.perform(get("/api/auth/status"));
 
-    result
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.setupComplete").value(true));
+    result.andExpect(status().isOk()).andExpect(jsonPath("$.setupComplete").value(true));
   }
 }

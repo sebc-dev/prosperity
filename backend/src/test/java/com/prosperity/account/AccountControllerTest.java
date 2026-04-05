@@ -53,7 +53,8 @@ class AccountControllerTest {
                 .with(user("admin@test.com"))
                 .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(
+                    """
                     {"name":"Compte Courant","accountType":"PERSONAL"}
                     """))
         .andExpect(status().isCreated())
@@ -72,7 +73,8 @@ class AccountControllerTest {
                 .with(user("admin@test.com"))
                 .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(
+                    """
                     {"name":"Compte Commun","accountType":"SHARED"}
                     """))
         .andExpect(status().isCreated())
@@ -119,10 +121,7 @@ class AccountControllerTest {
     grantAccess(owner, archived, AccessLevel.ADMIN);
 
     mockMvc
-        .perform(
-            get("/api/accounts")
-                .with(user("owner@test.com"))
-                .param("includeArchived", "true"))
+        .perform(get("/api/accounts").with(user("owner@test.com")).param("includeArchived", "true"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()").value(1))
         .andExpect(jsonPath("$[0].archived").value(true));
@@ -134,8 +133,7 @@ class AccountControllerTest {
     Account account = createAccount("Private", AccountType.PERSONAL);
 
     mockMvc
-        .perform(
-            get("/api/accounts/{id}", account.getId()).with(user("other@test.com")))
+        .perform(get("/api/accounts/{id}", account.getId()).with(user("other@test.com")))
         .andExpect(status().isForbidden());
   }
 
@@ -151,7 +149,8 @@ class AccountControllerTest {
                 .with(user("owner@test.com"))
                 .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(
+                    """
                     {"name":"New Name"}
                     """))
         .andExpect(status().isOk())
@@ -170,7 +169,8 @@ class AccountControllerTest {
                 .with(user("owner@test.com"))
                 .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(
+                    """
                     {"archived":true}
                     """))
         .andExpect(status().isOk())
@@ -189,7 +189,8 @@ class AccountControllerTest {
                 .with(user("reader@test.com"))
                 .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(
+                    """
                     {"name":"Renamed"}
                     """))
         .andExpect(status().isForbidden());
@@ -206,8 +207,7 @@ class AccountControllerTest {
     grantAccess(admin, account, AccessLevel.ADMIN);
 
     mockMvc
-        .perform(
-            get("/api/accounts/{id}/access", account.getId()).with(user("admin@test.com")))
+        .perform(get("/api/accounts/{id}/access", account.getId()).with(user("admin@test.com")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.length()").value(1))
         .andExpect(jsonPath("$[0].accessLevel").value("ADMIN"));
@@ -220,8 +220,7 @@ class AccountControllerTest {
     grantAccess(writer, account, AccessLevel.WRITE);
 
     mockMvc
-        .perform(
-            get("/api/accounts/{id}/access", account.getId()).with(user("writer@test.com")))
+        .perform(get("/api/accounts/{id}/access", account.getId()).with(user("writer@test.com")))
         .andExpect(status().isForbidden());
   }
 
@@ -285,9 +284,7 @@ class AccountControllerTest {
 
   @Test
   void unauthenticated_request_returns_401() throws Exception {
-    mockMvc
-        .perform(get("/api/accounts"))
-        .andExpect(status().isUnauthorized());
+    mockMvc.perform(get("/api/accounts")).andExpect(status().isUnauthorized());
   }
 
   @Test
@@ -296,7 +293,8 @@ class AccountControllerTest {
         .perform(
             post("/api/accounts")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(
+                    """
                     {"name":"Test","accountType":"PERSONAL"}
                     """))
         .andExpect(status().isForbidden());
@@ -316,7 +314,8 @@ class AccountControllerTest {
                 .with(user("user@test.com"))
                 .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(
+                    """
                     {"name":"","accountType":"PERSONAL"}
                     """))
         .andExpect(status().isBadRequest());
@@ -332,7 +331,8 @@ class AccountControllerTest {
                 .with(user("user@test.com"))
                 .with(csrf())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""
+                .content(
+                    """
                     {"accountType":"PERSONAL"}
                     """))
         .andExpect(status().isBadRequest());
@@ -349,9 +349,7 @@ class AccountControllerTest {
     grantAccess(owner, account, AccessLevel.ADMIN);
 
     mockMvc
-        .perform(
-            get("/api/accounts/{id}", account.getId())
-                .with(user("owner@test.com")))
+        .perform(get("/api/accounts/{id}", account.getId()).with(user("owner@test.com")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.name").value("My Account"))
         .andExpect(jsonPath("$.accountType").value("PERSONAL"))

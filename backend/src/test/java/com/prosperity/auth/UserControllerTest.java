@@ -38,9 +38,7 @@ class UserControllerTest {
 
   @Test
   void list_users_returns_401_when_unauthenticated() throws Exception {
-    mockMvc
-        .perform(get("/api/users"))
-        .andExpect(status().isUnauthorized());
+    mockMvc.perform(get("/api/users")).andExpect(status().isUnauthorized());
   }
 
   private User setupUser(String email) {

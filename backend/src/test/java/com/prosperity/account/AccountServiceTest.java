@@ -37,16 +37,18 @@ class AccountServiceTest {
     User creator = createTestUser("user@test.com");
     when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(creator));
     when(accountRepository.save(any(Account.class)))
-        .thenAnswer(invocation -> {
-          Account a = invocation.getArgument(0);
-          a.setId(UUID.randomUUID());
-          return a;
-        });
+        .thenAnswer(
+            invocation -> {
+              Account a = invocation.getArgument(0);
+              a.setId(UUID.randomUUID());
+              return a;
+            });
     when(accountAccessRepository.save(any(AccountAccess.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
 
-    var result = accountService.createAccount(
-        new CreateAccountRequest("Compte Courant", AccountType.PERSONAL), "user@test.com");
+    var result =
+        accountService.createAccount(
+            new CreateAccountRequest("Compte Courant", AccountType.PERSONAL), "user@test.com");
 
     assertThat(result.name()).isEqualTo("Compte Courant");
     assertThat(result.accountType()).isEqualTo(AccountType.PERSONAL);
@@ -58,11 +60,12 @@ class AccountServiceTest {
     User creator = createTestUser("user@test.com");
     when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(creator));
     when(accountRepository.save(any(Account.class)))
-        .thenAnswer(invocation -> {
-          Account a = invocation.getArgument(0);
-          a.setId(UUID.randomUUID());
-          return a;
-        });
+        .thenAnswer(
+            invocation -> {
+              Account a = invocation.getArgument(0);
+              a.setId(UUID.randomUUID());
+              return a;
+            });
     when(accountAccessRepository.save(any(AccountAccess.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -110,8 +113,7 @@ class AccountServiceTest {
     User user = createTestUser("user@test.com");
     UUID accountId = UUID.randomUUID();
     when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(user));
-    when(accountRepository.findByIdAndUserId(accountId, user.getId()))
-        .thenReturn(List.of());
+    when(accountRepository.findByIdAndUserId(accountId, user.getId())).thenReturn(List.of());
     when(accountRepository.existsById(accountId)).thenReturn(true);
 
     assertThatThrownBy(() -> accountService.getAccount(accountId, "user@test.com"))
@@ -123,8 +125,7 @@ class AccountServiceTest {
     User user = createTestUser("user@test.com");
     UUID accountId = UUID.randomUUID();
     when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(user));
-    when(accountRepository.findByIdAndUserId(accountId, user.getId()))
-        .thenReturn(List.of());
+    when(accountRepository.findByIdAndUserId(accountId, user.getId())).thenReturn(List.of());
     when(accountRepository.existsById(accountId)).thenReturn(false);
 
     assertThatThrownBy(() -> accountService.getAccount(accountId, "user@test.com"))
@@ -143,8 +144,9 @@ class AccountServiceTest {
     when(accountRepository.save(any(Account.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
 
-    var result = accountService.updateAccount(
-        accountId, new UpdateAccountRequest("New Name", null, null), "user@test.com");
+    var result =
+        accountService.updateAccount(
+            accountId, new UpdateAccountRequest("New Name", null, null), "user@test.com");
 
     assertThat(result.name()).isEqualTo("New Name");
     assertThat(result.accountType()).isEqualTo(AccountType.PERSONAL);
@@ -162,8 +164,9 @@ class AccountServiceTest {
     when(accountRepository.save(any(Account.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
 
-    var result = accountService.updateAccount(
-        accountId, new UpdateAccountRequest("New Name", null, null), "user@test.com");
+    var result =
+        accountService.updateAccount(
+            accountId, new UpdateAccountRequest("New Name", null, null), "user@test.com");
 
     assertThat(result.accountType()).isEqualTo(AccountType.SHARED);
   }
@@ -173,12 +176,13 @@ class AccountServiceTest {
     User user = createTestUser("user@test.com");
     UUID accountId = UUID.randomUUID();
     when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(user));
-    when(accountRepository.findByIdAndUserId(accountId, user.getId()))
-        .thenReturn(List.of());
+    when(accountRepository.findByIdAndUserId(accountId, user.getId())).thenReturn(List.of());
     when(accountRepository.existsById(accountId)).thenReturn(false);
 
-    assertThatThrownBy(() ->
-        accountService.updateAccount(accountId, new UpdateAccountRequest("X", null, null), "user@test.com"))
+    assertThatThrownBy(
+            () ->
+                accountService.updateAccount(
+                    accountId, new UpdateAccountRequest("X", null, null), "user@test.com"))
         .isInstanceOf(AccountNotFoundException.class);
   }
 
@@ -192,8 +196,10 @@ class AccountServiceTest {
     when(accountRepository.findByIdAndUserId(accountId, user.getId()))
         .thenReturn(accessRows(account, AccessLevel.READ));
 
-    assertThatThrownBy(() ->
-        accountService.updateAccount(accountId, new UpdateAccountRequest("X", null, null), "user@test.com"))
+    assertThatThrownBy(
+            () ->
+                accountService.updateAccount(
+                    accountId, new UpdateAccountRequest("X", null, null), "user@test.com"))
         .isInstanceOf(AccountAccessDeniedException.class);
   }
 
@@ -228,14 +234,18 @@ class AccountServiceTest {
         .thenReturn(Optional.empty());
     when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
     when(accountAccessRepository.save(any(AccountAccess.class)))
-        .thenAnswer(invocation -> {
-          AccountAccess aa = invocation.getArgument(0);
-          aa.setId(UUID.randomUUID());
-          return aa;
-        });
+        .thenAnswer(
+            invocation -> {
+              AccountAccess aa = invocation.getArgument(0);
+              aa.setId(UUID.randomUUID());
+              return aa;
+            });
 
-    var result = accountService.setAccess(
-        accountId, new SetAccessRequest(targetUser.getId(), AccessLevel.READ), "admin@test.com");
+    var result =
+        accountService.setAccess(
+            accountId,
+            new SetAccessRequest(targetUser.getId(), AccessLevel.READ),
+            "admin@test.com");
 
     verify(accountAccessRepository).save(any(AccountAccess.class));
     assertThat(result.accessLevel()).isEqualTo(AccessLevel.READ);
@@ -259,8 +269,11 @@ class AccountServiceTest {
     when(accountAccessRepository.save(any(AccountAccess.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
 
-    var result = accountService.setAccess(
-        accountId, new SetAccessRequest(targetUser.getId(), AccessLevel.WRITE), "admin@test.com");
+    var result =
+        accountService.setAccess(
+            accountId,
+            new SetAccessRequest(targetUser.getId(), AccessLevel.WRITE),
+            "admin@test.com");
 
     assertThat(result.accessLevel()).isEqualTo(AccessLevel.WRITE);
   }
@@ -282,8 +295,12 @@ class AccountServiceTest {
     when(accountAccessRepository.countByBankAccountIdAndAccessLevel(accountId, AccessLevel.ADMIN))
         .thenReturn(1L);
 
-    assertThatThrownBy(() ->
-        accountService.setAccess(accountId, new SetAccessRequest(admin.getId(), AccessLevel.READ), "admin@test.com"))
+    assertThatThrownBy(
+            () ->
+                accountService.setAccess(
+                    accountId,
+                    new SetAccessRequest(admin.getId(), AccessLevel.READ),
+                    "admin@test.com"))
         .isInstanceOf(IllegalStateException.class);
   }
 

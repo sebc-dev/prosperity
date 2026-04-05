@@ -53,8 +53,8 @@ public class AccountController {
   }
 
   /**
-   * Lists accounts accessible by the authenticated user.
-   * D-07: archived accounts are excluded by default; pass {@code includeArchived=true} to include.
+   * Lists accounts accessible by the authenticated user. D-07: archived accounts are excluded by
+   * default; pass {@code includeArchived=true} to include.
    */
   @GetMapping
   public ResponseEntity<List<AccountResponse>> list(
@@ -67,15 +67,13 @@ public class AccountController {
   /** Returns a single account. D-02: returns 403 if account exists but user has no access. */
   @GetMapping("/{id}")
   public ResponseEntity<AccountResponse> getById(
-      @PathVariable UUID id,
-      @AuthenticationPrincipal UserDetails userDetails) {
+      @PathVariable UUID id, @AuthenticationPrincipal UserDetails userDetails) {
     var response = accountService.getAccount(id, userDetails.getUsername());
     return ResponseEntity.ok(response);
   }
 
   /**
-   * Updates mutable account fields (partial PATCH semantics, D-08).
-   * Requires at least WRITE access.
+   * Updates mutable account fields (partial PATCH semantics, D-08). Requires at least WRITE access.
    */
   @PatchMapping("/{id}")
   public ResponseEntity<AccountResponse> update(
@@ -93,8 +91,7 @@ public class AccountController {
   /** Lists all access entries for an account. Requires ADMIN access (ACCS-03). */
   @GetMapping("/{id}/access")
   public ResponseEntity<List<AccountAccessResponse>> listAccess(
-      @PathVariable UUID id,
-      @AuthenticationPrincipal UserDetails userDetails) {
+      @PathVariable UUID id, @AuthenticationPrincipal UserDetails userDetails) {
     var entries = accountService.getAccessEntries(id, userDetails.getUsername());
     return ResponseEntity.ok(entries);
   }

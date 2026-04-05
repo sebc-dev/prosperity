@@ -15,8 +15,8 @@ public interface AccountAccessRepository extends JpaRepository<AccountAccess, UU
   Optional<AccountAccess> findByBankAccountIdAndUserId(UUID bankAccountId, UUID userId);
 
   /**
-   * Counts the number of access entries with the given access level on an account.
-   * Used to prevent removing the last admin from an account.
+   * Counts the number of access entries with the given access level on an account. Used to prevent
+   * removing the last admin from an account.
    */
   long countByBankAccountIdAndAccessLevel(UUID bankAccountId, AccessLevel accessLevel);
 }

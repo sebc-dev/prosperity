@@ -14,6 +14,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -32,17 +33,12 @@ public class AuthController {
 
   private final AuthService authService;
   private final AuthenticationManager authenticationManager;
-  private final UserRepository userRepository;
   private final SecurityContextRepository securityContextRepository =
       new HttpSessionSecurityContextRepository();
 
-  public AuthController(
-      AuthService authService,
-      AuthenticationManager authenticationManager,
-      UserRepository userRepository) {
+  public AuthController(AuthService authService, AuthenticationManager authenticationManager) {
     this.authService = authService;
     this.authenticationManager = authenticationManager;
-    this.userRepository = userRepository;
   }
 
   /** Creates the admin user. Returns 201 on success, 409 if setup already complete. */
@@ -78,8 +74,7 @@ public class AuthController {
       securityContextRepository.saveContext(context, httpRequest, httpResponse);
 
       var userDetails = (UserDetails) authentication.getPrincipal();
-      var user = userRepository.findByEmail(userDetails.getUsername()).orElseThrow();
-      return ResponseEntity.ok(authService.toUserResponse(user));
+      return ResponseEntity.ok(authService.findUserResponseByEmail(userDetails.getUsername()));
     } catch (BadCredentialsException e) {
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
           .body(Map.of("error", "Identifiants invalides"));
@@ -92,13 +87,17 @@ public class AuthController {
     if (userDetails == null) {
       return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
     }
-    var user = userRepository.findByEmail(userDetails.getUsername()).orElseThrow();
-    return ResponseEntity.ok(authService.toUserResponse(user));
+    return ResponseEntity.ok(authService.findUserResponseByEmail(userDetails.getUsername()));
   }
 
   /** Returns whether the initial setup has been completed (at least one user exists). */
   @GetMapping("/status")
   public ResponseEntity<Map<String, Boolean>> status() {
     return ResponseEntity.ok(Map.of("setupComplete", authService.isSetupComplete()));
+  }
+
+  @ExceptionHandler(UserNotFoundException.class)
+  public ResponseEntity<Map<String, String>> handleUserNotFound(UserNotFoundException e) {
+    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
   }
 }

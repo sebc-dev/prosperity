@@ -96,7 +96,7 @@ Plans:
 - [x] 03-02-PLAN.md — DTO records (request/response) + custom exceptions
 - [x] 03-03-PLAN.md — Repository JPQL queries (access-filtered account retrieval)
 - [x] 03-04-PLAN.md — AccountService business logic (CRUD + access enforcement)
-- [ ] 03-05-PLAN.md — AccountController REST endpoints + users list endpoint
+- [x] 03-05-PLAN.md — AccountController REST endpoints + users list endpoint
 - [ ] 03-06-PLAN.md — Backend tests (AccountServiceTest unit + AccountControllerTest integration)
 - [ ] 03-07-PLAN.md — Frontend types, AccountService, sidebar navigation, routing
 - [ ] 03-08-PLAN.md — Accounts list page (p-table) + create/edit dialog
@@ -224,7 +224,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 |-------|----------------|--------|-----------|
 | 1. Project Foundation | 0/14 | Planning | - |
 | 2. Authentication & Setup Wizard | 0/7 | Planning | - |
-| 3. Accounts & Access Control | 4/9 | In Progress|  |
+| 3. Accounts & Access Control | 5/9 | In Progress|  |
 | 4. Categories | 0/1 | Not started | - |
 | 5. Transactions | 0/2 | Not started | - |
 | 6. Envelope Budgets | 0/2 | Not started | - |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 03-04-PLAN.md
-last_updated: "2026-04-05T13:02:22.164Z"
+stopped_at: Completed 03-05-PLAN.md
+last_updated: "2026-04-05T13:05:51.867Z"
 last_activity: 2026-04-05
 progress:
   total_phases: 10
   completed_phases: 2
   total_plans: 30
-  completed_plans: 25
+  completed_plans: 26
   percent: 0
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 03 (accounts-access-control) — EXECUTING
-Plan: 5 of 9
+Plan: 6 of 9
 Status: Ready to execute
 Last activity: 2026-04-05
 
@@ -69,6 +69,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 03 P02 | 3 | 2 tasks | 7 files |
 | Phase 03 P03 | 1min | 2 tasks | 2 files |
 | Phase 03 P04 | 2 | 2 tasks | 1 files |
+| Phase 03 P05 | 1 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -107,6 +108,7 @@ Recent decisions affecting current work:
 - [Phase 03]: AccountAccessRepository uses Spring Data derived queries (no @Query) — method names map directly to JPA property navigation
 - [Phase 03]: orElseThrow lambda in getAccount/updateAccount distinguishes 403 vs 404 via existsById check
 - [Phase 03]: AccountService.setAccess uses orElseGet to create new AccountAccess lazily only when entry does not exist
+- [Phase 03]: UserController separate from AuthController: Spring MVC concatenates class-level and method-level paths — @GetMapping("/api/users") on AuthController (@RequestMapping("/api/auth")) produces /api/auth/api/users, not /api/users
 
 ### Pending Todos
 
@@ -119,6 +121,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-05T13:02:22.162Z
-Stopped at: Completed 03-04-PLAN.md
+Last session: 2026-04-05T13:05:51.864Z
+Stopped at: Completed 03-05-PLAN.md
 Resume file: None

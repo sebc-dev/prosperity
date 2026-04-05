@@ -2,7 +2,6 @@ package com.prosperity.account;
 
 import java.util.Collection;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -41,7 +40,11 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
 
   /**
    * Returns a single account with its access level for the given user, used for detail/update
-   * operations. Returns empty if the user has no access to the account.
+   * operations. Returns empty list if the user has no access to the account.
+   *
+   * <p>Returns {@code List<Object[]>} instead of {@code Optional<Object[]>} to avoid a Hibernate
+   * behavior where {@code Optional<Object[]>} for multi-projection JPQL returns a 1-element
+   * Object[] containing only the entity, dropping the scalar AccessLevel.
    */
   @Query(
       """
@@ -50,7 +53,7 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
       WHERE a.id = :accountId
       AND aa.user.id = :userId
       """)
-  Optional<Object[]> findByIdAndUserId(
+  List<Object[]> findByIdAndUserId(
       @Param("accountId") UUID accountId, @Param("userId") UUID userId);
 
   /**

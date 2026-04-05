@@ -74,17 +74,15 @@ public class AccountService {
   @Transactional(readOnly = true)
   public AccountResponse getAccount(UUID accountId, String userEmail) {
     User user = resolveUser(userEmail);
-    return accountRepository
-        .findByIdAndUserId(accountId, user.getId())
-        .map(row -> toResponse((Account) row[0], (AccessLevel) row[1]))
-        .orElseThrow(
-            () -> {
-              if (accountRepository.existsById(accountId)) {
-                throw new AccountAccessDeniedException(
-                    "Access denied to account: " + accountId);
-              }
-              throw new AccountNotFoundException("Account not found: " + accountId);
-            });
+    List<Object[]> results = accountRepository.findByIdAndUserId(accountId, user.getId());
+    if (results.isEmpty()) {
+      if (accountRepository.existsById(accountId)) {
+        throw new AccountAccessDeniedException("Access denied to account: " + accountId);
+      }
+      throw new AccountNotFoundException("Account not found: " + accountId);
+    }
+    Object[] row = results.get(0);
+    return toResponse((Account) row[0], (AccessLevel) row[1]);
   }
 
   /**
@@ -95,17 +93,14 @@ public class AccountService {
   public AccountResponse updateAccount(
       UUID accountId, UpdateAccountRequest request, String userEmail) {
     User user = resolveUser(userEmail);
-    Object[] row =
-        accountRepository
-            .findByIdAndUserId(accountId, user.getId())
-            .orElseThrow(
-                () -> {
-                  if (accountRepository.existsById(accountId)) {
-                    throw new AccountAccessDeniedException(
-                        "Access denied to account: " + accountId);
-                  }
-                  throw new AccountNotFoundException("Account not found: " + accountId);
-                });
+    List<Object[]> results = accountRepository.findByIdAndUserId(accountId, user.getId());
+    if (results.isEmpty()) {
+      if (accountRepository.existsById(accountId)) {
+        throw new AccountAccessDeniedException("Access denied to account: " + accountId);
+      }
+      throw new AccountNotFoundException("Account not found: " + accountId);
+    }
+    Object[] row = results.get(0);
 
     AccessLevel accessLevel = (AccessLevel) row[1];
     if (!accessLevel.isAtLeast(AccessLevel.WRITE)) {

@@ -114,7 +114,7 @@ class AccountServiceTest {
     UUID accountId = UUID.randomUUID();
     when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(user));
     when(accountRepository.findByIdAndUserId(accountId, user.getId()))
-        .thenReturn(Optional.empty());
+        .thenReturn(List.of());
     when(accountRepository.existsById(accountId)).thenReturn(true);
 
     assertThatThrownBy(() -> accountService.getAccount(accountId, "user@test.com"))
@@ -127,7 +127,7 @@ class AccountServiceTest {
     UUID accountId = UUID.randomUUID();
     when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(user));
     when(accountRepository.findByIdAndUserId(accountId, user.getId()))
-        .thenReturn(Optional.empty());
+        .thenReturn(List.of());
     when(accountRepository.existsById(accountId)).thenReturn(false);
 
     assertThatThrownBy(() -> accountService.getAccount(accountId, "user@test.com"))
@@ -142,7 +142,7 @@ class AccountServiceTest {
     account.setId(accountId);
     when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(user));
     when(accountRepository.findByIdAndUserId(accountId, user.getId()))
-        .thenReturn(accessRow(account, AccessLevel.WRITE));
+        .thenReturn(accessRows(account, AccessLevel.WRITE));
     when(accountRepository.save(any(Account.class)))
         .thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -161,7 +161,7 @@ class AccountServiceTest {
     account.setId(accountId);
     when(userRepository.findByEmail("user@test.com")).thenReturn(Optional.of(user));
     when(accountRepository.findByIdAndUserId(accountId, user.getId()))
-        .thenReturn(accessRow(account, AccessLevel.READ));
+        .thenReturn(accessRows(account, AccessLevel.READ));
 
     assertThatThrownBy(() ->
         accountService.updateAccount(accountId, new UpdateAccountRequest("X", null, null), "user@test.com"))
@@ -292,8 +292,9 @@ class AccountServiceTest {
     return account;
   }
 
-  @SuppressWarnings("unchecked")
-  private Optional<Object[]> accessRow(Account account, AccessLevel level) {
-    return (Optional<Object[]>) (Optional<?>) Optional.of(new Object[] {account, level});
+  private List<Object[]> accessRows(Account account, AccessLevel level) {
+    List<Object[]> rows = new java.util.ArrayList<>();
+    rows.add(new Object[] {account, level});
+    return rows;
   }
 }

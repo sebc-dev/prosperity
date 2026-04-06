@@ -1,10 +1,10 @@
 package com.prosperity.category;
 
-import com.prosperity.transaction.TransactionRepository;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,12 +18,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class CategoryService {
 
   private final CategoryRepository categoryRepository;
-  private final TransactionRepository transactionRepository;
 
-  public CategoryService(
-      CategoryRepository categoryRepository, TransactionRepository transactionRepository) {
+  public CategoryService(CategoryRepository categoryRepository) {
     this.categoryRepository = categoryRepository;
-    this.transactionRepository = transactionRepository;
   }
 
   /**
@@ -149,12 +146,13 @@ public class CategoryService {
           "Impossible de supprimer une categorie qui contient des sous-categories");
     }
 
-    if (transactionRepository.existsByCategoryId(id)) {
+    try {
+      categoryRepository.delete(category);
+      categoryRepository.flush();
+    } catch (DataIntegrityViolationException e) {
       throw new CategoryInUseException(
           "Cette categorie est utilisee par des transactions et ne peut pas etre supprimee");
     }
-
-    categoryRepository.delete(category);
   }
 
   private CategoryResponse toResponse(Category category, String parentName) {

@@ -10,17 +10,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.prosperity.TestcontainersConfig;
-import com.prosperity.account.Account;
-import com.prosperity.account.AccountRepository;
 import com.prosperity.auth.User;
 import com.prosperity.auth.UserRepository;
-import com.prosperity.shared.AccountType;
-import com.prosperity.shared.Money;
-import com.prosperity.shared.TransactionSource;
-import com.prosperity.transaction.Transaction;
-import com.prosperity.transaction.TransactionRepository;
-import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -47,8 +38,6 @@ class CategoryControllerTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private UserRepository userRepository;
   @Autowired private CategoryRepository categoryRepository;
-  @Autowired private TransactionRepository transactionRepository;
-  @Autowired private AccountRepository accountRepository;
 
   // ---------------------------------------------------------------------------
   // GET /api/categories
@@ -275,39 +264,6 @@ class CategoryControllerTest {
             jsonPath("$.error")
                 .value(
                     "Impossible de supprimer une categorie qui contient des sous-categories"));
-  }
-
-  @Test
-  void delete_category_used_by_transactions_returns_409() throws Exception {
-    User testUser = setupUser("user@test.com");
-    UUID customId = createCustomCategory("Utilisee");
-
-    // Create a minimal transaction referencing this category
-    Account account = new Account("Test Account", AccountType.PERSONAL);
-    accountRepository.save(account);
-
-    Category category = categoryRepository.findById(customId).orElseThrow();
-    Transaction transaction =
-        new Transaction(
-            account,
-            new Money(BigDecimal.valueOf(42)),
-            LocalDate.of(2026, 1, 15),
-            TransactionSource.MANUAL);
-    transaction.setCategory(category);
-    transaction.setDescription("Test transaction");
-    transaction.setCreatedBy(testUser);
-    transactionRepository.save(transaction);
-
-    mockMvc
-        .perform(
-            delete("/api/categories/{id}", customId)
-                .with(user("user@test.com"))
-                .with(csrf()))
-        .andExpect(status().isConflict())
-        .andExpect(
-            jsonPath("$.error")
-                .value(
-                    "Cette categorie est utilisee par des transactions et ne peut pas etre supprimee"));
   }
 
   @Test

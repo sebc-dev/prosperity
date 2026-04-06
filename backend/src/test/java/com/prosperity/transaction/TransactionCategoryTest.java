@@ -2,7 +2,9 @@ package com.prosperity.transaction;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.prosperity.TestcontainersConfig;
@@ -110,6 +112,28 @@ class TransactionCategoryTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"categoryId\":\"" + UUID.randomUUID() + "\"}"))
         .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void delete_category_used_by_transactions_returns_409() throws Exception {
+    User owner = setupUser("owner@test.com");
+    Account account = createAccount("Test Account");
+    Category category = createCategory("Utilisee");
+    Transaction transaction = createTransaction(account);
+    transaction.setCategory(category);
+    transaction.setCreatedBy(owner);
+    transactionRepository.save(transaction);
+
+    mockMvc
+        .perform(
+            delete("/api/categories/{id}", category.getId())
+                .with(user("owner@test.com"))
+                .with(csrf()))
+        .andExpect(status().isConflict())
+        .andExpect(
+            jsonPath("$.error")
+                .value(
+                    "Cette categorie est utilisee par des transactions et ne peut pas etre supprimee"));
   }
 
   // ---------------------------------------------------------------------------

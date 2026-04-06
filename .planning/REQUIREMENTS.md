@@ -49,8 +49,8 @@
 ### Categorisation
 
 - [x] **CATG-01**: Les transactions importees via Plaid arrivent avec les categories Plaid pre-remplies
-- [ ] **CATG-02**: Utilisateur peut modifier la categorie d'une transaction
-- [ ] **CATG-03**: Utilisateur peut creer des categories personnalisees
+- [x] **CATG-02**: Utilisateur peut modifier la categorie d'une transaction
+- [x] **CATG-03**: Utilisateur peut creer des categories personnalisees
 - [x] **CATG-04**: Les categories sont hierarchiques (categorie parente / sous-categorie)
 
 ### Import Bancaire (Plaid)
@@ -173,8 +173,8 @@
 | TXNS-07 | Phase 5 | Pending |
 | TXNS-08 | Phase 5 | Pending |
 | CATG-01 | Phase 4 | Complete |
-| CATG-02 | Phase 4 | Pending |
-| CATG-03 | Phase 4 | Pending |
+| CATG-02 | Phase 4 | Complete |
+| CATG-03 | Phase 4 | Complete |
 | CATG-04 | Phase 4 | Complete |
 | PLAD-01 | Phase 7 | Pending |
 | PLAD-02 | Phase 7 | Pending |

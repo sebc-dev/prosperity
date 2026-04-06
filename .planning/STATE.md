@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 04-01-PLAN.md
-last_updated: "2026-04-05T20:32:02.207Z"
-last_activity: 2026-04-05
+status: verifying
+stopped_at: Completed 04-04-PLAN.md
+last_updated: "2026-04-06T07:55:02.972Z"
+last_activity: 2026-04-06
 progress:
   total_phases: 10
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 34
-  completed_plans: 31
-  percent: 0
+  completed_plans: 34
+  percent: 100
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 04 (categories) — EXECUTING
-Plan: 3 of 4
-Status: Ready to execute
-Last activity: 2026-04-05
+Plan: 4 of 4
+Status: Phase complete — ready for verification
+Last activity: 2026-04-06
 
 Progress: [██████████] 100%
 
@@ -75,6 +75,8 @@ Progress: [██████████] 100%
 | Phase 03 P08 | 4 | 2 tasks | 4 files |
 | Phase 03 P09 | 40 | 3 tasks | 8 files |
 | Phase 04 P01 | 4min | 2 tasks | 9 files |
+| Phase 04 P03 | 4min | 1 tasks | 6 files |
+| Phase 04 P04 | 5min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -123,6 +125,10 @@ Recent decisions affecting current work:
 - [Phase 03]: Immediate-save access dialog: each ngModelChange fires individual setAccess call, savingRowId signal tracks per-row loading
 - [Phase 04]: Deterministic UUID pattern a0000000-0000-0000-0000-00000000XXYY for Flyway seed categories
 - [Phase 04]: 49 curated categories (14 roots + 35 children) for French household mapped to Plaid PFCv2
+- [Phase 04]: No access control on PATCH category in Phase 4 -- backend-only endpoint, Phase 5 adds proper checks
+- [Phase 04]: CategorySelector emits UUID string (node.data), not TreeNode object -- consumers work with UUIDs only
+- [Phase 04]: Parent selector shows root-only categories to enforce 2-level depth constraint
+- [Phase 04]: Shared component directory frontend/src/app/shared/ established for cross-module reuse
 
 ### Pending Todos
 
@@ -135,6 +141,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-05T20:32:02.203Z
-Stopped at: Completed 04-01-PLAN.md
+Last session: 2026-04-06T07:54:57.682Z
+Stopped at: Completed 04-04-PLAN.md
 Resume file: None

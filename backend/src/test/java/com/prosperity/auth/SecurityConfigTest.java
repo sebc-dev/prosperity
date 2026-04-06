@@ -1,10 +1,14 @@
 package com.prosperity.auth;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.prosperity.TestcontainersConfig;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -61,6 +65,29 @@ class SecurityConfigTest {
     mockMvc.perform(get("/api/auth/status")).andExpect(status().isOk());
 
     mockMvc.perform(get("/actuator/health")).andExpect(status().isOk());
+  }
+
+  @Test
+  void unauthenticated_get_to_category_endpoint_returns_401() throws Exception {
+    // GET requests don't require CSRF token — auth check is reached directly
+    mockMvc.perform(get("/api/categories")).andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void unauthenticated_mutations_to_category_endpoints_are_rejected() throws Exception {
+    // POST/PUT/DELETE without CSRF token return 403 (CSRF check runs before auth check)
+    // Both 401 and 403 indicate the request is rejected — endpoint is protected
+    UUID id = UUID.randomUUID();
+    mockMvc.perform(post("/api/categories")).andExpect(status().isForbidden());
+    mockMvc.perform(put("/api/categories/{id}", id)).andExpect(status().isForbidden());
+    mockMvc.perform(delete("/api/categories/{id}", id)).andExpect(status().isForbidden());
+  }
+
+  @Test
+  void unauthenticated_patch_to_transaction_endpoint_is_rejected() throws Exception {
+    // PATCH without CSRF token returns 403 (CSRF check runs before auth check)
+    UUID id = UUID.randomUUID();
+    mockMvc.perform(patch("/api/transactions/{id}/category", id)).andExpect(status().isForbidden());
   }
 
   @Test

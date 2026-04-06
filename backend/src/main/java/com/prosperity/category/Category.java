@@ -28,6 +28,9 @@ public class Category {
   @JoinColumn(name = "parent_id")
   private Category parent;
 
+  @Column(name = "is_system", nullable = false)
+  private boolean system = false;
+
   @Column(name = "plaid_category_id", length = 255)
   private String plaidCategoryId;
 
@@ -63,6 +66,14 @@ public class Category {
 
   public void setParent(Category parent) {
     this.parent = parent;
+  }
+
+  public boolean isSystem() {
+    return system;
+  }
+
+  public void setSystem(boolean system) {
+    this.system = system;
   }
 
   public String getPlaidCategoryId() {

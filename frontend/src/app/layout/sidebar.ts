@@ -19,6 +19,14 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
           <i class="pi pi-wallet"></i>
           <span>Comptes</span>
         </a>
+        <a
+          routerLink="/categories"
+          routerLinkActive="bg-surface-100 text-primary font-semibold border-l-3 border-primary"
+          class="flex items-center gap-3 px-3 py-2 rounded-md text-muted-color hover:bg-surface-50 transition-colors"
+        >
+          <i class="pi pi-tag"></i>
+          <span>Categories</span>
+        </a>
       </nav>
     </aside>
   `,

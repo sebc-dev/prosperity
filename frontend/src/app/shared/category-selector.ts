@@ -5,7 +5,6 @@ import { TreeNode } from 'primeng/api';
 
 @Component({
   selector: 'app-category-selector',
-  standalone: true,
   imports: [TreeSelectModule, FormsModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `

@@ -94,7 +94,7 @@ import { HttpErrorResponse } from '@angular/common/http';
                       severity="secondary"
                       [pTooltip]="'Modifier ' + category.name"
                       (onClick)="openEditDialog(category)"
-                      [attr.aria-label]="'Modifier ' + category.name"
+                      [ariaLabel]="'Modifier ' + category.name"
                     />
                     <p-button
                       icon="pi pi-trash"
@@ -102,7 +102,7 @@ import { HttpErrorResponse } from '@angular/common/http';
                       severity="secondary"
                       [pTooltip]="'Supprimer ' + category.name"
                       (onClick)="confirmDelete(category)"
-                      [attr.aria-label]="'Supprimer ' + category.name"
+                      [ariaLabel]="'Supprimer ' + category.name"
                     />
                   </div>
                 }

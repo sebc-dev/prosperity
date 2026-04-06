@@ -50,7 +50,9 @@ class CategoryControllerTest {
     mockMvc
         .perform(get("/api/categories").with(user("user@test.com")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.length()").value(49)); // V011 seeds 49 system categories
+        .andExpect(
+            jsonPath("$.length()")
+                .value(52)); // V011 seeds 52 system categories (49 original + ROOT 15 TRANSFER_OUT)
   }
 
   @Test

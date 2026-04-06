@@ -106,12 +106,8 @@ describe('Categories', () => {
     fixture.detectChanges();
 
     // Assert
-    const editBtn = fixture.debugElement.query(
-      By.css('[aria-label="Modifier Alimentation"]'),
-    );
-    const deleteBtn = fixture.debugElement.query(
-      By.css('[aria-label="Supprimer Alimentation"]'),
-    );
+    const editBtn = fixture.debugElement.query(By.css('[aria-label="Modifier Alimentation"]'));
+    const deleteBtn = fixture.debugElement.query(By.css('[aria-label="Supprimer Alimentation"]'));
 
     expect(editBtn).toBeNull();
     expect(deleteBtn).toBeNull();
@@ -128,12 +124,8 @@ describe('Categories', () => {
     fixture.detectChanges();
 
     // Assert
-    const editBtn = fixture.debugElement.query(
-      By.css('[aria-label="Modifier Ma categorie"]'),
-    );
-    const deleteBtn = fixture.debugElement.query(
-      By.css('[aria-label="Supprimer Ma categorie"]'),
-    );
+    const editBtn = fixture.debugElement.query(By.css('[aria-label="Modifier Ma categorie"]'));
+    const deleteBtn = fixture.debugElement.query(By.css('[aria-label="Supprimer Ma categorie"]'));
 
     expect(editBtn).toBeTruthy();
     expect(deleteBtn).toBeTruthy();

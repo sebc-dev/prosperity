@@ -77,7 +77,7 @@ import { HttpErrorResponse } from '@angular/common/http';
           <ng-template pTemplate="body" let-category>
             <tr>
               <td>{{ category.name }}</td>
-              <td>{{ category.parentName ?? '\u2014' }}</td>
+              <td>{{ category.parentName ?? '—' }}</td>
               <td>
                 @if (category.system) {
                   <p-tag value="Systeme" severity="secondary" />

@@ -143,10 +143,12 @@ describe('CategoryDialog', () => {
 
     // Act
     fixture.componentInstance['onSave']();
-    httpMock.expectOne('/api/categories').flush(
-      { error: 'Une categorie avec ce nom existe deja' },
-      { status: 409, statusText: 'Conflict' },
-    );
+    httpMock
+      .expectOne('/api/categories')
+      .flush(
+        { error: 'Une categorie avec ce nom existe deja' },
+        { status: 409, statusText: 'Conflict' },
+      );
     fixture.detectChanges();
 
     // Assert
@@ -168,10 +170,9 @@ describe('CategoryDialog', () => {
 
     // Act
     fixture.componentInstance['onSave']();
-    httpMock.expectOne('/api/categories').flush(
-      {},
-      { status: 500, statusText: 'Internal Server Error' },
-    );
+    httpMock
+      .expectOne('/api/categories')
+      .flush({}, { status: 500, statusText: 'Internal Server Error' });
     fixture.detectChanges();
 
     // Assert

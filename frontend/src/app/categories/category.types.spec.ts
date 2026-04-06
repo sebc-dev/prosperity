@@ -23,9 +23,7 @@ describe('toTreeNodes', () => {
 
   it('root_categories_without_children_become_leaf_nodes', () => {
     // Arrange
-    const categories = [
-      makeCategory({ id: 'cat-1', name: 'Transport', parentId: null }),
-    ];
+    const categories = [makeCategory({ id: 'cat-1', name: 'Transport', parentId: null })];
 
     // Act
     const result = toTreeNodes(categories);

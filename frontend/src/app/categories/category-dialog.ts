@@ -167,9 +167,7 @@ export class CategoryDialog {
       error: (err: HttpErrorResponse) => {
         this.loading.set(false);
         if (err.status === 409) {
-          this.error.set(
-            err.error?.message ?? 'Une categorie avec ce nom existe deja.',
-          );
+          this.error.set(err.error?.message ?? 'Une categorie avec ce nom existe deja.');
         } else {
           this.error.set("Impossible d'enregistrer la categorie. Veuillez reessayer.");
         }

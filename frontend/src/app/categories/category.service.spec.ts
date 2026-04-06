@@ -2,11 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import { CategoryService } from './category.service';
-import {
-  CategoryResponse,
-  CreateCategoryRequest,
-  UpdateCategoryRequest,
-} from './category.types';
+import { CategoryResponse, CreateCategoryRequest, UpdateCategoryRequest } from './category.types';
 
 const mockCategory: CategoryResponse = {
   id: 'cat-1',

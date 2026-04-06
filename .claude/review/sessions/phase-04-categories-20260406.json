@@ -1,0 +1,138 @@
+{
+  "session_id": "phase-04-categories-20260406",
+  "branch": "gsd/phase-04-categories",
+  "base_branch": "main",
+  "date": "2026-04-06",
+  "pipeline_version": "2.0.0",
+  "files_reviewed": 29,
+  "summary": {
+    "reviewers_launched": 7,
+    "validators_launched": 7,
+    "fixes_applied": 14,
+    "new_files_created": 3,
+    "escalations": 9,
+    "skips": 8,
+    "false_positives": 3
+  },
+  "fixes_applied": [
+    {
+      "id": "OBS-V011-02",
+      "file": "backend/src/main/resources/db/migration/V011__seed_plaid_categories.sql",
+      "description": "NOW() remplacé par '2026-01-01T00:00:00Z' (49 occurrences) — seed déterministe"
+    },
+    {
+      "id": "OBS-CAT-02",
+      "files": [
+        "backend/src/main/java/com/prosperity/category/DuplicateCategoryNameException.java",
+        "backend/src/main/java/com/prosperity/category/CategoryService.java",
+        "backend/src/main/java/com/prosperity/category/CategoryController.java"
+      ],
+      "description": "DuplicateCategoryNameException créée — sémantique correcte pour conflit de nom (vs CategoryInUseException pour FK)"
+    },
+    {
+      "id": "OBS-CAT-03",
+      "file": "backend/src/main/java/com/prosperity/category/CategoryRepository.java",
+      "description": "Méthodes mortes supprimées : findByParentIsNullOrderByNameAsc, findAllByOrderByNameAsc"
+    },
+    {
+      "id": "OBS-CTRL-03",
+      "file": "backend/src/main/java/com/prosperity/transaction/TransactionService.java",
+      "description": "Messages d'erreur anglais traduits en français (Transaction not found → Transaction introuvable)"
+    },
+    {
+      "id": "OBS-FE-01",
+      "files": [
+        "frontend/src/app/categories/category.types.ts",
+        "frontend/src/app/categories/category.utils.ts"
+      ],
+      "description": "toTreeNodes déplacée vers category.utils.ts — types purs découplés de PrimeNG"
+    },
+    {
+      "id": "OBS-FE-02",
+      "file": "frontend/src/app/categories/category.service.ts",
+      "description": "JSDoc ajouté sur les 3 méthodes de mutation — contrat de non-mise-à-jour du signal documenté"
+    },
+    {
+      "id": "OBS-COMP-03",
+      "file": "frontend/src/app/categories/category-dialog.ts",
+      "description": "Effect trackant visible() — formulaire réinitialisé même si même référence categoryToEdit"
+    },
+    {
+      "id": "OBS-TEST-BE-02",
+      "description": "Spotless appliqué — 7 fichiers reformatés, CI débloquée (mvnw verify passe)"
+    },
+    {
+      "id": "OBS-TEST-FE-01",
+      "file": "frontend/src/app/categories/category-dialog.spec.ts",
+      "description": "Inspector anti-pattern corrigé : accès membres protected remplacés par queries DOM ComponentInstance"
+    },
+    {
+      "id": "OBS-TEST-FE-02",
+      "file": "frontend/src/app/shared/category-selector.spec.ts",
+      "description": "Liar Test remplacé par passes_options_to_selector — comportement observable réel testé"
+    },
+    {
+      "id": "OBS-TEST-FE-04",
+      "file": "frontend/src/app/categories/category.service.spec.ts",
+      "description": "Test dual-concept splitté en 2 tests : HTTP GET séparé de la mise à jour du signal"
+    },
+    {
+      "id": "OBS-TEST-FE-05",
+      "file": "frontend/src/app/categories/category.types.spec.ts",
+      "description": "Nouveau fichier créé — 5 tests EP/BVA pour toTreeNodes (vide, feuille, hiérarchie, orphelin, multi-racines)"
+    },
+    {
+      "id": "OBS-TEST-BE-01+OBS-CAT-05+OBS-TEST-BE-04",
+      "file": "backend/src/test/java/com/prosperity/category/CategoryControllerTest.java",
+      "description": "3 corrections : Free Ride corrigé (andExpect isCreated), UUID extraction robustifiée (JsonPath), 2 tests manquants ajoutés (update_nonexistent_404, update_duplicate_409)"
+    },
+    {
+      "id": "OBS-TEST-BE-06+OBS-CTRL-05",
+      "file": "backend/src/test/java/com/prosperity/transaction/TransactionCategoryTest.java",
+      "description": "LocalDate.now() remplacé par date fixe + test patch_with_empty_body_clears_category ajouté"
+    }
+  ],
+  "escalations": [
+    {
+      "id": "OBS-V011-01",
+      "description": "TRANSFER_OUT absent du seed — décision produit sur taxonomie Plaid PFCv2 FR"
+    },
+    {
+      "id": "OBS-V011-04",
+      "description": "Sport vs Salle de sport : chevauchement sémantique — décision produit UX taxonomie"
+    },
+    {
+      "id": "OBS-CAT-04",
+      "description": "DataIntegrityViolationException comme signal FK — décision architecture (anti-dépendance circulaire délibérée)"
+    },
+    {
+      "id": "OBS-COMP-01",
+      "description": "CategoryDialog smart-child vs delegate pattern — décision architecture Angular"
+    },
+    {
+      "id": "OBS-FE-03",
+      "description": "selectedNode signal+ngModel PrimeNG interop — risque non trivial, décision humaine"
+    },
+    {
+      "id": "OBS-FE-06",
+      "description": "Tests onSave erreur HTTP dans CategoryDialog — stratégie mock vs provider réel"
+    },
+    {
+      "id": "OBS-TEST-BE-03",
+      "description": "greaterThanOrEqualTo(10) vs valeur exacte seed — trade-off couplage aux migrations"
+    },
+    {
+      "id": "OBS-TEST-BE-08",
+      "description": "Tests 401 non authentifié absents — scope à définir, comportement MockMvc @SpringBootTest"
+    },
+    {
+      "id": "OBS-TEST-BE-09",
+      "description": "Exécution parallèle Surefire + DirtiesContext — investigation pom.xml requise"
+    }
+  ],
+  "test_results": {
+    "frontend": "86/86 passes après corrections",
+    "backend": "17/17 passes (CategoryControllerTest + TransactionCategoryTest)"
+  },
+  "ci_status": "Spotless appliqué — mvnw verify devrait passer"
+}

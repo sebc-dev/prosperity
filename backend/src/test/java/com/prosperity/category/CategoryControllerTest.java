@@ -50,7 +50,7 @@ class CategoryControllerTest {
     mockMvc
         .perform(get("/api/categories").with(user("user@test.com")))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.length()").value(org.hamcrest.Matchers.greaterThanOrEqualTo(10)));
+        .andExpect(jsonPath("$.length()").value(49)); // V011 seeds 49 system categories
   }
 
   @Test
@@ -62,8 +62,7 @@ class CategoryControllerTest {
         .perform(get("/api/categories").with(user("user@test.com")))
         .andExpect(status().isOk())
         .andExpect(
-            jsonPath(
-                    "$[?(@.name == 'Courses')].parentName")
+            jsonPath("$[?(@.name == 'Courses')].parentName")
                 .value(org.hamcrest.Matchers.hasItem("Alimentation & Restauration")));
   }
 
@@ -151,8 +150,9 @@ class CategoryControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
                     """
-                    {"name":"Unique","parentId":null}
-                    """));
+                        {"name":"Unique","parentId":null}
+                        """))
+        .andExpect(status().isCreated());
 
     // Try to create another with the same name at root level
     mockMvc
@@ -209,8 +209,43 @@ class CategoryControllerTest {
                     """))
         .andExpect(status().isBadRequest())
         .andExpect(
-            jsonPath("$.error")
-                .value("Les categories systeme ne peuvent pas etre modifiees"));
+            jsonPath("$.error").value("Les categories systeme ne peuvent pas etre modifiees"));
+  }
+
+  @Test
+  void update_nonexistent_category_returns_404() throws Exception {
+    setupUser("user@test.com");
+
+    mockMvc
+        .perform(
+            put("/api/categories/{id}", UUID.randomUUID())
+                .with(user("user@test.com"))
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                        {"name":"Whatever"}
+                        """))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  void update_duplicate_name_returns_409() throws Exception {
+    setupUser("user@test.com");
+    UUID catAId = createCustomCategory("CatA");
+    createCustomCategory("CatB");
+
+    mockMvc
+        .perform(
+            put("/api/categories/{id}", catAId)
+                .with(user("user@test.com"))
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """
+                        {"name":"CatB"}
+                        """))
+        .andExpect(status().isConflict());
   }
 
   // ---------------------------------------------------------------------------
@@ -223,10 +258,7 @@ class CategoryControllerTest {
     UUID customId = createCustomCategory("A Supprimer");
 
     mockMvc
-        .perform(
-            delete("/api/categories/{id}", customId)
-                .with(user("user@test.com"))
-                .with(csrf()))
+        .perform(delete("/api/categories/{id}", customId).with(user("user@test.com")).with(csrf()))
         .andExpect(status().isNoContent());
   }
 
@@ -236,14 +268,10 @@ class CategoryControllerTest {
     String systemId = "a0000000-0000-0000-0000-000000000100";
 
     mockMvc
-        .perform(
-            delete("/api/categories/{id}", systemId)
-                .with(user("user@test.com"))
-                .with(csrf()))
+        .perform(delete("/api/categories/{id}", systemId).with(user("user@test.com")).with(csrf()))
         .andExpect(status().isBadRequest())
         .andExpect(
-            jsonPath("$.error")
-                .value("Les categories systeme ne peuvent pas etre supprimees"));
+            jsonPath("$.error").value("Les categories systeme ne peuvent pas etre supprimees"));
   }
 
   @Test
@@ -255,15 +283,11 @@ class CategoryControllerTest {
     createCustomChildCategory("Enfant", parentId);
 
     mockMvc
-        .perform(
-            delete("/api/categories/{id}", parentId)
-                .with(user("user@test.com"))
-                .with(csrf()))
+        .perform(delete("/api/categories/{id}", parentId).with(user("user@test.com")).with(csrf()))
         .andExpect(status().isConflict())
         .andExpect(
             jsonPath("$.error")
-                .value(
-                    "Impossible de supprimer une categorie qui contient des sous-categories"));
+                .value("Impossible de supprimer une categorie qui contient des sous-categories"));
   }
 
   @Test
@@ -299,21 +323,21 @@ class CategoryControllerTest {
                     .with(user("user@test.com"))
                     .with(csrf())
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(String.format("""
+                    .content(
+                        String.format(
+                            """
                         {"name":"%s","parentId":null}
-                        """, name)))
+                        """,
+                            name)))
             .andExpect(status().isCreated())
             .andReturn();
 
     String body = result.getResponse().getContentAsString();
-    // Extract id from JSON response
-    String idStr = body.split("\"id\":\"")[1].split("\"")[0];
+    String idStr = com.jayway.jsonpath.JsonPath.read(body, "$.id");
     return UUID.fromString(idStr);
   }
 
-  /**
-   * Creates a custom child category via the API and returns its UUID.
-   */
+  /** Creates a custom child category via the API and returns its UUID. */
   private UUID createCustomChildCategory(String name, UUID parentId) throws Exception {
     MvcResult result =
         mockMvc
@@ -332,7 +356,7 @@ class CategoryControllerTest {
             .andReturn();
 
     String body = result.getResponse().getContentAsString();
-    String idStr = body.split("\"id\":\"")[1].split("\"")[0];
+    String idStr = com.jayway.jsonpath.JsonPath.read(body, "$.id");
     return UUID.fromString(idStr);
   }
 }

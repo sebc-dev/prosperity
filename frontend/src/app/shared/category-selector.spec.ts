@@ -41,11 +41,11 @@ describe('CategorySelector', () => {
     fixture.detectChanges();
   });
 
-  it('renders_treeselect_component', () => {
+  it('passes_options_to_selector', () => {
     // Assert
-    const treeSelect = fixture.nativeElement.querySelector('p-treeselect');
+    const selector = host.selector()!;
 
-    expect(treeSelect).toBeTruthy();
+    expect(selector.options()).toEqual(mockOptions);
   });
 
   it('emits_category_id_on_select', () => {

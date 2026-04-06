@@ -1,10 +1,14 @@
 package com.prosperity.auth;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.prosperity.TestcontainersConfig;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -61,6 +65,23 @@ class SecurityConfigTest {
     mockMvc.perform(get("/api/auth/status")).andExpect(status().isOk());
 
     mockMvc.perform(get("/actuator/health")).andExpect(status().isOk());
+  }
+
+  @Test
+  void unauthenticated_requests_to_category_endpoints_return_401() throws Exception {
+    UUID id = UUID.randomUUID();
+    mockMvc.perform(get("/api/categories")).andExpect(status().isUnauthorized());
+    mockMvc.perform(post("/api/categories")).andExpect(status().isUnauthorized());
+    mockMvc.perform(put("/api/categories/{id}", id)).andExpect(status().isUnauthorized());
+    mockMvc.perform(delete("/api/categories/{id}", id)).andExpect(status().isUnauthorized());
+  }
+
+  @Test
+  void unauthenticated_requests_to_transaction_endpoints_return_401() throws Exception {
+    UUID id = UUID.randomUUID();
+    mockMvc
+        .perform(patch("/api/transactions/{id}/category", id))
+        .andExpect(status().isUnauthorized());
   }
 
   @Test

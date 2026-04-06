@@ -1,5 +1,3 @@
-import { TreeNode } from 'primeng/api';
-
 export interface CategoryResponse {
   id: string;
   name: string;
@@ -17,15 +15,4 @@ export interface CreateCategoryRequest {
 
 export interface UpdateCategoryRequest {
   name: string;
-}
-
-export function toTreeNodes(categories: CategoryResponse[]): TreeNode[] {
-  const roots = categories.filter((c) => !c.parentId);
-  return roots.map((root) => ({
-    label: root.name,
-    data: root.id,
-    children: categories
-      .filter((c) => c.parentId === root.id)
-      .map((child) => ({ label: child.name, data: child.id })),
-  }));
 }

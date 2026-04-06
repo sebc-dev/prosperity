@@ -34,16 +34,23 @@ describe('CategoryService', () => {
     httpTesting.verify();
   });
 
-  it('loadCategories_sends_get_request_and_updates_signal', () => {
+  it('loadCategories_sends_get_request_to_api_categories', () => {
+    // Act
+    service.loadCategories().subscribe();
+
+    // Assert
+    const req = httpTesting.expectOne('/api/categories');
+    expect(req.request.method).toBe('GET');
+    req.flush([]);
+  });
+
+  it('loadCategories_updates_categories_signal_after_successful_response', () => {
     // Arrange
     const mockCategories = [mockCategory];
 
     // Act
     service.loadCategories().subscribe();
-
-    const req = httpTesting.expectOne(
-      (r) => r.url === '/api/categories' && r.method === 'GET',
-    );
+    const req = httpTesting.expectOne('/api/categories');
     req.flush(mockCategories);
 
     // Assert

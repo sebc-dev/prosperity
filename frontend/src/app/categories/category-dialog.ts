@@ -97,6 +97,7 @@ export class CategoryDialog {
   allCategories = input<CategoryResponse[]>([]);
 
   visibleChange = output<boolean>();
+  /** Emitted after a successful create or update. Callers must refresh their data source (e.g. call loadCategories()). */
   saved = output<void>();
 
   private readonly categoryService = inject(CategoryService);
@@ -125,11 +126,12 @@ export class CategoryDialog {
 
   constructor() {
     effect(() => {
+      const isVisible = this.visible();
       const cat = this.categoryToEdit();
-      if (cat) {
+      if (isVisible && cat) {
         this.form.patchValue({ name: cat.name });
         this.selectedParentId.set(cat.parentId);
-      } else {
+      } else if (!isVisible || !cat) {
         this.form.reset({ name: '' });
         this.selectedParentId.set(null);
       }

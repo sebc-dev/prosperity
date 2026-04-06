@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,16 +17,19 @@ import org.springframework.transaction.annotation.Transactional;
 public class CategoryService {
 
   private final CategoryRepository categoryRepository;
+  private final CategoryUsageChecker categoryUsageChecker;
 
-  public CategoryService(CategoryRepository categoryRepository) {
+  public CategoryService(
+      CategoryRepository categoryRepository, CategoryUsageChecker categoryUsageChecker) {
     this.categoryRepository = categoryRepository;
+    this.categoryUsageChecker = categoryUsageChecker;
   }
 
   /**
    * Returns all categories with parent information, sorted by name.
    *
-   * <p>Uses a JOIN FETCH query to avoid LazyInitializationException on parent access. Category count
-   * is small (~30-60), so in-memory parent name resolution is efficient.
+   * <p>Uses a JOIN FETCH query to avoid LazyInitializationException on parent access. Category
+   * count is small (~30-60), so in-memory parent name resolution is efficient.
    */
   @Transactional(readOnly = true)
   public List<CategoryResponse> getAllCategories() {
@@ -36,11 +38,7 @@ public class CategoryService {
         categories.stream().collect(Collectors.toMap(Category::getId, Category::getName));
 
     return categories.stream()
-        .map(
-            c ->
-                toResponse(
-                    c,
-                    c.getParent() != null ? nameById.get(c.getParent().getId()) : null))
+        .map(c -> toResponse(c, c.getParent() != null ? nameById.get(c.getParent().getId()) : null))
         .toList();
   }
 
@@ -75,8 +73,7 @@ public class CategoryService {
             : categoryRepository.existsByNameAndParentIsNull(request.name());
 
     if (duplicate) {
-      throw new CategoryInUseException(
-          "Une categorie avec ce nom existe deja a ce niveau");
+      throw new DuplicateCategoryNameException("Une categorie avec ce nom existe deja a ce niveau");
     }
 
     Category category = new Category(request.name());
@@ -97,12 +94,10 @@ public class CategoryService {
     Category category =
         categoryRepository
             .findById(id)
-            .orElseThrow(
-                () -> new CategoryNotFoundException("Categorie introuvable : " + id));
+            .orElseThrow(() -> new CategoryNotFoundException("Categorie introuvable : " + id));
 
     if (category.isSystem()) {
-      throw new IllegalArgumentException(
-          "Les categories systeme ne peuvent pas etre modifiees");
+      throw new IllegalArgumentException("Les categories systeme ne peuvent pas etre modifiees");
     }
 
     UUID parentId = category.getParent() != null ? category.getParent().getId() : null;
@@ -112,8 +107,7 @@ public class CategoryService {
             : categoryRepository.existsByNameAndParentIsNull(request.name());
 
     if (duplicate && !category.getName().equals(request.name())) {
-      throw new CategoryInUseException(
-          "Une categorie avec ce nom existe deja a ce niveau");
+      throw new DuplicateCategoryNameException("Une categorie avec ce nom existe deja a ce niveau");
     }
 
     category.setName(request.name());
@@ -133,12 +127,10 @@ public class CategoryService {
     Category category =
         categoryRepository
             .findById(id)
-            .orElseThrow(
-                () -> new CategoryNotFoundException("Categorie introuvable : " + id));
+            .orElseThrow(() -> new CategoryNotFoundException("Categorie introuvable : " + id));
 
     if (category.isSystem()) {
-      throw new IllegalArgumentException(
-          "Les categories systeme ne peuvent pas etre supprimees");
+      throw new IllegalArgumentException("Les categories systeme ne peuvent pas etre supprimees");
     }
 
     if (categoryRepository.existsByParentId(id)) {
@@ -146,13 +138,12 @@ public class CategoryService {
           "Impossible de supprimer une categorie qui contient des sous-categories");
     }
 
-    try {
-      categoryRepository.delete(category);
-      categoryRepository.flush();
-    } catch (DataIntegrityViolationException e) {
+    if (categoryUsageChecker.isCategoryUsed(id)) {
       throw new CategoryInUseException(
           "Cette categorie est utilisee par des transactions et ne peut pas etre supprimee");
     }
+
+    categoryRepository.delete(category);
   }
 
   private CategoryResponse toResponse(Category category, String parentName) {

@@ -39,8 +39,7 @@ public class TransactionController {
   }
 
   @ExceptionHandler(CategoryNotFoundException.class)
-  public ResponseEntity<Map<String, String>> handleCategoryNotFound(
-      CategoryNotFoundException e) {
+  public ResponseEntity<Map<String, String>> handleCategoryNotFound(CategoryNotFoundException e) {
     return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
   }
 }

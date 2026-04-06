@@ -1,5 +1,6 @@
 package com.prosperity.transaction;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -115,6 +116,28 @@ class TransactionCategoryTest {
   }
 
   @Test
+  void patch_with_empty_body_clears_category() throws Exception {
+    User owner = setupUser("clearbody@test.com");
+    Account account = createAccount("Test Account");
+    Category category = createCategory("To Remove");
+    Transaction transaction = createTransaction(account);
+    transaction.setCategory(category);
+    transactionRepository.save(transaction);
+
+    mockMvc
+        .perform(
+            patch("/api/transactions/{id}/category", transaction.getId())
+                .with(user("clearbody@test.com"))
+                .with(csrf())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+        .andExpect(status().isNoContent());
+
+    Transaction updated = transactionRepository.findById(transaction.getId()).orElseThrow();
+    assertThat(updated.getCategory()).isNull();
+  }
+
+  @Test
   void delete_category_used_by_transactions_returns_409() throws Exception {
     User owner = setupUser("owner@test.com");
     Account account = createAccount("Test Account");
@@ -152,7 +175,11 @@ class TransactionCategoryTest {
 
   private Transaction createTransaction(Account account) {
     Transaction transaction =
-        new Transaction(account, new Money(new BigDecimal("50.00")), LocalDate.now(), TransactionSource.MANUAL);
+        new Transaction(
+            account,
+            new Money(new BigDecimal("50.00")),
+            LocalDate.of(2024, 1, 15),
+            TransactionSource.MANUAL);
     return transactionRepository.save(transaction);
   }
 

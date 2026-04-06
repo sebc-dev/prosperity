@@ -34,7 +34,8 @@ public class TransactionService {
         transactionRepository
             .findById(transactionId)
             .orElseThrow(
-                () -> new TransactionNotFoundException("Transaction not found: " + transactionId));
+                () ->
+                    new TransactionNotFoundException("Transaction introuvable : " + transactionId));
 
     if (categoryId == null) {
       transaction.setCategory(null);
@@ -43,7 +44,7 @@ public class TransactionService {
           categoryRepository
               .findById(categoryId)
               .orElseThrow(
-                  () -> new CategoryNotFoundException("Category not found: " + categoryId));
+                  () -> new CategoryNotFoundException("Categorie introuvable : " + categoryId));
       transaction.setCategory(category);
     }
     transactionRepository.save(transaction);

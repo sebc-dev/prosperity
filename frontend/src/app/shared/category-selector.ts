@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TreeSelectModule } from 'primeng/treeselect';
 import { TreeNode } from 'primeng/api';
@@ -28,19 +28,27 @@ export class CategorySelector {
   placeholder = input('Categorie parente (optionnel)');
   categorySelected = output<string | null>();
 
-  protected selectedNode: TreeNode | null = null;
+  private readonly _selectedNode = signal<TreeNode | null>(null);
+
+  /** Getter/setter wrapping the signal for [(ngModel)] compatibility with PrimeNG p-treeselect. */
+  get selectedNode(): TreeNode | null {
+    return this._selectedNode();
+  }
+  set selectedNode(value: TreeNode | null) {
+    this._selectedNode.set(value);
+  }
 
   onSelect(event: { node: TreeNode }): void {
     this.categorySelected.emit(event.node.data as string);
   }
 
   onClear(): void {
-    this.selectedNode = null;
+    this._selectedNode.set(null);
     this.categorySelected.emit(null);
   }
 
-  /** Call this from parent to programmatically set selection (e.g., edit mode) */
+  /** Programmatically sets the selection (e.g. edit mode). Triggers change detection via signal. */
   setSelection(node: TreeNode | null): void {
-    this.selectedNode = node;
+    this._selectedNode.set(node);
   }
 }

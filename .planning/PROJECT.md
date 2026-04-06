@@ -111,4 +111,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-05 after Phase 3 completion — accounts & access control (CRUD comptes, archivage, gestion accès partagés, dialog accès, tests 74/74) complete*
+*Last updated: 2026-04-06 after Phase 4 completion — categories (migrations Flyway + seed 49 catégories Plaid, CRUD catégories custom, PATCH transaction/category, frontend Angular avec p-table/dialog/CategorySelector, 113 tests backend passent) complete*

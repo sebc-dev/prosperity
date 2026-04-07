@@ -30,6 +30,10 @@ export const routes: Routes = [
         loadComponent: () => import('./categories/categories').then((m) => m.Categories),
       },
       {
+        path: 'accounts/:accountId/transactions',
+        loadComponent: () => import('./transactions/transactions').then((m) => m.Transactions),
+      },
+      {
         path: '',
         redirectTo: 'dashboard',
         pathMatch: 'full',

@@ -1,5 +1,7 @@
-import { ChangeDetectionStrategy, Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink, RouterLinkActive } from '@angular/router';
+import { AccountService } from '../accounts/account.service';
 
 @Component({
   selector: 'app-sidebar',
@@ -19,6 +21,16 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
           <i class="pi pi-wallet"></i>
           <span>Comptes</span>
         </a>
+        @for (account of accounts(); track account.id) {
+          <a
+            [routerLink]="['/accounts', account.id, 'transactions']"
+            routerLinkActive="bg-surface-100 text-primary font-semibold border-l-3 border-primary"
+            class="flex items-center gap-3 px-3 py-2 pl-8 rounded-md text-muted-color hover:bg-surface-50 transition-colors text-sm"
+          >
+            <i class="pi pi-list"></i>
+            <span>{{ account.name }}</span>
+          </a>
+        }
         <a
           routerLink="/categories"
           routerLinkActive="bg-surface-100 text-primary font-semibold border-l-3 border-primary"
@@ -31,4 +43,16 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
     </aside>
   `,
 })
-export class Sidebar {}
+export class Sidebar {
+  private readonly accountService = inject(AccountService);
+  private readonly destroyRef = inject(DestroyRef);
+
+  protected readonly accounts = this.accountService.accounts;
+
+  constructor() {
+    this.accountService
+      .loadAccounts()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe();
+  }
+}

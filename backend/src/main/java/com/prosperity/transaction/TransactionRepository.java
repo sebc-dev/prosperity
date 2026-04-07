@@ -17,27 +17,28 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
   @Query(
       value =
           """
-          SELECT t FROM Transaction t
-          LEFT JOIN FETCH t.category
-          WHERE t.bankAccount.id = :accountId
-          AND (:dateFrom IS NULL OR t.transactionDate >= :dateFrom)
-          AND (:dateTo IS NULL OR t.transactionDate <= :dateTo)
-          AND (:amountMin IS NULL OR t.amount >= :amountMin)
-          AND (:amountMax IS NULL OR t.amount <= :amountMax)
-          AND (:categoryId IS NULL OR t.category.id = :categoryId)
-          AND (:search IS NULL OR LOWER(t.description) LIKE LOWER(CONCAT('%', :search, '%')))
+          SELECT t.* FROM transactions t
+          LEFT JOIN categories c ON c.id = t.category_id
+          WHERE t.bank_account_id = CAST(:accountId AS uuid)
+          AND (CAST(:dateFrom AS date) IS NULL OR t.transaction_date >= CAST(:dateFrom AS date))
+          AND (CAST(:dateTo AS date) IS NULL OR t.transaction_date <= CAST(:dateTo AS date))
+          AND (CAST(:amountMin AS numeric) IS NULL OR t.amount >= CAST(:amountMin AS numeric))
+          AND (CAST(:amountMax AS numeric) IS NULL OR t.amount <= CAST(:amountMax AS numeric))
+          AND (CAST(:categoryId AS uuid) IS NULL OR t.category_id = CAST(:categoryId AS uuid))
+          AND (CAST(:search AS text) IS NULL OR LOWER(t.description) LIKE LOWER('%' || CAST(:search AS text) || '%'))
           """,
       countQuery =
           """
-          SELECT COUNT(t) FROM Transaction t
-          WHERE t.bankAccount.id = :accountId
-          AND (:dateFrom IS NULL OR t.transactionDate >= :dateFrom)
-          AND (:dateTo IS NULL OR t.transactionDate <= :dateTo)
-          AND (:amountMin IS NULL OR t.amount >= :amountMin)
-          AND (:amountMax IS NULL OR t.amount <= :amountMax)
-          AND (:categoryId IS NULL OR t.category.id = :categoryId)
-          AND (:search IS NULL OR LOWER(t.description) LIKE LOWER(CONCAT('%', :search, '%')))
-          """)
+          SELECT COUNT(*) FROM transactions t
+          WHERE t.bank_account_id = CAST(:accountId AS uuid)
+          AND (CAST(:dateFrom AS date) IS NULL OR t.transaction_date >= CAST(:dateFrom AS date))
+          AND (CAST(:dateTo AS date) IS NULL OR t.transaction_date <= CAST(:dateTo AS date))
+          AND (CAST(:amountMin AS numeric) IS NULL OR t.amount >= CAST(:amountMin AS numeric))
+          AND (CAST(:amountMax AS numeric) IS NULL OR t.amount <= CAST(:amountMax AS numeric))
+          AND (CAST(:categoryId AS uuid) IS NULL OR t.category_id = CAST(:categoryId AS uuid))
+          AND (CAST(:search AS text) IS NULL OR LOWER(t.description) LIKE LOWER('%' || CAST(:search AS text) || '%'))
+          """,
+      nativeQuery = true)
   Page<Transaction> findByFilters(
       @Param("accountId") UUID accountId,
       @Param("dateFrom") LocalDate dateFrom,

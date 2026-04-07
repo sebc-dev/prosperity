@@ -10,7 +10,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.prosperity.TestcontainersConfig;
 import com.prosperity.account.Account;
+import com.prosperity.account.AccountAccess;
+import com.prosperity.account.AccountAccessRepository;
 import com.prosperity.account.AccountRepository;
+import com.prosperity.account.AccessLevel;
 import com.prosperity.auth.User;
 import com.prosperity.auth.UserRepository;
 import com.prosperity.category.Category;
@@ -45,6 +48,7 @@ class TransactionCategoryTest {
   @Autowired private MockMvc mockMvc;
   @Autowired private UserRepository userRepository;
   @Autowired private AccountRepository accountRepository;
+  @Autowired private AccountAccessRepository accountAccessRepository;
   @Autowired private TransactionRepository transactionRepository;
   @Autowired private CategoryRepository categoryRepository;
 
@@ -52,6 +56,7 @@ class TransactionCategoryTest {
   void update_category_returns_204() throws Exception {
     User owner = setupUser("owner@test.com");
     Account account = createAccount("Test Account");
+    accountAccessRepository.save(new AccountAccess(owner, account, AccessLevel.WRITE));
     Transaction transaction = createTransaction(account);
     Category category = createCategory("Alimentation");
 
@@ -69,6 +74,7 @@ class TransactionCategoryTest {
   void clear_category_returns_204() throws Exception {
     User owner = setupUser("owner@test.com");
     Account account = createAccount("Test Account");
+    accountAccessRepository.save(new AccountAccess(owner, account, AccessLevel.WRITE));
     Category category = createCategory("Alimentation");
     Transaction transaction = createTransaction(account);
     transaction.setCategory(category);
@@ -103,6 +109,7 @@ class TransactionCategoryTest {
   void update_category_category_not_found_returns_404() throws Exception {
     User owner = setupUser("owner@test.com");
     Account account = createAccount("Test Account");
+    accountAccessRepository.save(new AccountAccess(owner, account, AccessLevel.WRITE));
     Transaction transaction = createTransaction(account);
 
     mockMvc
@@ -119,6 +126,7 @@ class TransactionCategoryTest {
   void patch_with_empty_body_clears_category() throws Exception {
     User owner = setupUser("clearbody@test.com");
     Account account = createAccount("Test Account");
+    accountAccessRepository.save(new AccountAccess(owner, account, AccessLevel.WRITE));
     Category category = createCategory("To Remove");
     Transaction transaction = createTransaction(account);
     transaction.setCategory(category);

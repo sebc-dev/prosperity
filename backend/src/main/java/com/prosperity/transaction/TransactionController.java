@@ -83,7 +83,7 @@ public class TransactionController {
     TransactionFilterParams filters =
         new TransactionFilterParams(dateFrom, dateTo, amountMin, amountMax, categoryId, search);
     Pageable pageable =
-        PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "transactionDate"));
+        PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "transaction_date"));
     return transactionService.getTransactions(accountId, filters, pageable, principal.getName());
   }
 

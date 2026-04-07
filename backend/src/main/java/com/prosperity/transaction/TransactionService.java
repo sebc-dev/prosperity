@@ -72,7 +72,10 @@ public class TransactionService {
             .orElseThrow(() -> new AccountNotFoundException("Account not found: " + accountId));
 
     Transaction transaction =
-        new Transaction(account, new Money(request.amount()), request.transactionDate(),
+        new Transaction(
+            account,
+            new Money(request.amount()),
+            request.transactionDate(),
             TransactionSource.MANUAL);
     transaction.setDescription(request.description());
     transaction.setCreatedBy(user);
@@ -129,8 +132,7 @@ public class TransactionService {
             .findById(transactionId)
             .orElseThrow(
                 () ->
-                    new TransactionNotFoundException(
-                        "Transaction introuvable : " + transactionId));
+                    new TransactionNotFoundException("Transaction introuvable : " + transactionId));
     requireAccountAccess(transaction.getBankAccount().getId(), user.getId(), AccessLevel.READ);
     return toResponse(transaction);
   }
@@ -150,8 +152,7 @@ public class TransactionService {
             .findById(transactionId)
             .orElseThrow(
                 () ->
-                    new TransactionNotFoundException(
-                        "Transaction introuvable : " + transactionId));
+                    new TransactionNotFoundException("Transaction introuvable : " + transactionId));
 
     if (transaction.getSource() != TransactionSource.MANUAL) {
       throw new IllegalStateException("Seules les transactions manuelles peuvent etre modifiees");
@@ -200,8 +201,7 @@ public class TransactionService {
             .findById(transactionId)
             .orElseThrow(
                 () ->
-                    new TransactionNotFoundException(
-                        "Transaction introuvable : " + transactionId));
+                    new TransactionNotFoundException("Transaction introuvable : " + transactionId));
 
     if (transaction.getSource() != TransactionSource.MANUAL) {
       throw new IllegalStateException("Seules les transactions manuelles peuvent etre supprimees");
@@ -226,8 +226,7 @@ public class TransactionService {
             .findById(transactionId)
             .orElseThrow(
                 () ->
-                    new TransactionNotFoundException(
-                        "Transaction introuvable : " + transactionId));
+                    new TransactionNotFoundException("Transaction introuvable : " + transactionId));
     requireAccountAccess(transaction.getBankAccount().getId(), user.getId(), AccessLevel.WRITE);
     transaction.setPointed(!transaction.isPointed());
     transactionRepository.save(transaction);
@@ -286,8 +285,7 @@ public class TransactionService {
             .findById(transactionId)
             .orElseThrow(
                 () ->
-                    new TransactionNotFoundException(
-                        "Transaction introuvable : " + transactionId));
+                    new TransactionNotFoundException("Transaction introuvable : " + transactionId));
     requireAccountAccess(transaction.getBankAccount().getId(), user.getId(), AccessLevel.WRITE);
 
     BigDecimal splitSum =
@@ -338,8 +336,7 @@ public class TransactionService {
             .findById(transactionId)
             .orElseThrow(
                 () ->
-                    new TransactionNotFoundException(
-                        "Transaction introuvable : " + transactionId));
+                    new TransactionNotFoundException("Transaction introuvable : " + transactionId));
     requireAccountAccess(transaction.getBankAccount().getId(), user.getId(), AccessLevel.WRITE);
     transactionSplitRepository.deleteByTransactionId(transactionId);
     return toResponse(transaction);
@@ -358,8 +355,7 @@ public class TransactionService {
             .findById(transactionId)
             .orElseThrow(
                 () ->
-                    new TransactionNotFoundException(
-                        "Transaction introuvable : " + transactionId));
+                    new TransactionNotFoundException("Transaction introuvable : " + transactionId));
     requireAccountAccess(transaction.getBankAccount().getId(), user.getId(), AccessLevel.READ);
     return transactionSplitRepository.findByTransactionId(transactionId).stream()
         .map(this::toSplitResponse)
@@ -382,9 +378,7 @@ public class TransactionService {
    */
   private void requireAccountAccess(UUID accountId, UUID userId, AccessLevel minimumLevel) {
     List<AccessLevel> allowedLevels =
-        Arrays.stream(AccessLevel.values())
-            .filter(l -> l.isAtLeast(minimumLevel))
-            .toList();
+        Arrays.stream(AccessLevel.values()).filter(l -> l.isAtLeast(minimumLevel)).toList();
     if (!accountRepository.hasAccess(accountId, userId, allowedLevels)) {
       if (accountRepository.existsById(accountId)) {
         throw new AccountAccessDeniedException("Access denied to account: " + accountId);

@@ -32,9 +32,10 @@ import org.springframework.web.bind.annotation.RestController;
  * REST controller for transaction endpoints.
  *
  * <p>Endpoints span two path patterns:
+ *
  * <ul>
- *   <li>{@code /api/accounts/{accountId}/transactions} for listing and creating transactions</li>
- *   <li>{@code /api/transactions/{id}} for single-transaction operations</li>
+ *   <li>{@code /api/accounts/{accountId}/transactions} for listing and creating transactions
+ *   <li>{@code /api/transactions/{id}} for single-transaction operations
  * </ul>
  *
  * <p>Per D-02: 403 is returned when account/transaction exists but user has no access.
@@ -141,17 +142,13 @@ public class TransactionController {
     return transactionService.setSplits(id, splits, principal.getName());
   }
 
-  /**
-   * Clears all splits from a transaction. Requires WRITE access (TXNS-06).
-   */
+  /** Clears all splits from a transaction. Requires WRITE access (TXNS-06). */
   @DeleteMapping("/transactions/{id}/splits")
   public TransactionResponse clearSplits(@PathVariable UUID id, Principal principal) {
     return transactionService.clearSplits(id, principal.getName());
   }
 
-  /**
-   * Returns all splits for a transaction. Requires READ access (TXNS-06).
-   */
+  /** Returns all splits for a transaction. Requires READ access (TXNS-06). */
   @GetMapping("/transactions/{id}/splits")
   public List<TransactionSplitResponse> getSplits(@PathVariable UUID id, Principal principal) {
     return transactionService.getSplits(id, principal.getName());

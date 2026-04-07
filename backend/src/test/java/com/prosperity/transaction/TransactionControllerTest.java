@@ -11,11 +11,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.prosperity.TestcontainersConfig;
+import com.prosperity.account.AccessLevel;
 import com.prosperity.account.Account;
 import com.prosperity.account.AccountAccess;
 import com.prosperity.account.AccountAccessRepository;
 import com.prosperity.account.AccountRepository;
-import com.prosperity.account.AccessLevel;
 import com.prosperity.auth.User;
 import com.prosperity.auth.UserRepository;
 import com.prosperity.category.Category;
@@ -111,8 +111,7 @@ class TransactionControllerTest {
   void create_transaction_without_write_access_returns_403() throws Exception {
     // Arrange — second user with no access
     User noAccessUser =
-        userRepository.save(
-            new User("noaccess@test.com", "{bcrypt}$2a$10$hash", "No Access User"));
+        userRepository.save(new User("noaccess@test.com", "{bcrypt}$2a$10$hash", "No Access User"));
 
     // Act
     mockMvc
@@ -259,10 +258,11 @@ class TransactionControllerTest {
   void get_transactions_filtered_by_category() throws Exception {
     // Arrange
     createTransactionDirectly(new BigDecimal("-10.00"), LocalDate.of(2026, 4, 7), "With cat");
-    Transaction withCat = transactionRepository.findAll().stream()
-        .filter(t -> "With cat".equals(t.getDescription()))
-        .findFirst()
-        .orElseThrow();
+    Transaction withCat =
+        transactionRepository.findAll().stream()
+            .filter(t -> "With cat".equals(t.getDescription()))
+            .findFirst()
+            .orElseThrow();
     withCat.setCategory(testCategory);
     transactionRepository.save(withCat);
 
@@ -369,10 +369,7 @@ class TransactionControllerTest {
 
     // Act
     mockMvc
-        .perform(
-            delete("/api/transactions/{id}", txId)
-                .with(user("test@test.com"))
-                .with(csrf()))
+        .perform(delete("/api/transactions/{id}", txId).with(user("test@test.com")).with(csrf()))
 
         // Assert
         .andExpect(status().isNoContent());
@@ -415,9 +412,7 @@ class TransactionControllerTest {
     // Act — first toggle: false -> true
     mockMvc
         .perform(
-            patch("/api/transactions/{id}/pointed", txId)
-                .with(user("test@test.com"))
-                .with(csrf()))
+            patch("/api/transactions/{id}/pointed", txId).with(user("test@test.com")).with(csrf()))
 
         // Assert
         .andExpect(status().isOk())
@@ -426,9 +421,7 @@ class TransactionControllerTest {
     // Act — second toggle: true -> false
     mockMvc
         .perform(
-            patch("/api/transactions/{id}/pointed", txId)
-                .with(user("test@test.com"))
-                .with(csrf()))
+            patch("/api/transactions/{id}/pointed", txId).with(user("test@test.com")).with(csrf()))
 
         // Assert
         .andExpect(status().isOk())
@@ -503,25 +496,22 @@ class TransactionControllerTest {
     // Arrange — create transaction and add splits
     UUID txId = createTransactionViaApi(new BigDecimal("-100.00"), "Clear split test");
     String catId = "a0000000-0000-0000-0000-000000000101";
-    mockMvc
-        .perform(
-            put("/api/transactions/{id}/splits", txId)
-                .with(user("test@test.com"))
-                .with(csrf())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(
-                    String.format(
-                        """
+    mockMvc.perform(
+        put("/api/transactions/{id}/splits", txId)
+            .with(user("test@test.com"))
+            .with(csrf())
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(
+                String.format(
+                    """
                         [{"categoryId": "%s", "amount": -100.00, "description": "All"}]
                         """,
-                        catId)));
+                    catId)));
 
     // Act
     mockMvc
         .perform(
-            delete("/api/transactions/{id}/splits", txId)
-                .with(user("test@test.com"))
-                .with(csrf()))
+            delete("/api/transactions/{id}/splits", txId).with(user("test@test.com")).with(csrf()))
 
         // Assert
         .andExpect(status().isOk())
@@ -533,7 +523,8 @@ class TransactionControllerTest {
   // ---------------------------------------------------------------------------
 
   private void createTransactionDirectly(BigDecimal amount, LocalDate date, String description) {
-    Transaction tx = new Transaction(testAccount, new Money(amount), date, TransactionSource.MANUAL);
+    Transaction tx =
+        new Transaction(testAccount, new Money(amount), date, TransactionSource.MANUAL);
     tx.setDescription(description);
     tx.setCreatedBy(testUser);
     transactionRepository.save(tx);

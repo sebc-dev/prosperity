@@ -10,11 +10,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.prosperity.TestcontainersConfig;
+import com.prosperity.account.AccessLevel;
 import com.prosperity.account.Account;
 import com.prosperity.account.AccountAccess;
 import com.prosperity.account.AccountAccessRepository;
 import com.prosperity.account.AccountRepository;
-import com.prosperity.account.AccessLevel;
 import com.prosperity.auth.User;
 import com.prosperity.auth.UserRepository;
 import com.prosperity.shared.AccountType;
@@ -228,8 +228,7 @@ class RecurringTemplateControllerTest {
   @Test
   void create_template_without_access_returns_403() throws Exception {
     // Arrange — second user with no access
-    userRepository.save(
-        new User("noaccess@test.com", "{bcrypt}$2a$10$hash", "No Access User"));
+    userRepository.save(new User("noaccess@test.com", "{bcrypt}$2a$10$hash", "No Access User"));
 
     // Act
     mockMvc
@@ -272,7 +271,8 @@ class RecurringTemplateControllerTest {
                             "frequency": "MONTHLY", "dayOfMonth": 5, \
                             "nextDueDate": "2026-05-05"}
                             """,
-                            amount, description)))
+                            amount,
+                            description)))
             .andExpect(status().isCreated())
             .andReturn();
 

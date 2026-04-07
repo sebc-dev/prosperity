@@ -71,9 +71,7 @@ public class RecurringTemplateController {
   /** Deletes a recurring template. Returns 204 No Content. */
   @DeleteMapping("/{templateId}")
   public ResponseEntity<Void> deleteTemplate(
-      @PathVariable UUID accountId,
-      @PathVariable UUID templateId,
-      Principal principal) {
+      @PathVariable UUID accountId, @PathVariable UUID templateId, Principal principal) {
     recurringTemplateService.deleteTemplate(templateId, principal.getName());
     return ResponseEntity.noContent().build();
   }
@@ -84,9 +82,7 @@ public class RecurringTemplateController {
    */
   @PostMapping("/{templateId}/generate")
   public ResponseEntity<TransactionResponse> generateTransaction(
-      @PathVariable UUID accountId,
-      @PathVariable UUID templateId,
-      Principal principal) {
+      @PathVariable UUID accountId, @PathVariable UUID templateId, Principal principal) {
     TransactionResponse response =
         recurringTemplateService.generateTransaction(templateId, principal.getName());
     return ResponseEntity.status(HttpStatus.CREATED).body(response);

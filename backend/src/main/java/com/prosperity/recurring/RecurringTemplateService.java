@@ -1,9 +1,9 @@
 package com.prosperity.recurring;
 
+import com.prosperity.account.AccessLevel;
 import com.prosperity.account.AccountAccessDeniedException;
 import com.prosperity.account.AccountNotFoundException;
 import com.prosperity.account.AccountRepository;
-import com.prosperity.account.AccessLevel;
 import com.prosperity.auth.User;
 import com.prosperity.auth.UserNotFoundException;
 import com.prosperity.auth.UserRepository;
@@ -55,9 +55,7 @@ public class RecurringTemplateService {
   // Public methods
   // ---------------------------------------------------------------------------
 
-  /**
-   * Creates a new recurring template on the given account. Requires WRITE access.
-   */
+  /** Creates a new recurring template on the given account. Requires WRITE access. */
   @Transactional
   public RecurringTemplateResponse createTemplate(
       UUID accountId, CreateRecurringTemplateRequest request, String userEmail) {
@@ -71,10 +69,7 @@ public class RecurringTemplateService {
 
     RecurringTemplate template =
         new RecurringTemplate(
-            account,
-            new Money(request.amount()),
-            request.frequency(),
-            request.nextDueDate());
+            account, new Money(request.amount()), request.frequency(), request.nextDueDate());
 
     template.setDescription(request.description());
     template.setDayOfMonth(request.dayOfMonth());
@@ -85,8 +80,7 @@ public class RecurringTemplateService {
               .findById(request.categoryId())
               .orElseThrow(
                   () ->
-                      new CategoryNotFoundException(
-                          "Category not found: " + request.categoryId()));
+                      new CategoryNotFoundException("Category not found: " + request.categoryId()));
       template.setCategory(category);
     }
 
@@ -160,8 +154,7 @@ public class RecurringTemplateService {
               .findById(request.categoryId())
               .orElseThrow(
                   () ->
-                      new CategoryNotFoundException(
-                          "Category not found: " + request.categoryId()));
+                      new CategoryNotFoundException("Category not found: " + request.categoryId()));
       template.setCategory(category);
     }
 
@@ -169,9 +162,7 @@ public class RecurringTemplateService {
     return toResponse(template);
   }
 
-  /**
-   * Deletes a recurring template. Requires WRITE access on the template's account.
-   */
+  /** Deletes a recurring template. Requires WRITE access on the template's account. */
   @Transactional
   public void deleteTemplate(UUID templateId, String userEmail) {
     User user = resolveUser(userEmail);
@@ -256,9 +247,7 @@ public class RecurringTemplateService {
 
   private void requireAccountAccess(UUID accountId, UUID userId, AccessLevel minimumLevel) {
     List<AccessLevel> allowedLevels =
-        Arrays.stream(AccessLevel.values())
-            .filter(l -> l.isAtLeast(minimumLevel))
-            .toList();
+        Arrays.stream(AccessLevel.values()).filter(l -> l.isAtLeast(minimumLevel)).toList();
     if (!accountRepository.hasAccess(accountId, userId, allowedLevels)) {
       if (accountRepository.existsById(accountId)) {
         throw new AccountAccessDeniedException("Access denied to account: " + accountId);
@@ -291,9 +280,7 @@ public class RecurringTemplateService {
               ? current
                   .plusMonths(1)
                   .withDayOfMonth(
-                      Math.min(
-                          template.getDayOfMonth(),
-                          current.plusMonths(1).lengthOfMonth()))
+                      Math.min(template.getDayOfMonth(), current.plusMonths(1).lengthOfMonth()))
               : current.plusMonths(1);
       case YEARLY -> current.plusYears(1);
     };

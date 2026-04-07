@@ -37,14 +37,14 @@
 
 ### Transactions
 
-- [ ] **TXNS-01**: Utilisateur peut saisir manuellement une transaction (montant, date, description, categorie, compte)
-- [ ] **TXNS-02**: Utilisateur peut modifier une transaction saisie manuellement
-- [ ] **TXNS-03**: Utilisateur peut supprimer une transaction saisie manuellement
+- [x] **TXNS-01**: Utilisateur peut saisir manuellement une transaction (montant, date, description, categorie, compte)
+- [x] **TXNS-02**: Utilisateur peut modifier une transaction saisie manuellement
+- [x] **TXNS-03**: Utilisateur peut supprimer une transaction saisie manuellement
 - [x] **TXNS-04**: Utilisateur peut creer des templates de transactions recurrentes (loyer, abonnements)
-- [ ] **TXNS-05**: Utilisateur peut pointer manuellement une transaction (associer saisie manuelle a import Plaid)
-- [ ] **TXNS-06**: Utilisateur peut splitter une transaction en plusieurs categories (split transactions)
-- [ ] **TXNS-07**: Utilisateur peut rechercher et filtrer les transactions (date, montant, categorie, description)
-- [ ] **TXNS-08**: Liste des transactions avec pagination
+- [x] **TXNS-05**: Utilisateur peut pointer manuellement une transaction (associer saisie manuelle a import Plaid)
+- [x] **TXNS-06**: Utilisateur peut splitter une transaction en plusieurs categories (split transactions)
+- [x] **TXNS-07**: Utilisateur peut rechercher et filtrer les transactions (date, montant, categorie, description)
+- [x] **TXNS-08**: Liste des transactions avec pagination
 
 ### Categorisation
 
@@ -164,14 +164,14 @@
 | ACCS-02 | Phase 3 | Complete |
 | ACCS-03 | Phase 3 | Complete |
 | ACCS-04 | Phase 3 | Complete |
-| TXNS-01 | Phase 5 | Pending |
-| TXNS-02 | Phase 5 | Pending |
-| TXNS-03 | Phase 5 | Pending |
+| TXNS-01 | Phase 5 | Complete |
+| TXNS-02 | Phase 5 | Complete |
+| TXNS-03 | Phase 5 | Complete |
 | TXNS-04 | Phase 5 | Complete |
-| TXNS-05 | Phase 5 | Pending |
-| TXNS-06 | Phase 5 | Pending |
-| TXNS-07 | Phase 5 | Pending |
-| TXNS-08 | Phase 5 | Pending |
+| TXNS-05 | Phase 5 | Complete |
+| TXNS-06 | Phase 5 | Complete |
+| TXNS-07 | Phase 5 | Complete |
+| TXNS-08 | Phase 5 | Complete |
 | CATG-01 | Phase 4 | Complete |
 | CATG-02 | Phase 4 | Complete |
 | CATG-03 | Phase 4 | Complete |

@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-03-PLAN.md
-last_updated: "2026-04-07T03:52:39.659Z"
+stopped_at: Completed 05-04-PLAN.md
+last_updated: "2026-04-07T04:48:16.419Z"
 last_activity: 2026-04-07
 progress:
   total_phases: 10
   completed_phases: 4
   total_plans: 40
-  completed_plans: 36
+  completed_plans: 39
   percent: 100
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 05 (transactions) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-04-07
 
@@ -78,6 +78,7 @@ Progress: [██████████] 100%
 | Phase 04 P03 | 4min | 1 tasks | 6 files |
 | Phase 04 P04 | 5min | 3 tasks | 11 files |
 | Phase 05 P03 | 3min | 2 tasks | 2 files |
+| Phase 05 P04 | 36min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -132,6 +133,8 @@ Recent decisions affecting current work:
 - [Phase 04]: Shared component directory frontend/src/app/shared/ established for cross-module reuse
 - [Phase 05]: generateTransaction sets state=MANUAL_UNMATCHED for reconciliation workflow consistency with manual transactions
 - [Phase 05]: advanceNextDueDate clamps dayOfMonth to lengthOfMonth to correctly handle February and 31-day months
+- [Phase 05]: Switched TransactionRepository.findByFilters from JPQL to native SQL with CAST for null-safe PostgreSQL type inference
+- [Phase 05]: Native SQL sort uses column name (transaction_date) not Java field name (transactionDate)
 
 ### Pending Todos
 
@@ -144,6 +147,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-07T03:52:39.656Z
-Stopped at: Completed 05-03-PLAN.md
+Last session: 2026-04-07T04:48:16.416Z
+Stopped at: Completed 05-04-PLAN.md
 Resume file: None

@@ -135,8 +135,8 @@ Plans:
 
 Plans:
 - [x] 05-01-PLAN.md — Data layer: Flyway V012/V013 migrations + TransactionSplit/RecurringTemplate entities + DTOs + paginated repository query
-- [x] 05-02-PLAN.md — TransactionService CRUD + access control + TransactionController REST endpoints
-- [ ] 05-03-PLAN.md — RecurringTemplateService + RecurringTemplateController (CRUD + generate)
+- [ ] 05-02-PLAN.md — TransactionService CRUD + access control + TransactionController REST endpoints
+- [x] 05-03-PLAN.md — RecurringTemplateService + RecurringTemplateController (CRUD + generate)
 - [ ] 05-04-PLAN.md — Split transaction logic + integration tests for transactions and recurring templates
 - [ ] 05-05-PLAN.md — Frontend: types, service, transactions page (p-table lazy pagination + filters), dialog, routing, sidebar
 - [ ] 05-06-PLAN.md — Full test suite verification + visual checkpoint

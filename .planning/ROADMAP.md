@@ -130,12 +130,16 @@ Plans:
   3. User can manually reconcile (pointer) a manual transaction with an imported transaction (matching pair counts once in balances)
   4. User can split a single transaction across multiple categories
   5. User can search and filter transactions by date, amount, category, and description with paginated results
-**Plans**: TBD
+**Plans**: 6 plans
 **UI hint**: yes
 
 Plans:
-- [ ] 05-01: TBD
-- [ ] 05-02: TBD
+- [ ] 05-01-PLAN.md — Data layer: Flyway V012/V013 migrations + TransactionSplit/RecurringTemplate entities + DTOs + paginated repository query
+- [ ] 05-02-PLAN.md — TransactionService CRUD + access control + TransactionController REST endpoints
+- [ ] 05-03-PLAN.md — RecurringTemplateService + RecurringTemplateController (CRUD + generate)
+- [ ] 05-04-PLAN.md — Split transaction logic + integration tests for transactions and recurring templates
+- [ ] 05-05-PLAN.md — Frontend: types, service, transactions page (p-table lazy pagination + filters), dialog, routing, sidebar
+- [ ] 05-06-PLAN.md — Full test suite verification + visual checkpoint
 
 ### Phase 6: Envelope Budgets
 **Goal**: Users can budget with per-account envelopes that automatically track spending from categorized transactions
@@ -228,7 +232,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 1. Project Foundation | 0/14 | Planning | - |
 | 3. Accounts & Access Control | 9/9 | Complete   | 2026-04-05 |
 | 4. Categories | 2/4 | In Progress | - |
-| 5. Transactions | 0/2 | Not started | - |
+| 5. Transactions | 0/6 | Not started | - |
 | 6. Envelope Budgets | 0/2 | Not started | - |
 | 7. Plaid Integration | 0/3 | Not started | - |
 | 8. Administration | 0/1 | Not started | - |

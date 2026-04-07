@@ -12,6 +12,7 @@ import com.prosperity.category.CategoryNotFoundException;
 import com.prosperity.category.CategoryRepository;
 import com.prosperity.shared.Money;
 import com.prosperity.shared.TransactionSource;
+import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
@@ -266,6 +267,103 @@ public class TransactionService {
       transaction.setCategory(category);
     }
     transactionRepository.save(transaction);
+  }
+
+  /**
+   * Sets (replaces) splits on a transaction. The sum of split amounts must equal the transaction
+   * amount (D-05). The transaction category is set to null when splits are present (D-06). Requires
+   * WRITE access.
+   *
+   * @throws IllegalArgumentException if split amounts do not sum to the transaction amount
+   * @throws CategoryNotFoundException if any split's categoryId does not exist
+   */
+  @Transactional
+  public TransactionResponse setSplits(
+      UUID transactionId, List<TransactionSplitRequest> splits, String userEmail) {
+    User user = resolveUser(userEmail);
+    Transaction transaction =
+        transactionRepository
+            .findById(transactionId)
+            .orElseThrow(
+                () ->
+                    new TransactionNotFoundException(
+                        "Transaction introuvable : " + transactionId));
+    requireAccountAccess(transaction.getBankAccount().getId(), user.getId(), AccessLevel.WRITE);
+
+    BigDecimal splitSum =
+        splits.stream()
+            .map(TransactionSplitRequest::amount)
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+    if (splitSum.compareTo(transaction.getAmount().amount()) != 0) {
+      throw new IllegalArgumentException(
+          "La somme des splits ("
+              + splitSum
+              + ") ne correspond pas au montant de la transaction ("
+              + transaction.getAmount().amount()
+              + ")");
+    }
+
+    transactionSplitRepository.deleteByTransactionId(transactionId);
+    transactionSplitRepository.flush();
+
+    for (TransactionSplitRequest splitRequest : splits) {
+      Category category =
+          categoryRepository
+              .findById(splitRequest.categoryId())
+              .orElseThrow(
+                  () ->
+                      new CategoryNotFoundException(
+                          "Categorie introuvable : " + splitRequest.categoryId()));
+      TransactionSplit split =
+          new TransactionSplit(transaction, category, new Money(splitRequest.amount()));
+      split.setDescription(splitRequest.description());
+      transactionSplitRepository.save(split);
+    }
+
+    transaction.setCategory(null);
+    transactionRepository.save(transaction);
+    return toResponse(transaction);
+  }
+
+  /**
+   * Clears all splits from a transaction. Requires WRITE access.
+   *
+   * @throws TransactionNotFoundException if the transaction does not exist
+   */
+  @Transactional
+  public TransactionResponse clearSplits(UUID transactionId, String userEmail) {
+    User user = resolveUser(userEmail);
+    Transaction transaction =
+        transactionRepository
+            .findById(transactionId)
+            .orElseThrow(
+                () ->
+                    new TransactionNotFoundException(
+                        "Transaction introuvable : " + transactionId));
+    requireAccountAccess(transaction.getBankAccount().getId(), user.getId(), AccessLevel.WRITE);
+    transactionSplitRepository.deleteByTransactionId(transactionId);
+    return toResponse(transaction);
+  }
+
+  /**
+   * Returns all splits for a transaction. Requires READ access.
+   *
+   * @throws TransactionNotFoundException if the transaction does not exist
+   */
+  @Transactional(readOnly = true)
+  public List<TransactionSplitResponse> getSplits(UUID transactionId, String userEmail) {
+    User user = resolveUser(userEmail);
+    Transaction transaction =
+        transactionRepository
+            .findById(transactionId)
+            .orElseThrow(
+                () ->
+                    new TransactionNotFoundException(
+                        "Transaction introuvable : " + transactionId));
+    requireAccountAccess(transaction.getBankAccount().getId(), user.getId(), AccessLevel.READ);
+    return transactionSplitRepository.findByTransactionId(transactionId).stream()
+        .map(this::toSplitResponse)
+        .toList();
   }
 
   // ---------------------------------------------------------------------------

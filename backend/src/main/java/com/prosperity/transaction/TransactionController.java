@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.security.Principal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -128,6 +129,34 @@ public class TransactionController {
     return ResponseEntity.noContent().build();
   }
 
+  /**
+   * Sets (replaces) splits on a transaction. Split amounts must sum to the transaction amount
+   * (D-05). Clears the transaction category (D-06). Requires WRITE access (TXNS-06).
+   */
+  @PutMapping("/transactions/{id}/splits")
+  public TransactionResponse setSplits(
+      @PathVariable UUID id,
+      @Valid @RequestBody List<TransactionSplitRequest> splits,
+      Principal principal) {
+    return transactionService.setSplits(id, splits, principal.getName());
+  }
+
+  /**
+   * Clears all splits from a transaction. Requires WRITE access (TXNS-06).
+   */
+  @DeleteMapping("/transactions/{id}/splits")
+  public TransactionResponse clearSplits(@PathVariable UUID id, Principal principal) {
+    return transactionService.clearSplits(id, principal.getName());
+  }
+
+  /**
+   * Returns all splits for a transaction. Requires READ access (TXNS-06).
+   */
+  @GetMapping("/transactions/{id}/splits")
+  public List<TransactionSplitResponse> getSplits(@PathVariable UUID id, Principal principal) {
+    return transactionService.getSplits(id, principal.getName());
+  }
+
   // ---------------------------------------------------------------------------
   // Exception handlers
   // ---------------------------------------------------------------------------
@@ -154,6 +183,11 @@ public class TransactionController {
 
   @ExceptionHandler(IllegalStateException.class)
   public ResponseEntity<Map<String, String>> handleIllegalState(IllegalStateException e) {
+    return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
+  }
+
+  @ExceptionHandler(IllegalArgumentException.class)
+  public ResponseEntity<Map<String, String>> handleIllegalArgument(IllegalArgumentException e) {
     return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", e.getMessage()));
   }
 }

@@ -82,10 +82,14 @@ describe('CategoryDialog', () => {
     fixture.componentRef.setInput('allCategories', []);
     fixture.detectChanges();
 
-    const savedSpy = jasmine.createSpy('saved');
-    const visibleChangeSpy = jasmine.createSpy('visibleChange');
-    fixture.componentInstance.saved.subscribe(savedSpy);
-    fixture.componentInstance.visibleChange.subscribe(visibleChangeSpy);
+    let savedEmitted = false;
+    let visibleChangeValue: boolean | undefined;
+    fixture.componentInstance.saved.subscribe(() => {
+      savedEmitted = true;
+    });
+    fixture.componentInstance.visibleChange.subscribe((v: boolean) => {
+      visibleChangeValue = v;
+    });
 
     const nameInput = fixture.debugElement.query(By.css('#categoryName'));
     nameInput.nativeElement.value = 'Nouvelle categorie';
@@ -102,8 +106,8 @@ describe('CategoryDialog', () => {
     fixture.detectChanges();
 
     // Assert
-    expect(savedSpy).toHaveBeenCalled();
-    expect(visibleChangeSpy).toHaveBeenCalledWith(false);
+    expect(savedEmitted).toBe(true);
+    expect(visibleChangeValue).toBe(false);
   });
 
   it('update_success_sends_put_with_category_id', () => {

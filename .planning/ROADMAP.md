@@ -139,7 +139,7 @@ Plans:
 - [x] 05-03-PLAN.md — RecurringTemplateService + RecurringTemplateController (CRUD + generate)
 - [x] 05-04-PLAN.md — Split transaction logic + integration tests for transactions and recurring templates
 - [x] 05-05-PLAN.md — Frontend: types, service, transactions page (p-table lazy pagination + filters), dialog, routing, sidebar
-- [ ] 05-06-PLAN.md — Full test suite verification + visual checkpoint
+- [x] 05-06-PLAN.md — Full test suite verification + visual checkpoint
 
 ### Phase 6: Envelope Budgets
 **Goal**: Users can budget with per-account envelopes that automatically track spending from categorized transactions

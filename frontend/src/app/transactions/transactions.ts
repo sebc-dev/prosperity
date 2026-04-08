@@ -161,7 +161,9 @@ import { CategoryService } from '../categories/category.service';
                   [attr.aria-label]="tx.pointed ? 'Depointer la transaction' : 'Pointer la transaction'"
                 >
                   @if (tx.pointed) {
-                    <i class="pi pi-check text-primary"></i>
+                    <i class="pi pi-check-circle text-primary"></i>
+                  } @else {
+                    <i class="pi pi-circle text-muted-color"></i>
                   }
                 </button>
               </td>

@@ -87,6 +87,14 @@ export class Login {
 
   constructor() {
     afterNextRender(() => this.emailInput()?.nativeElement.focus());
+    this.authService
+      .checkStatus()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((status) => {
+        if (!status.setupComplete) {
+          this.router.navigate(['/setup']);
+        }
+      });
   }
 
   readonly loading = signal(false);

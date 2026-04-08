@@ -111,4 +111,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-06 after Phase 4 completion — categories (migrations Flyway + seed 49 catégories Plaid, CRUD catégories custom, PATCH transaction/category, frontend Angular avec p-table/dialog/CategorySelector, 113 tests backend passent) complete*
+*Last updated: 2026-04-08 after Phase 5 completion — transactions (CRUD manuel, templates récurrents avec génération, split multi-catégorie, pointage, pagination filtrée, frontend Angular p-table lazy + dialog, 143 tests backend + 100 frontend) complete*

@@ -2,6 +2,7 @@ package com.prosperity.envelope;
 
 import com.prosperity.account.Account;
 import com.prosperity.auth.User;
+import com.prosperity.category.Category;
 import com.prosperity.shared.EnvelopeScope;
 import com.prosperity.shared.Money;
 import com.prosperity.shared.MoneyConverter;
@@ -16,9 +17,13 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 /** JPA entity representing a budget envelope linked to a bank account. */
@@ -52,6 +57,16 @@ public class Envelope {
   @Enumerated(EnumType.STRING)
   @Column(name = "rollover_policy", length = 20, nullable = false)
   private RolloverPolicy rolloverPolicy = RolloverPolicy.RESET;
+
+  @ManyToMany(fetch = FetchType.LAZY)
+  @JoinTable(
+      name = "envelope_categories",
+      joinColumns = @JoinColumn(name = "envelope_id"),
+      inverseJoinColumns = @JoinColumn(name = "category_id"))
+  private Set<Category> categories = new HashSet<>();
+
+  @Column(nullable = false)
+  private boolean archived = false;
 
   @Column(name = "created_at", nullable = false, columnDefinition = "TIMESTAMPTZ")
   private Instant createdAt;
@@ -141,5 +156,21 @@ public class Envelope {
 
   public void setCreatedAt(Instant createdAt) {
     this.createdAt = createdAt;
+  }
+
+  public Set<Category> getCategories() {
+    return categories;
+  }
+
+  public void setCategories(Set<Category> categories) {
+    this.categories = categories;
+  }
+
+  public boolean isArchived() {
+    return archived;
+  }
+
+  public void setArchived(boolean archived) {
+    this.archived = archived;
   }
 }

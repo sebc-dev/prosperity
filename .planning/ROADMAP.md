@@ -159,7 +159,7 @@ Plans:
 - [x] 06-02-dtos-and-exceptions-PLAN.md — DTO records (Create/Update/Allocation/Response/History) + EnvelopeStatus enum + custom exceptions
 - [x] 06-03-test-scaffolds-PLAN.md — Wave 0 RED stubs for EnvelopeService/Controller/AllocationController tests
 - [ ] 06-04-service-layer-PLAN.md — EnvelopeService (scope derivation, D-01, consumed, rollover formula, status thresholds, soft delete) + EnvelopeAllocationService
-- [ ] 06-05-controllers-PLAN.md — EnvelopeController + EnvelopeAllocationController (REST endpoints, exception -> HTTP status mapping including 409)
+- [x] 06-05-controllers-PLAN.md — EnvelopeController + EnvelopeAllocationController (REST endpoints, exception -> HTTP status mapping including 409)
 - [ ] 06-06-backend-tests-PLAN.md — Fill the Wave 0 stubs with real AAA bodies (Testcontainers PostgreSQL); ./mvnw verify green
 - [ ] 06-07-frontend-infrastructure-PLAN.md — envelope.types/service + extend CategorySelector to checkbox mode + sidebar Enveloppes link + lazy routes
 - [ ] 06-08-frontend-pages-PLAN.md — EnvelopesPage + envelope-dialog + envelope-details + allocation-dialog + Vitest specs + UAT checkpoint

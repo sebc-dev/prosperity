@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-01 data-layer (envelope_categories junction + archived flag + repository queries)
-last_updated: "2026-04-22T11:40:38.754Z"
+stopped_at: Completed 06-05-controllers-PLAN.md
+last_updated: "2026-04-22T11:46:50.632Z"
 last_activity: 2026-04-22
 progress:
   total_phases: 10
   completed_phases: 5
   total_plans: 48
-  completed_plans: 43
+  completed_plans: 44
   percent: 100
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 06 (envelope-budgets) — EXECUTING
-Plan: 3 of 8
+Plan: 4 of 8
 Status: Ready to execute
 Last activity: 2026-04-22
 
@@ -82,6 +82,7 @@ Progress: [██████████] 100%
 | Phase 06 P02 | 3min | 2 tasks | 10 files |
 | Phase 06 P03 | 4min | 3 tasks | 4 files |
 | Phase 06 P01 | 6min | 4 tasks | 5 files |
+| Phase 06 P05 | 2min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -147,6 +148,8 @@ Recent decisions affecting current work:
 - [Phase 06]: [Phase 06 P01] Envelope entity @ManyToMany Set<Category> via envelope_categories join table + archived flag (D-01 + D-18); junction uses composite PK, CASCADE on envelope, RESTRICT on category
 - [Phase 06]: [Phase 06 P01] Consumed aggregation uses native recursive CTE over categories.parent_id plus NOT EXISTS defensive dedup on transactions+transaction_splits UNION ALL branches (guards against D-06 drift)
 - [Phase 06]: [Phase 06 P01] 12-month history uses generate_series with CAST(:to AS date) - INTERVAL '1 day' so half-open [from, to) yields exactly 12 buckets; months with zero consumption appear via LEFT JOIN
+- [Phase 06]: [Phase 06 P05] Controllers split: EnvelopeController (8 routes) + EnvelopeAllocationController (4 routes) in two files for atomic review; Principal#getName() over @AuthenticationPrincipal UserDetails to match Phase 5 TransactionController canon
+- [Phase 06]: [Phase 06 P05] DataIntegrityViolationException -> 409 handler scoped to EnvelopeAllocationController only (not @ControllerAdvice) to avoid over-translating DB errors in unrelated controllers; @DateTimeFormat(pattern=yyyy-MM) for native YearMonth query binding in Spring Boot 4.0
 
 ### Pending Todos
 
@@ -159,6 +162,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-22T11:40:38.749Z
-Stopped at: Completed 06-01 data-layer (envelope_categories junction + archived flag + repository queries)
+Last session: 2026-04-22T11:46:50.627Z
+Stopped at: Completed 06-05-controllers-PLAN.md
 Resume file: None

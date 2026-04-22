@@ -39,6 +39,14 @@ import { AccountService } from '../accounts/account.service';
           <i class="pi pi-tag"></i>
           <span>Categories</span>
         </a>
+        <a
+          routerLink="/envelopes"
+          routerLinkActive="bg-surface-100 text-primary font-semibold border-l-3 border-primary"
+          class="flex items-center gap-3 px-3 py-2 rounded-md text-muted-color hover:bg-surface-50 transition-colors"
+        >
+          <i class="pi pi-wallet" aria-hidden="true"></i>
+          <span>Enveloppes</span>
+        </a>
       </nav>
     </aside>
   `,

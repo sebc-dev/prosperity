@@ -34,6 +34,16 @@ export const routes: Routes = [
         loadComponent: () => import('./transactions/transactions').then((m) => m.Transactions),
       },
       {
+        path: 'envelopes',
+        loadComponent: () =>
+          import('./envelopes/envelopes').then((m) => m.EnvelopesPage),
+      },
+      {
+        path: 'envelopes/:id',
+        loadComponent: () =>
+          import('./envelopes/envelope-details').then((m) => m.EnvelopeDetailsPage),
+      },
+      {
         path: '',
         redirectTo: 'dashboard',
         pathMatch: 'full',

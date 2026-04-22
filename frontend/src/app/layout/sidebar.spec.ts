@@ -27,4 +27,16 @@ describe('Sidebar', () => {
     const link = compiled.querySelector('a[routerLink="/accounts"]');
     expect(link).toBeTruthy();
   });
+
+  it('renders_navigation_link_to_envelopes', () => {
+    // Arrange
+    const compiled = fixture.nativeElement as HTMLElement;
+
+    // Act — component already rendered in beforeEach
+
+    // Assert
+    const link = compiled.querySelector('a[routerLink="/envelopes"]');
+    expect(link).not.toBeNull();
+    expect(link!.textContent).toContain('Enveloppes');
+  });
 });

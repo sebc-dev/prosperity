@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-05-controllers-PLAN.md
-last_updated: "2026-04-22T11:46:50.632Z"
+stopped_at: Completed 06-04 service-layer (EnvelopeService + EnvelopeAllocationService)
+last_updated: "2026-04-22T11:49:57.776Z"
 last_activity: 2026-04-22
 progress:
   total_phases: 10
   completed_phases: 5
   total_plans: 48
-  completed_plans: 44
+  completed_plans: 45
   percent: 100
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 06 (envelope-budgets) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
 Last activity: 2026-04-22
 
@@ -83,6 +83,7 @@ Progress: [██████████] 100%
 | Phase 06 P03 | 4min | 3 tasks | 4 files |
 | Phase 06 P01 | 6min | 4 tasks | 5 files |
 | Phase 06 P05 | 2min | 2 tasks | 2 files |
+| Phase 06 P04 | 4min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -150,6 +151,10 @@ Recent decisions affecting current work:
 - [Phase 06]: [Phase 06 P01] 12-month history uses generate_series with CAST(:to AS date) - INTERVAL '1 day' so half-open [from, to) yields exactly 12 buckets; months with zero consumption appear via LEFT JOIN
 - [Phase 06]: [Phase 06 P05] Controllers split: EnvelopeController (8 routes) + EnvelopeAllocationController (4 routes) in two files for atomic review; Principal#getName() over @AuthenticationPrincipal UserDetails to match Phase 5 TransactionController canon
 - [Phase 06]: [Phase 06 P05] DataIntegrityViolationException -> 409 handler scoped to EnvelopeAllocationController only (not @ControllerAdvice) to avoid over-translating DB errors in unrelated controllers; @DateTimeFormat(pattern=yyyy-MM) for native YearMonth query binding in Spring Boot 4.0
+- [Phase 06]: EnvelopeService.computeRatio denominator = effectiveBudget + carryOver (D-13 single source of truth) — shared by toResponse and getEnvelopeHistory
+- [Phase 06]: [Phase 06 P04] Rollover helper split: resolveEffectiveBudget + sumConsumed + computeCarryOver compose into computeAvailable AND into the per-month getEnvelopeHistory loop (1-month lookback, zero-clamp, no chaining)
+- [Phase 06]: [Phase 06 P04] Pitfall 3 enforced in updateEnvelope: env.getCategories().clear() + addAll() mutates managed @ManyToMany Set in place (never setCategories)
+- [Phase 06]: [Phase 06 P04] EnvelopeAllocationService intentionally duplicates requireEnvelopeAccess helper from EnvelopeService — duplication beats premature abstraction across only 2 services
 
 ### Pending Todos
 
@@ -162,6 +167,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-22T11:46:50.627Z
-Stopped at: Completed 06-05-controllers-PLAN.md
+Last session: 2026-04-22T11:49:57.772Z
+Stopped at: Completed 06-04 service-layer (EnvelopeService + EnvelopeAllocationService)
 Resume file: None

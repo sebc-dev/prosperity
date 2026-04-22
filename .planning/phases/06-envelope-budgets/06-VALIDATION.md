@@ -2,7 +2,7 @@
 phase: 6
 slug: envelope-budgets
 status: draft
-nyquist_compliant: false
+nyquist_compliant: true
 wave_0_complete: true
 created: 2026-04-22
 updated: 2026-04-22
@@ -89,6 +89,6 @@ Frontend test files are deferred to Plan 08 (Wave 4) because Vitest specs coloca
 - [x] Wave 0 covers all MISSING references
 - [x] No watch-mode flags
 - [x] Feedback latency < 180s
-- [ ] `nyquist_compliant: true` set in frontmatter (FLIPPED by Plan 08 once `pnpm test -- --run src/app/envelopes` exits 0 with all real assertions; backend bodies are green starting Plan 06)
+- [x] `nyquist_compliant: true` set in frontmatter (FLIPPED by Plan 08 — pnpm test src/app/envelopes green; backend bodies green from Plan 06)
 
-**Approval:** Wave 0 scaffolding complete (Plan 03). Test bodies pending: backend Plan 06, frontend Plan 08.
+**Approval:** Phase 6 validation complete — Wave 0 scaffolding (Plan 03) + backend bodies green (Plan 06) + frontend specs green (Plan 08). Ready for /gsd:verify-work.

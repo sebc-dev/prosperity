@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-04 service-layer (EnvelopeService + EnvelopeAllocationService)
-last_updated: "2026-04-22T11:49:57.776Z"
+stopped_at: Completed 06-07-frontend-infrastructure-PLAN.md
+last_updated: "2026-04-22T11:59:12.341Z"
 last_activity: 2026-04-22
 progress:
   total_phases: 10
   completed_phases: 5
   total_plans: 48
-  completed_plans: 45
+  completed_plans: 46
   percent: 100
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 06 (envelope-budgets) — EXECUTING
-Plan: 5 of 8
+Plan: 6 of 8
 Status: Ready to execute
 Last activity: 2026-04-22
 
@@ -84,6 +84,7 @@ Progress: [██████████] 100%
 | Phase 06 P01 | 6min | 4 tasks | 5 files |
 | Phase 06 P05 | 2min | 2 tasks | 2 files |
 | Phase 06 P04 | 4min | 2 tasks | 2 files |
+| Phase 06 P07 | 5min | 4 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -155,6 +156,9 @@ Recent decisions affecting current work:
 - [Phase 06]: [Phase 06 P04] Rollover helper split: resolveEffectiveBudget + sumConsumed + computeCarryOver compose into computeAvailable AND into the per-month getEnvelopeHistory loop (1-month lookback, zero-clamp, no chaining)
 - [Phase 06]: [Phase 06 P04] Pitfall 3 enforced in updateEnvelope: env.getCategories().clear() + addAll() mutates managed @ManyToMany Set in place (never setCategories)
 - [Phase 06]: [Phase 06 P04] EnvelopeAllocationService intentionally duplicates requireEnvelopeAccess helper from EnvelopeService — duplication beats premature abstraction across only 2 services
+- [Phase 06]: [Phase 06 P07] CategorySelector extended to dual-mode via selectionMode input; onSelect/onClear renamed to onSingleSelect/onSingleClear (no external callers); new categoriesSelected output emits string[] for checkbox mode
+- [Phase 06]: [Phase 06 P07] Stub components (EnvelopesPage / EnvelopeDetailsPage) created in Plan 07 to keep lazy-route type-check green until Plan 08 overwrites them — avoids cross-plan build breakage during parallel waves
+- [Phase 06]: [Phase 06 P07] EnvelopeService cache signal shared by loadEnvelopes and loadEnvelopesForAccount — one readonly cache simplifies list page consumption, endpoint choice is a load-time decision
 
 ### Pending Todos
 
@@ -167,6 +171,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-22T11:49:57.772Z
-Stopped at: Completed 06-04 service-layer (EnvelopeService + EnvelopeAllocationService)
+Last session: 2026-04-22T11:59:01.431Z
+Stopped at: Completed 06-07-frontend-infrastructure-PLAN.md
 Resume file: None

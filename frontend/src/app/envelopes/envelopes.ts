@@ -273,7 +273,7 @@ interface AccountOption {
                     severity="secondary"
                     pTooltip="Voir l'historique"
                     [routerLink]="['/envelopes', envelope.id]"
-                    [attr.aria-label]="'Voir l\\'historique de ' + envelope.name"
+                    [attr.aria-label]="historyLabel(envelope.name)"
                   />
                   @if (hasWriteAccess(envelope.bankAccountId)) {
                     <p-button
@@ -604,6 +604,10 @@ export class EnvelopesPage {
           ? 'attention'
           : 'depassee';
     return `Enveloppe ${envelope.name}: ${descriptor}, ${pct}% consomme`;
+  }
+
+  protected historyLabel(name: string): string {
+    return `Voir l'historique de ${name}`;
   }
 
   protected formatAmount(amount: number): string {

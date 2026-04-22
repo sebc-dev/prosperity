@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-03-test-scaffolds-PLAN.md
-last_updated: "2026-04-22T11:39:18.447Z"
+stopped_at: Completed 06-01 data-layer (envelope_categories junction + archived flag + repository queries)
+last_updated: "2026-04-22T11:40:38.754Z"
 last_activity: 2026-04-22
 progress:
   total_phases: 10
   completed_phases: 5
   total_plans: 48
-  completed_plans: 42
+  completed_plans: 43
   percent: 100
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 06 (envelope-budgets) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 Status: Ready to execute
 Last activity: 2026-04-22
 
@@ -81,6 +81,7 @@ Progress: [██████████] 100%
 | Phase 05 P04 | 36min | 2 tasks | 7 files |
 | Phase 06 P02 | 3min | 2 tasks | 10 files |
 | Phase 06 P03 | 4min | 3 tasks | 4 files |
+| Phase 06 P01 | 6min | 4 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -143,6 +144,9 @@ Recent decisions affecting current work:
 - [Phase 06]: Consolidated EnvelopeServiceTest replaces proposed AllocationService/ConsumedAggregation/Rollover split — 26 @Disabled stubs cover same surface in one class
 - [Phase 06]: AutoConfigureMockMvc imported from org.springframework.boot.webmvc.test.autoconfigure (Spring Boot 4.0.x package); legacy 3.x package does not exist in 4.0.5
 - [Phase 06]: Frontend test scaffolds deferred to Plan 08 (Wave 4) — Vitest specs colocate with component files
+- [Phase 06]: [Phase 06 P01] Envelope entity @ManyToMany Set<Category> via envelope_categories join table + archived flag (D-01 + D-18); junction uses composite PK, CASCADE on envelope, RESTRICT on category
+- [Phase 06]: [Phase 06 P01] Consumed aggregation uses native recursive CTE over categories.parent_id plus NOT EXISTS defensive dedup on transactions+transaction_splits UNION ALL branches (guards against D-06 drift)
+- [Phase 06]: [Phase 06 P01] 12-month history uses generate_series with CAST(:to AS date) - INTERVAL '1 day' so half-open [from, to) yields exactly 12 buckets; months with zero consumption appear via LEFT JOIN
 
 ### Pending Todos
 
@@ -155,6 +159,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-22T11:39:18.444Z
-Stopped at: Completed 06-03-test-scaffolds-PLAN.md
+Last session: 2026-04-22T11:40:38.749Z
+Stopped at: Completed 06-01 data-layer (envelope_categories junction + archived flag + repository queries)
 Resume file: None

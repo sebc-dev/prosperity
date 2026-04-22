@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 06-02 DTOs and exceptions
-last_updated: "2026-04-22T11:37:15.183Z"
-last_activity: 2026-04-22 -- Phase 06 execution started
+stopped_at: Completed 06-03-test-scaffolds-PLAN.md
+last_updated: "2026-04-22T11:39:18.447Z"
+last_activity: 2026-04-22
 progress:
   total_phases: 10
   completed_phases: 5
   total_plans: 48
-  completed_plans: 41
+  completed_plans: 42
   percent: 100
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-03-28)
 ## Current Position
 
 Phase: 06 (envelope-budgets) — EXECUTING
-Plan: 1 of 8
-Status: Executing Phase 06
-Last activity: 2026-04-22 -- Phase 06 execution started
+Plan: 2 of 8
+Status: Ready to execute
+Last activity: 2026-04-22
 
 Progress: [██████████] 100%
 
@@ -80,6 +80,7 @@ Progress: [██████████] 100%
 | Phase 05 P03 | 3min | 2 tasks | 2 files |
 | Phase 05 P04 | 36min | 2 tasks | 7 files |
 | Phase 06 P02 | 3min | 2 tasks | 10 files |
+| Phase 06 P03 | 4min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -139,6 +140,9 @@ Recent decisions affecting current work:
 - [Phase 06]: EnvelopeResponse.ratio denominator = effectiveBudget + carryOver (D-13 single source of truth, documented in Javadoc)
 - [Phase 06]: CreateEnvelopeRequest omits scope field; scope derived server-side from account.accountType (Pitfall 4)
 - [Phase 06]: EnvelopeCategoryRef declared as inner record in EnvelopeResponse to avoid leaking full Category DTO
+- [Phase 06]: Consolidated EnvelopeServiceTest replaces proposed AllocationService/ConsumedAggregation/Rollover split — 26 @Disabled stubs cover same surface in one class
+- [Phase 06]: AutoConfigureMockMvc imported from org.springframework.boot.webmvc.test.autoconfigure (Spring Boot 4.0.x package); legacy 3.x package does not exist in 4.0.5
+- [Phase 06]: Frontend test scaffolds deferred to Plan 08 (Wave 4) — Vitest specs colocate with component files
 
 ### Pending Todos
 
@@ -151,6 +155,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-22T11:37:15.180Z
-Stopped at: Completed 06-02 DTOs and exceptions
+Last session: 2026-04-22T11:39:18.444Z
+Stopped at: Completed 06-03-test-scaffolds-PLAN.md
 Resume file: None

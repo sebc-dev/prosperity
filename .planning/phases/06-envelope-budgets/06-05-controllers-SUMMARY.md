@@ -131,4 +131,4 @@ Verified commits exist:
 
 Acceptance criteria greps all pass (18/18 for Task 1, 9/9 for Task 2).
 
-Compile verification deferred to phase integration: `./mvnw compile` blocked by Plan 04 parallel dependency (EnvelopeService / EnvelopeAllocationService not yet on this branch). This is expected parallel-wave behavior — the orchestrator's prompt explicitly instructed writing against method signatures only.
+Compile verification: `./mvnw -pl backend compile` exits 0 (BUILD SUCCESS) after Plan 04's `EnvelopeService` / `EnvelopeAllocationService` commit `5200047` merged onto the phase branch between my task commits and the docs commit. Both controllers compile against the real services — no signature drift.

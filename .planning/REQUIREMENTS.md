@@ -65,13 +65,13 @@
 
 ### Budgets Enveloppes
 
-- [ ] **ENVL-01**: Utilisateur peut creer une enveloppe budgetaire sur un compte
-- [ ] **ENVL-02**: Utilisateur peut allouer un montant mensuel a une enveloppe
+- [x] **ENVL-01**: Utilisateur peut creer une enveloppe budgetaire sur un compte
+- [x] **ENVL-02**: Utilisateur peut allouer un montant mensuel a une enveloppe
 - [ ] **ENVL-03**: Les depenses categorisees sont automatiquement imputees a l'enveloppe correspondante
 - [ ] **ENVL-04**: Rollover parametrable par enveloppe (report automatique du solde ou remise a zero)
-- [ ] **ENVL-05**: Indicateur visuel de depassement (rouge/jaune quand enveloppe depassee ou proche)
-- [ ] **ENVL-06**: Utilisateur peut voir l'historique de consommation d'une enveloppe
-- [ ] **ENVL-07**: Utilisateur peut modifier ou supprimer une enveloppe
+- [x] **ENVL-05**: Indicateur visuel de depassement (rouge/jaune quand enveloppe depassee ou proche)
+- [x] **ENVL-06**: Utilisateur peut voir l'historique de consommation d'une enveloppe
+- [x] **ENVL-07**: Utilisateur peut modifier ou supprimer une enveloppe
 
 ### Dette Interne
 
@@ -183,13 +183,13 @@
 | PLAD-05 | Phase 7 | Pending |
 | PLAD-06 | Phase 7 | Pending |
 | PLAD-07 | Phase 7 | Pending |
-| ENVL-01 | Phase 6 | Pending |
-| ENVL-02 | Phase 6 | Pending |
+| ENVL-01 | Phase 6 | Complete |
+| ENVL-02 | Phase 6 | Complete |
 | ENVL-03 | Phase 6 | Pending |
 | ENVL-04 | Phase 6 | Pending |
-| ENVL-05 | Phase 6 | Pending |
-| ENVL-06 | Phase 6 | Pending |
-| ENVL-07 | Phase 6 | Pending |
+| ENVL-05 | Phase 6 | Complete |
+| ENVL-06 | Phase 6 | Complete |
+| ENVL-07 | Phase 6 | Complete |
 | DEBT-01 | Phase 9 | Pending |
 | DEBT-02 | Phase 9 | Pending |
 | DEBT-03 | Phase 9 | Pending |

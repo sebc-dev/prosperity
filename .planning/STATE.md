@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 6 context gathered
-last_updated: "2026-04-22T07:51:22.711Z"
-last_activity: 2026-04-08
+stopped_at: Completed 06-02 DTOs and exceptions
+last_updated: "2026-04-22T11:37:15.183Z"
+last_activity: 2026-04-22 -- Phase 06 execution started
 progress:
   total_phases: 10
   completed_phases: 5
-  total_plans: 40
-  completed_plans: 40
+  total_plans: 48
+  completed_plans: 41
   percent: 100
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-28)
 
 **Core value:** Un foyer peut suivre ses finances au quotidien (soldes, transactions, budgets enveloppes) sans effort manuel excessif, grace a la synchronisation bancaire automatique et une interface claire.
-**Current focus:** Phase 05 — transactions
+**Current focus:** Phase 06 — envelope-budgets
 
 ## Current Position
 
-Phase: 6
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-04-08
+Phase: 06 (envelope-budgets) — EXECUTING
+Plan: 1 of 8
+Status: Executing Phase 06
+Last activity: 2026-04-22 -- Phase 06 execution started
 
 Progress: [██████████] 100%
 
@@ -79,6 +79,7 @@ Progress: [██████████] 100%
 | Phase 04 P04 | 5min | 3 tasks | 11 files |
 | Phase 05 P03 | 3min | 2 tasks | 2 files |
 | Phase 05 P04 | 36min | 2 tasks | 7 files |
+| Phase 06 P02 | 3min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -135,6 +136,9 @@ Recent decisions affecting current work:
 - [Phase 05]: advanceNextDueDate clamps dayOfMonth to lengthOfMonth to correctly handle February and 31-day months
 - [Phase 05]: Switched TransactionRepository.findByFilters from JPQL to native SQL with CAST for null-safe PostgreSQL type inference
 - [Phase 05]: Native SQL sort uses column name (transaction_date) not Java field name (transactionDate)
+- [Phase 06]: EnvelopeResponse.ratio denominator = effectiveBudget + carryOver (D-13 single source of truth, documented in Javadoc)
+- [Phase 06]: CreateEnvelopeRequest omits scope field; scope derived server-side from account.accountType (Pitfall 4)
+- [Phase 06]: EnvelopeCategoryRef declared as inner record in EnvelopeResponse to avoid leaking full Category DTO
 
 ### Pending Todos
 
@@ -147,6 +151,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-04-22T07:51:22.708Z
-Stopped at: Phase 6 context gathered
-Resume file: .planning/phases/06-envelope-budgets/06-CONTEXT.md
+Last session: 2026-04-22T11:37:15.180Z
+Stopped at: Completed 06-02 DTOs and exceptions
+Resume file: None

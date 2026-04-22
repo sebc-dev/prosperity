@@ -60,8 +60,6 @@ class EnvelopeServiceTest {
   private static final String USER_EMAIL = "test@test.com";
   private static final UUID COURSES_CATEGORY_ID =
       UUID.fromString("a0000000-0000-0000-0000-000000000101");
-  private static final UUID RESTAURANT_CATEGORY_ID =
-      UUID.fromString("a0000000-0000-0000-0000-000000000102");
   private static final UUID CARBURANT_CATEGORY_ID =
       UUID.fromString("a0000000-0000-0000-0000-000000000201");
 
@@ -79,7 +77,6 @@ class EnvelopeServiceTest {
   private Account testAccount;
   private Category coursesCategory; // leaf "Courses" child of "Alimentation & Restauration"
   private Category alimentationCategory; // root "Alimentation & Restauration"
-  private Category restaurantCategory; // leaf "Restaurant" child of alimentation root
   private Category carburantCategory; // leaf in a DIFFERENT root tree (Transport -> Carburant)
 
   @BeforeEach
@@ -90,7 +87,6 @@ class EnvelopeServiceTest {
 
     coursesCategory = categoryRepository.findById(COURSES_CATEGORY_ID).orElseThrow();
     alimentationCategory = coursesCategory.getParent();
-    restaurantCategory = categoryRepository.findById(RESTAURANT_CATEGORY_ID).orElseThrow();
     carburantCategory = categoryRepository.findById(CARBURANT_CATEGORY_ID).orElseThrow();
   }
 
@@ -137,10 +133,6 @@ class EnvelopeServiceTest {
     return YearMonth.of(2026, 4);
   }
 
-  private LocalDate midMonth() {
-    return LocalDate.of(2026, 4, 15);
-  }
-
   // -------------------------------------------------------------------------
   // ENVL-02 — Budget resolution (override vs default)
   // -------------------------------------------------------------------------
@@ -149,7 +141,8 @@ class EnvelopeServiceTest {
   void budget_for_month_without_override_returns_envelope_default_budget() {
     // Arrange
     Envelope envelope =
-        persistEnvelope(testAccount, new BigDecimal("100.00"), RolloverPolicy.RESET, coursesCategory);
+        persistEnvelope(
+            testAccount, new BigDecimal("100.00"), RolloverPolicy.RESET, coursesCategory);
 
     // Act
     EnvelopeResponse response = envelopeService.getEnvelope(envelope.getId(), USER_EMAIL);
@@ -163,7 +156,8 @@ class EnvelopeServiceTest {
   void budget_for_month_with_override_returns_override_amount() {
     // Arrange
     Envelope envelope =
-        persistEnvelope(testAccount, new BigDecimal("100.00"), RolloverPolicy.RESET, coursesCategory);
+        persistEnvelope(
+            testAccount, new BigDecimal("100.00"), RolloverPolicy.RESET, coursesCategory);
     persistAllocation(envelope, currentMonth(), new BigDecimal("250.00"));
 
     // Act
@@ -182,7 +176,8 @@ class EnvelopeServiceTest {
   void consumed_sums_negative_transactions_in_linked_categories() {
     // Arrange
     Envelope envelope =
-        persistEnvelope(testAccount, new BigDecimal("500.00"), RolloverPolicy.RESET, coursesCategory);
+        persistEnvelope(
+            testAccount, new BigDecimal("500.00"), RolloverPolicy.RESET, coursesCategory);
     LocalDate today = LocalDate.now(ZoneId.systemDefault()).withDayOfMonth(10);
     persistTransaction(new BigDecimal("-45.30"), today, coursesCategory);
     persistTransaction(new BigDecimal("-12.00"), today.plusDays(1), coursesCategory);
@@ -196,10 +191,13 @@ class EnvelopeServiceTest {
 
   @Test
   void consumed_includes_transaction_splits_matching_linked_categories() {
-    // Arrange — envelope linked to courses only; split parent has no category, two splits (one match, one miss)
+    // Arrange — envelope linked to courses only; split parent has no category, two splits (one
+    // match, one miss)
     Envelope envelope =
-        persistEnvelope(testAccount, new BigDecimal("500.00"), RolloverPolicy.RESET, coursesCategory);
-    Transaction parent = persistSplitParentTransaction(new BigDecimal("-200.00"), midMonthCurrent());
+        persistEnvelope(
+            testAccount, new BigDecimal("500.00"), RolloverPolicy.RESET, coursesCategory);
+    Transaction parent =
+        persistSplitParentTransaction(new BigDecimal("-200.00"), midMonthCurrent());
     transactionSplitRepository.save(
         new TransactionSplit(parent, coursesCategory, new Money(new BigDecimal("-50.00"))));
     transactionSplitRepository.save(
@@ -214,7 +212,8 @@ class EnvelopeServiceTest {
 
   @Test
   void consumed_includes_child_category_transactions_when_root_is_linked() {
-    // Arrange — envelope linked to ROOT (alimentation); transaction under child (courses) — D-02 recursive CTE
+    // Arrange — envelope linked to ROOT (alimentation); transaction under child (courses) — D-02
+    // recursive CTE
     Envelope envelope =
         persistEnvelope(
             testAccount, new BigDecimal("500.00"), RolloverPolicy.RESET, alimentationCategory);
@@ -231,7 +230,8 @@ class EnvelopeServiceTest {
   void transaction_in_unlinked_category_does_not_affect_consumed() {
     // Arrange — envelope linked to courses only; transaction in carburant (different root tree)
     Envelope envelope =
-        persistEnvelope(testAccount, new BigDecimal("500.00"), RolloverPolicy.RESET, coursesCategory);
+        persistEnvelope(
+            testAccount, new BigDecimal("500.00"), RolloverPolicy.RESET, coursesCategory);
     persistTransaction(new BigDecimal("-60.00"), midMonthCurrent(), carburantCategory);
 
     // Act
@@ -245,7 +245,8 @@ class EnvelopeServiceTest {
   void transaction_on_last_day_of_month_included_in_that_month_consumed() {
     // Arrange — Pitfall 7 boundary: last day of April must land in April bucket
     Envelope envelope =
-        persistEnvelope(testAccount, new BigDecimal("500.00"), RolloverPolicy.RESET, coursesCategory);
+        persistEnvelope(
+            testAccount, new BigDecimal("500.00"), RolloverPolicy.RESET, coursesCategory);
     persistTransaction(new BigDecimal("-40.00"), LocalDate.of(2026, 4, 30), coursesCategory);
 
     // Act
@@ -262,7 +263,8 @@ class EnvelopeServiceTest {
   void transaction_on_first_day_of_next_month_excluded_from_previous_month_consumed() {
     // Arrange — Pitfall 7: 2026-05-01 must NOT land in April bucket
     Envelope envelope =
-        persistEnvelope(testAccount, new BigDecimal("500.00"), RolloverPolicy.RESET, coursesCategory);
+        persistEnvelope(
+            testAccount, new BigDecimal("500.00"), RolloverPolicy.RESET, coursesCategory);
     persistTransaction(new BigDecimal("-40.00"), LocalDate.of(2026, 5, 1), coursesCategory);
 
     // Act
@@ -293,7 +295,8 @@ class EnvelopeServiceTest {
   void split_parent_with_non_null_category_is_counted_only_via_splits_branch() {
     // Arrange — D-03 defensive NOT EXISTS dedup: parent has category=courses AND splits exist
     Envelope envelope =
-        persistEnvelope(testAccount, new BigDecimal("500.00"), RolloverPolicy.RESET, coursesCategory);
+        persistEnvelope(
+            testAccount, new BigDecimal("500.00"), RolloverPolicy.RESET, coursesCategory);
     Transaction parent =
         persistTransaction(new BigDecimal("-100.00"), midMonthCurrent(), coursesCategory);
     transactionSplitRepository.save(
@@ -316,9 +319,12 @@ class EnvelopeServiceTest {
   void rollover_reset_policy_ignores_previous_month() {
     // Arrange — RESET envelope; previous month had remainder, current month has no consumption
     Envelope envelope =
-        persistEnvelope(testAccount, new BigDecimal("100.00"), RolloverPolicy.RESET, coursesCategory);
+        persistEnvelope(
+            testAccount, new BigDecimal("100.00"), RolloverPolicy.RESET, coursesCategory);
     persistTransaction(
-        new BigDecimal("-30.00"), LocalDate.now(ZoneId.systemDefault()).minusMonths(1).withDayOfMonth(15), coursesCategory);
+        new BigDecimal("-30.00"),
+        LocalDate.now(ZoneId.systemDefault()).minusMonths(1).withDayOfMonth(15),
+        coursesCategory);
 
     // Act
     EnvelopeResponse response = envelopeService.getEnvelope(envelope.getId(), USER_EMAIL);
@@ -335,8 +341,13 @@ class EnvelopeServiceTest {
         persistEnvelope(
             testAccount, new BigDecimal("100.00"), RolloverPolicy.CARRY_OVER, coursesCategory);
     persistTransaction(
-        new BigDecimal("-30.00"), LocalDate.now(ZoneId.systemDefault()).minusMonths(1).withDayOfMonth(15), coursesCategory);
-    persistTransaction(new BigDecimal("-20.00"), LocalDate.now(ZoneId.systemDefault()).withDayOfMonth(10), coursesCategory);
+        new BigDecimal("-30.00"),
+        LocalDate.now(ZoneId.systemDefault()).minusMonths(1).withDayOfMonth(15),
+        coursesCategory);
+    persistTransaction(
+        new BigDecimal("-20.00"),
+        LocalDate.now(ZoneId.systemDefault()).withDayOfMonth(10),
+        coursesCategory);
 
     // Act
     EnvelopeResponse response = envelopeService.getEnvelope(envelope.getId(), USER_EMAIL);
@@ -347,7 +358,8 @@ class EnvelopeServiceTest {
 
   @Test
   void rollover_carry_over_with_negative_previous_remainder_clamps_to_zero() {
-    // Arrange — CARRY_OVER: prev overspent (-150 on budget 100 -> raw remainder = -50, clamped to 0)
+    // Arrange — CARRY_OVER: prev overspent (-150 on budget 100 -> raw remainder = -50, clamped to
+    // 0)
     Envelope envelope =
         persistEnvelope(
             testAccount, new BigDecimal("100.00"), RolloverPolicy.CARRY_OVER, coursesCategory);
@@ -355,7 +367,10 @@ class EnvelopeServiceTest {
         new BigDecimal("-150.00"),
         LocalDate.now(ZoneId.systemDefault()).minusMonths(1).withDayOfMonth(15),
         coursesCategory);
-    persistTransaction(new BigDecimal("-30.00"), LocalDate.now(ZoneId.systemDefault()).withDayOfMonth(10), coursesCategory);
+    persistTransaction(
+        new BigDecimal("-30.00"),
+        LocalDate.now(ZoneId.systemDefault()).withDayOfMonth(10),
+        coursesCategory);
 
     // Act
     EnvelopeResponse response = envelopeService.getEnvelope(envelope.getId(), USER_EMAIL);
@@ -375,8 +390,13 @@ class EnvelopeServiceTest {
         LocalDate.now(ZoneId.systemDefault()).minusMonths(2).withDayOfMonth(15),
         coursesCategory);
     persistTransaction(
-        new BigDecimal("-50.00"), LocalDate.now(ZoneId.systemDefault()).minusMonths(1).withDayOfMonth(15), coursesCategory);
-    persistTransaction(new BigDecimal("-20.00"), LocalDate.now(ZoneId.systemDefault()).withDayOfMonth(10), coursesCategory);
+        new BigDecimal("-50.00"),
+        LocalDate.now(ZoneId.systemDefault()).minusMonths(1).withDayOfMonth(15),
+        coursesCategory);
+    persistTransaction(
+        new BigDecimal("-20.00"),
+        LocalDate.now(ZoneId.systemDefault()).withDayOfMonth(10),
+        coursesCategory);
 
     // Act
     EnvelopeResponse response = envelopeService.getEnvelope(envelope.getId(), USER_EMAIL);
@@ -393,7 +413,8 @@ class EnvelopeServiceTest {
   void status_when_consumed_is_zero_returns_green() {
     // Arrange
     Envelope envelope =
-        persistEnvelope(testAccount, new BigDecimal("100.00"), RolloverPolicy.RESET, coursesCategory);
+        persistEnvelope(
+            testAccount, new BigDecimal("100.00"), RolloverPolicy.RESET, coursesCategory);
 
     // Act
     EnvelopeResponse response = envelopeService.getEnvelope(envelope.getId(), USER_EMAIL);
@@ -407,8 +428,12 @@ class EnvelopeServiceTest {
   void status_when_consumed_below_eighty_percent_returns_green() {
     // Arrange — 79% ratio (just below YELLOW boundary)
     Envelope envelope =
-        persistEnvelope(testAccount, new BigDecimal("100.00"), RolloverPolicy.RESET, coursesCategory);
-    persistTransaction(new BigDecimal("-79.00"), LocalDate.now(ZoneId.systemDefault()).withDayOfMonth(10), coursesCategory);
+        persistEnvelope(
+            testAccount, new BigDecimal("100.00"), RolloverPolicy.RESET, coursesCategory);
+    persistTransaction(
+        new BigDecimal("-79.00"),
+        LocalDate.now(ZoneId.systemDefault()).withDayOfMonth(10),
+        coursesCategory);
 
     // Act
     EnvelopeResponse response = envelopeService.getEnvelope(envelope.getId(), USER_EMAIL);
@@ -421,8 +446,12 @@ class EnvelopeServiceTest {
   void status_at_exactly_80_percent_is_yellow() {
     // Arrange — BVA: ratio = 0.80 (inclusive lower bound of YELLOW)
     Envelope envelope =
-        persistEnvelope(testAccount, new BigDecimal("100.00"), RolloverPolicy.RESET, coursesCategory);
-    persistTransaction(new BigDecimal("-80.00"), LocalDate.now(ZoneId.systemDefault()).withDayOfMonth(10), coursesCategory);
+        persistEnvelope(
+            testAccount, new BigDecimal("100.00"), RolloverPolicy.RESET, coursesCategory);
+    persistTransaction(
+        new BigDecimal("-80.00"),
+        LocalDate.now(ZoneId.systemDefault()).withDayOfMonth(10),
+        coursesCategory);
 
     // Act
     EnvelopeResponse response = envelopeService.getEnvelope(envelope.getId(), USER_EMAIL);
@@ -436,9 +465,12 @@ class EnvelopeServiceTest {
   void status_at_exactly_100_percent_is_yellow_and_above_is_red() {
     // Arrange — BVA: ratio = 1.00 (inclusive upper bound of YELLOW)
     Envelope envelope =
-        persistEnvelope(testAccount, new BigDecimal("100.00"), RolloverPolicy.RESET, coursesCategory);
+        persistEnvelope(
+            testAccount, new BigDecimal("100.00"), RolloverPolicy.RESET, coursesCategory);
     persistTransaction(
-        new BigDecimal("-100.00"), LocalDate.now(ZoneId.systemDefault()).withDayOfMonth(10), coursesCategory);
+        new BigDecimal("-100.00"),
+        LocalDate.now(ZoneId.systemDefault()).withDayOfMonth(10),
+        coursesCategory);
 
     // Act
     EnvelopeResponse response = envelopeService.getEnvelope(envelope.getId(), USER_EMAIL);
@@ -452,9 +484,12 @@ class EnvelopeServiceTest {
   void status_above_100_percent_returns_red() {
     // Arrange — ratio > 1.00 strictly
     Envelope envelope =
-        persistEnvelope(testAccount, new BigDecimal("100.00"), RolloverPolicy.RESET, coursesCategory);
+        persistEnvelope(
+            testAccount, new BigDecimal("100.00"), RolloverPolicy.RESET, coursesCategory);
     persistTransaction(
-        new BigDecimal("-120.00"), LocalDate.now(ZoneId.systemDefault()).withDayOfMonth(10), coursesCategory);
+        new BigDecimal("-120.00"),
+        LocalDate.now(ZoneId.systemDefault()).withDayOfMonth(10),
+        coursesCategory);
 
     // Act
     EnvelopeResponse response = envelopeService.getEnvelope(envelope.getId(), USER_EMAIL);
@@ -481,13 +516,19 @@ class EnvelopeServiceTest {
   @Test
   void ratio_denominator_includes_carry_over_for_carry_over_envelopes() {
     // Arrange — D-13 literal: denominator = effectiveBudget + carryOver (not just budget)
-    // budget=100, prev consumed 40 -> carry=60; current consumed=90; allocatable=160; ratio=90/160=0.5625
+    // budget=100, prev consumed 40 -> carry=60; current consumed=90; allocatable=160;
+    // ratio=90/160=0.5625
     Envelope envelope =
         persistEnvelope(
             testAccount, new BigDecimal("100.00"), RolloverPolicy.CARRY_OVER, coursesCategory);
     persistTransaction(
-        new BigDecimal("-40.00"), LocalDate.now(ZoneId.systemDefault()).minusMonths(1).withDayOfMonth(15), coursesCategory);
-    persistTransaction(new BigDecimal("-90.00"), LocalDate.now(ZoneId.systemDefault()).withDayOfMonth(10), coursesCategory);
+        new BigDecimal("-40.00"),
+        LocalDate.now(ZoneId.systemDefault()).minusMonths(1).withDayOfMonth(15),
+        coursesCategory);
+    persistTransaction(
+        new BigDecimal("-90.00"),
+        LocalDate.now(ZoneId.systemDefault()).withDayOfMonth(10),
+        coursesCategory);
 
     // Act
     EnvelopeResponse response = envelopeService.getEnvelope(envelope.getId(), USER_EMAIL);
@@ -523,8 +564,7 @@ class EnvelopeServiceTest {
   @Test
   void create_envelope_on_shared_account_derives_scope_shared_and_owner_null() {
     // Arrange — second account, SHARED, same user has WRITE access
-    Account sharedAccount =
-        accountRepository.save(new Account("Compte Foyer", AccountType.SHARED));
+    Account sharedAccount = accountRepository.save(new Account("Compte Foyer", AccountType.SHARED));
     accountAccessRepository.save(new AccountAccess(testUser, sharedAccount, AccessLevel.WRITE));
     CreateEnvelopeRequest request =
         new CreateEnvelopeRequest(
@@ -563,7 +603,8 @@ class EnvelopeServiceTest {
   void update_envelope_can_keep_its_existing_categories_without_triggering_duplicate_check() {
     // Arrange — envelope linked to courses; PATCH keeps same category and changes name
     Envelope envelope =
-        persistEnvelope(testAccount, new BigDecimal("100.00"), RolloverPolicy.RESET, coursesCategory);
+        persistEnvelope(
+            testAccount, new BigDecimal("100.00"), RolloverPolicy.RESET, coursesCategory);
     UpdateEnvelopeRequest request =
         new UpdateEnvelopeRequest("Renamed", Set.of(coursesCategory.getId()), null, null);
 

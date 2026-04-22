@@ -63,8 +63,7 @@ public class EnvelopeController {
       @PathVariable UUID accountId,
       @RequestParam(name = "includeArchived", defaultValue = "false") boolean includeArchived,
       Principal principal) {
-    return envelopeService.listEnvelopesForAccount(
-        accountId, includeArchived, principal.getName());
+    return envelopeService.listEnvelopesForAccount(accountId, includeArchived, principal.getName());
   }
 
   // ------------------ Cross-account list ---------------------------
@@ -109,8 +108,7 @@ public class EnvelopeController {
   @GetMapping("/envelopes/{id}/history")
   public List<EnvelopeHistoryEntry> getHistory(
       @PathVariable UUID id,
-      @RequestParam(name = "month", required = false)
-          @DateTimeFormat(pattern = "yyyy-MM")
+      @RequestParam(name = "month", required = false) @DateTimeFormat(pattern = "yyyy-MM")
           YearMonth month,
       Principal principal) {
     YearMonth target = month != null ? month : YearMonth.now();

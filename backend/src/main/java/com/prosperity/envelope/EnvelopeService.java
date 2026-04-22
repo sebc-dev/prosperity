@@ -39,15 +39,15 @@ import org.springframework.transaction.annotation.Transactional;
  * consumed aggregation, lazy rollover formula (D-12, 1-month lookback + zero-clamp), status
  * computation (D-13 thresholds), and hard-vs-soft delete (D-18).
  *
- * <p>All public methods accept {@code userEmail} from the controller layer and never touch
- * {@code SecurityContextHolder} directly. Access control mirrors {@code TransactionService} and
- * {@code AccountService}: 404 before 403 via {@code existsById} check.
+ * <p>All public methods accept {@code userEmail} from the controller layer and never touch {@code
+ * SecurityContextHolder} directly. Access control mirrors {@code TransactionService} and {@code
+ * AccountService}: 404 before 403 via {@code existsById} check.
  *
  * <p><b>D-13 ratio denominator:</b> {@code ratio = consumed / (effectiveBudget + carryOver)} — the
  * literal denominator is the allocatable total for the period, not the post-consumption signed
- * remainder. For RESET envelopes {@code carryOver = 0} so the denominator collapses to
- * {@code effectiveBudget}. When the allocatable total is zero or negative the ratio is defined as
- * {@code 0} (drives status to GREEN — defensive).
+ * remainder. For RESET envelopes {@code carryOver = 0} so the denominator collapses to {@code
+ * effectiveBudget}. When the allocatable total is zero or negative the ratio is defined as {@code
+ * 0} (drives status to GREEN — defensive).
  */
 @Service
 public class EnvelopeService {
@@ -79,10 +79,10 @@ public class EnvelopeService {
   // ---------------------------------------------------------------------------
 
   /**
-   * Creates an envelope on an account. Scope is DERIVED server-side from the account's
-   * {@link AccountType} (Pitfall 4): SHARED account -> scope = SHARED, owner = null; PERSONAL
-   * account -> scope = PERSONAL, owner = current user. Enforces D-01 uniqueness of categories per
-   * envelope per account.
+   * Creates an envelope on an account. Scope is DERIVED server-side from the account's {@link
+   * AccountType} (Pitfall 4): SHARED account -> scope = SHARED, owner = null; PERSONAL account ->
+   * scope = PERSONAL, owner = current user. Enforces D-01 uniqueness of categories per envelope per
+   * account.
    *
    * @throws AccountNotFoundException if the account does not exist (404)
    * @throws AccountAccessDeniedException if the user has no WRITE access (403)
@@ -153,8 +153,8 @@ public class EnvelopeService {
   }
 
   /**
-   * Lists all envelopes accessible to the current user across every account. Archived envelopes
-   * are excluded by default; pass {@code includeArchived=true} to include them.
+   * Lists all envelopes accessible to the current user across every account. Archived envelopes are
+   * excluded by default; pass {@code includeArchived=true} to include them.
    */
   @Transactional(readOnly = true)
   public List<EnvelopeResponse> listAllEnvelopes(boolean includeArchived, String userEmail) {
@@ -249,10 +249,10 @@ public class EnvelopeService {
   }
 
   /**
-   * Returns a 12-month history ending at {@code monthInclusive} (i.e. months
-   * {@code [monthInclusive-11, monthInclusive]}). Each entry overlays monthly override (if any)
-   * onto the default budget and computes consumed/available/ratio/status using the same formulas
-   * as the current-month view.
+   * Returns a 12-month history ending at {@code monthInclusive} (i.e. months {@code
+   * [monthInclusive-11, monthInclusive]}). Each entry overlays monthly override (if any) onto the
+   * default budget and computes consumed/available/ratio/status using the same formulas as the
+   * current-month view.
    *
    * @throws EnvelopeNotFoundException if the envelope does not exist (404)
    * @throws AccountAccessDeniedException if the user has no READ access (403)
@@ -290,8 +290,7 @@ public class EnvelopeService {
     List<EnvelopeHistoryEntry> entries = new ArrayList<>(12);
     YearMonth cursor = from;
     for (int i = 0; i < 12; i++) {
-      BigDecimal effective =
-          overrideByMonth.getOrDefault(cursor, envelope.getBudget().amount());
+      BigDecimal effective = overrideByMonth.getOrDefault(cursor, envelope.getBudget().amount());
       BigDecimal consumed = consumedByMonth.getOrDefault(cursor, BigDecimal.ZERO);
       BigDecimal carry = computeCarryOver(envelope, cursor);
       BigDecimal allocatable = effective.add(carry);
@@ -419,8 +418,7 @@ public class EnvelopeService {
     if (loaded.size() != categoryIds.size()) {
       Set<UUID> foundIds =
           loaded.stream().map(Category::getId).collect(Collectors.toCollection(HashSet::new));
-      List<UUID> missing =
-          categoryIds.stream().filter(id -> !foundIds.contains(id)).toList();
+      List<UUID> missing = categoryIds.stream().filter(id -> !foundIds.contains(id)).toList();
       throw new CategoryNotFoundException("Categories introuvables : " + missing);
     }
     return new HashSet<>(loaded);

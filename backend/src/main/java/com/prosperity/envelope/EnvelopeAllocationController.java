@@ -99,7 +99,6 @@ public class EnvelopeAllocationController {
   @ExceptionHandler(DataIntegrityViolationException.class)
   @ResponseStatus(HttpStatus.CONFLICT)
   Map<String, String> handleDuplicate(DataIntegrityViolationException e) {
-    return Map.of(
-        "error", "Une personnalisation existe deja pour ce mois sur cette enveloppe");
+    return Map.of("error", "Une personnalisation existe deja pour ce mois sur cette enveloppe");
   }
 }

@@ -9,8 +9,8 @@ import java.util.UUID;
 
 /**
  * Envelope read DTO. All monetary fields are non-negative BigDecimals except {@code available},
- * which is signed (negative = overspent). The frontend uses {@code status} + {@code ratio}
- * directly (D-13 thresholds owned server-side).
+ * which is signed (negative = overspent). The frontend uses {@code status} + {@code ratio} directly
+ * (D-13 thresholds owned server-side).
  *
  * @param defaultBudget envelope's default monthly budget (Envelope.budget)
  * @param effectiveBudget budget actually applied this month (override if present, else default)

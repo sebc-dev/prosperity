@@ -15,10 +15,11 @@ import org.springframework.data.repository.query.Param;
 public interface EnvelopeRepository extends JpaRepository<Envelope, UUID> {
 
   /**
-   * Returns non-archived envelopes for a single account, accessible to the user.
-   * Used by GET /api/accounts/{accountId}/envelopes.
+   * Returns non-archived envelopes for a single account, accessible to the user. Used by GET
+   * /api/accounts/{accountId}/envelopes.
    */
-  @Query("""
+  @Query(
+      """
       SELECT DISTINCT e FROM Envelope e
       JOIN e.bankAccount ba
       JOIN AccountAccess aa ON aa.bankAccount = ba
@@ -32,10 +33,11 @@ public interface EnvelopeRepository extends JpaRepository<Envelope, UUID> {
       @Param("accountId") UUID accountId, @Param("userId") UUID userId);
 
   /**
-   * Returns all non-archived envelopes accessible to the user across every account they have
-   * access to. Used by GET /api/envelopes (no accountId filter).
+   * Returns all non-archived envelopes accessible to the user across every account they have access
+   * to. Used by GET /api/envelopes (no accountId filter).
    */
-  @Query("""
+  @Query(
+      """
       SELECT DISTINCT e FROM Envelope e
       JOIN e.bankAccount ba
       JOIN AccountAccess aa ON aa.bankAccount = ba
@@ -50,7 +52,8 @@ public interface EnvelopeRepository extends JpaRepository<Envelope, UUID> {
    * Returns ALL envelopes (including archived) accessible to the user, optionally filtered by
    * account. Used when the list page query parameter includeArchived=true is set.
    */
-  @Query("""
+  @Query(
+      """
       SELECT DISTINCT e FROM Envelope e
       JOIN e.bankAccount ba
       JOIN AccountAccess aa ON aa.bankAccount = ba
@@ -65,7 +68,8 @@ public interface EnvelopeRepository extends JpaRepository<Envelope, UUID> {
    * envelope on the given account. When updating an envelope, pass envelopeIdToExclude=its id so
    * the category is allowed to remain on the envelope being edited; pass null on create.
    */
-  @Query("""
+  @Query(
+      """
       SELECT COUNT(e) > 0 FROM Envelope e
       JOIN e.categories c
       WHERE e.bankAccount.id = :accountId
@@ -86,19 +90,21 @@ public interface EnvelopeRepository extends JpaRepository<Envelope, UUID> {
    * (Pitfall 7). Returns 0 when no matching transactions exist.
    *
    * <p><b>Split de-duplication (defensive):</b> the transactions branch of the UNION ALL excludes
-   * any transaction that has at least one row in transaction_splits — those are aggregated via
-   * the splits branch only. Phase 5 D-06 says split parents have {@code category_id = NULL} so
-   * they wouldn't match the IN clause anyway, but the NOT EXISTS guard makes the dedup independent
-   * of that convention (defensive against future import code that leaves both populated).
+   * any transaction that has at least one row in transaction_splits — those are aggregated via the
+   * splits branch only. Phase 5 D-06 says split parents have {@code category_id = NULL} so they
+   * wouldn't match the IN clause anyway, but the NOT EXISTS guard makes the dedup independent of
+   * that convention (defensive against future import code that leaves both populated).
    *
    * <p>Convention: consumed is returned as a NON-NEGATIVE BigDecimal (we negate the negative
    * amounts). A refund (positive amount) in a tracked category REDUCES consumed because we treat
-   * positive amounts symmetrically via -t.amount when t.amount &gt; 0 in the negation step. To
-   * keep semantics simple, this query SUMS only negative amounts and negates them — refunds are
+   * positive amounts symmetrically via -t.amount when t.amount &gt; 0 in the negation step. To keep
+   * semantics simple, this query SUMS only negative amounts and negates them — refunds are
    * documented as out of v1 scope (Open Question 1 in RESEARCH.md, planner default = filter
    * spending only).
    */
-  @Query(value = """
+  @Query(
+      value =
+          """
       WITH RECURSIVE envelope_cat_tree AS (
           SELECT c.id
           FROM envelope_categories ec
@@ -132,7 +138,8 @@ public interface EnvelopeRepository extends JpaRepository<Envelope, UUID> {
             AND t.transaction_date >= CAST(:monthStart AS date)
             AND t.transaction_date < CAST(:nextMonthStart AS date)
       ) spent
-      """, nativeQuery = true)
+      """,
+      nativeQuery = true)
   BigDecimal sumConsumedForMonth(
       @Param("envelopeId") UUID envelopeId,
       @Param("accountId") UUID accountId,
@@ -141,12 +148,14 @@ public interface EnvelopeRepository extends JpaRepository<Envelope, UUID> {
 
   /**
    * Returns 12 month-buckets of consumption between [from, to). Each row: [month_start (date),
-   * consumed (numeric)]. Months without transactions in linked categories return consumed = 0
-   * (LEFT JOIN preserves the bucket from generate_series). Used for the Envelope Details page
-   * 12-month history table (ENVL-06). Same NOT EXISTS dedup as sumConsumedForMonth (split parents
-   * counted only via the splits branch).
+   * consumed (numeric)]. Months without transactions in linked categories return consumed = 0 (LEFT
+   * JOIN preserves the bucket from generate_series). Used for the Envelope Details page 12-month
+   * history table (ENVL-06). Same NOT EXISTS dedup as sumConsumedForMonth (split parents counted
+   * only via the splits branch).
    */
-  @Query(value = """
+  @Query(
+      value =
+          """
       WITH RECURSIVE envelope_cat_tree AS (
           SELECT c.id
           FROM envelope_categories ec
@@ -197,16 +206,20 @@ public interface EnvelopeRepository extends JpaRepository<Envelope, UUID> {
       LEFT JOIN monthly_direct d ON d.month_start = m.month_start
       LEFT JOIN monthly_splits s ON s.month_start = m.month_start
       ORDER BY m.month_start
-      """, nativeQuery = true)
+      """,
+      nativeQuery = true)
   List<Object[]> findMonthlyConsumptionRange(
       @Param("envelopeId") UUID envelopeId,
       @Param("accountId") UUID accountId,
       @Param("from") LocalDate from,
       @Param("to") LocalDate to);
 
-  /** Returns true when at least one EnvelopeAllocation exists for this envelope. Used to decide
-   * hard-delete vs soft-delete (D-18). */
-  @Query("""
+  /**
+   * Returns true when at least one EnvelopeAllocation exists for this envelope. Used to decide
+   * hard-delete vs soft-delete (D-18).
+   */
+  @Query(
+      """
       SELECT COUNT(ea) > 0 FROM EnvelopeAllocation ea
       WHERE ea.envelope.id = :envelopeId
       """)

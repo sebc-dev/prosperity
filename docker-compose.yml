@@ -25,6 +25,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/prosperity
       SPRING_DATASOURCE_USERNAME: prosperity
       SPRING_DATASOURCE_PASSWORD: prosperity
+      SPRING_PROFILES_ACTIVE: dev
     depends_on:
       db:
         condition: service_healthy

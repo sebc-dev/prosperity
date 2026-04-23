@@ -28,7 +28,11 @@ public class SecurityConfig {
   /** Configures the security filter chain with CSRF SPA mode and endpoint authorization. */
   @Bean
   public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-    http.csrf(csrf -> csrf.spa().ignoringRequestMatchers("/api/auth/login", "/api/auth/setup"))
+    http.csrf(
+            csrf ->
+                csrf.spa()
+                    .ignoringRequestMatchers(
+                        "/api/auth/login", "/api/auth/setup", "/api/dev/**"))
         .authorizeHttpRequests(
             auth ->
                 auth.requestMatchers("/api/auth/login", "/api/auth/setup", "/api/auth/status")
@@ -36,6 +40,8 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.GET, "/api/auth/me")
                     .permitAll()
                     .requestMatchers("/actuator/health")
+                    .permitAll()
+                    .requestMatchers("/api/dev/**")
                     .permitAll()
                     .anyRequest()
                     .authenticated())

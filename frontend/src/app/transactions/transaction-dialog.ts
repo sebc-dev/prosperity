@@ -43,6 +43,7 @@ import { TransactionResponse } from './transaction.types';
       [header]="dialogHeader()"
       [visible]="true"
       (onHide)="cancelled.emit()"
+      (visibleChange)="!$event && cancelled.emit()"
       [modal]="true"
       [closable]="true"
       [draggable]="false"

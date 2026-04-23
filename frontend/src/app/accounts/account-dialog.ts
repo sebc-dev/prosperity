@@ -37,6 +37,7 @@ import { AccountResponse, AccountType } from './account.types';
       [header]="dialogHeader()"
       [visible]="visible()"
       (onHide)="onHide()"
+      (visibleChange)="!$event && onHide()"
       [modal]="true"
       [closable]="true"
       [draggable]="false"

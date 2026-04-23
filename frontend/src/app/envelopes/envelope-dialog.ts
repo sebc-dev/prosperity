@@ -57,6 +57,7 @@ type DialogMode = 'create' | 'edit';
       [draggable]="false"
       [style]="{ width: '36rem' }"
       (onHide)="cancelled.emit()"
+      (visibleChange)="!$event && cancelled.emit()"
     >
       <div class="flex flex-col gap-4 p-6">
         <!-- Compte -->

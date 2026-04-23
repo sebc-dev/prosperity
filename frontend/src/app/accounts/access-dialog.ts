@@ -38,6 +38,7 @@ import { UserResponse } from '../auth/auth.types';
       [header]="'Gerer les acces — ' + (account()?.name ?? '')"
       [visible]="visible()"
       (onHide)="visibleChange.emit(false)"
+      (visibleChange)="!$event && visibleChange.emit(false)"
       [modal]="true"
       [closable]="true"
       [draggable]="false"

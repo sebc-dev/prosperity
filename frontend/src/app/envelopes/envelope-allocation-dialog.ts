@@ -53,6 +53,7 @@ import {
       [draggable]="false"
       [style]="{ width: '36rem' }"
       (onHide)="cancelled.emit()"
+      (visibleChange)="!$event && cancelled.emit()"
     >
       <div class="flex flex-col gap-4 p-6">
         @if (envelope(); as env) {
@@ -63,7 +64,8 @@ import {
         <p-floatlabel variant="on">
           <p-datepicker
             inputId="overrideMonth"
-            [(ngModel)]="month"
+            [ngModel]="month()"
+            (ngModelChange)="month.set($event)"
             view="month"
             dateFormat="mm/yy"
             [showIcon]="true"
@@ -75,7 +77,8 @@ import {
         <p-floatlabel variant="on">
           <p-inputnumber
             inputId="overrideAmount"
-            [(ngModel)]="allocatedAmount"
+            [ngModel]="allocatedAmount()"
+            (ngModelChange)="allocatedAmount.set($event)"
             mode="currency"
             currency="EUR"
             locale="fr-FR"
@@ -161,6 +164,7 @@ import {
             [loading]="submitting()"
             [disabled]="!isValid() || submitting()"
             (onClick)="save()"
+            data-testid="save-allocation-button"
           />
         </div>
       </ng-template>
@@ -175,13 +179,14 @@ export class EnvelopeAllocationDialog {
 
   saved = output<EnvelopeAllocationResponse>();
   cancelled = output<void>();
+  allocationDeleted = output<void>();
 
   private readonly envelopeService = inject(EnvelopeService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
 
-  protected month: Date = new Date();
-  protected allocatedAmount: number | null = null;
+  protected readonly month = signal<Date>(this.firstOfCurrentMonth());
+  protected readonly allocatedAmount = signal<number | null>(null);
 
   protected readonly submitting = signal<boolean>(false);
   protected readonly error = signal<string | null>(null);
@@ -192,12 +197,17 @@ export class EnvelopeAllocationDialog {
 
   protected readonly envelopeId = computed(() => this.envelope()?.id ?? null);
 
+  protected readonly isValid = computed(() => {
+    const amount = this.allocatedAmount();
+    return amount !== null && amount >= 0;
+  });
+
   constructor() {
     // Reset + reload whenever envelope input changes.
     effect(() => {
       const env = this.envelope();
-      this.month = this.firstOfCurrentMonth();
-      this.allocatedAmount = null;
+      this.month.set(this.firstOfCurrentMonth());
+      this.allocatedAmount.set(null);
       this.editingAllocation.set(null);
       this.error.set(null);
       if (env) {
@@ -206,10 +216,6 @@ export class EnvelopeAllocationDialog {
         this.existingAllocations.set([]);
       }
     });
-  }
-
-  protected isValid(): boolean {
-    return this.allocatedAmount !== null && this.allocatedAmount >= 0;
   }
 
   protected save(): void {
@@ -223,8 +229,8 @@ export class EnvelopeAllocationDialog {
 
     const editing = this.editingAllocation();
     const request = {
-      month: this.monthToIsoString(this.month),
-      allocatedAmount: this.allocatedAmount!,
+      month: this.monthToIsoString(this.month()),
+      allocatedAmount: this.allocatedAmount()!,
     };
 
     const obs$ = editing
@@ -259,8 +265,8 @@ export class EnvelopeAllocationDialog {
 
   protected loadIntoForm(allocation: EnvelopeAllocationResponse): void {
     this.editingAllocation.set(allocation);
-    this.month = this.parseMonth(allocation.month);
-    this.allocatedAmount = allocation.allocatedAmount;
+    this.month.set(this.parseMonth(allocation.month));
+    this.allocatedAmount.set(allocation.allocatedAmount);
   }
 
   protected confirmDelete(allocation: EnvelopeAllocationResponse): void {
@@ -281,8 +287,10 @@ export class EnvelopeAllocationDialog {
               if (env) this.loadAllocations(env.id);
               if (this.editingAllocation()?.id === allocation.id) {
                 this.editingAllocation.set(null);
-                this.allocatedAmount = null;
+                this.allocatedAmount.set(null);
+                this.month.set(this.firstOfCurrentMonth());
               }
+              this.allocationDeleted.emit();
             },
             error: () =>
               this.error.set(

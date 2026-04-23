@@ -81,7 +81,7 @@ describe('EnvelopeAllocationDialog', () => {
     httpMock.expectOne('/api/envelopes/env-1/allocations').flush([]);
 
     // Assert
-    const month = fixture.componentInstance['month'] as Date;
+    const month = fixture.componentInstance['month']();
     const now = new Date();
     expect(month.getMonth()).toBe(now.getMonth());
     expect(month.getFullYear()).toBe(now.getFullYear());
@@ -92,7 +92,7 @@ describe('EnvelopeAllocationDialog', () => {
     const { fixture, httpMock: mock } = setupDialog(makeEnvelope());
     httpMock = mock;
     httpMock.expectOne('/api/envelopes/env-1/allocations').flush([]);
-    fixture.componentInstance['allocatedAmount'] = null;
+    fixture.componentInstance['allocatedAmount'].set(null);
 
     // Act
     const isValid = fixture.componentInstance['isValid']();
@@ -106,8 +106,8 @@ describe('EnvelopeAllocationDialog', () => {
     const { fixture, httpMock: mock } = setupDialog(makeEnvelope());
     httpMock = mock;
     httpMock.expectOne('/api/envelopes/env-1/allocations').flush([]);
-    fixture.componentInstance['allocatedAmount'] = 800;
-    fixture.componentInstance['month'] = new Date(2026, 3, 1); // April 2026
+    fixture.componentInstance['allocatedAmount'].set(800);
+    fixture.componentInstance['month'].set(new Date(2026, 3, 1)); // April 2026
     let emitted: EnvelopeAllocationResponse | null = null;
     fixture.componentInstance.saved.subscribe((a) => (emitted = a));
 
@@ -127,8 +127,8 @@ describe('EnvelopeAllocationDialog', () => {
     const { fixture, httpMock: mock } = setupDialog(makeEnvelope());
     httpMock = mock;
     httpMock.expectOne('/api/envelopes/env-1/allocations').flush([]);
-    fixture.componentInstance['allocatedAmount'] = 800;
-    fixture.componentInstance['month'] = new Date(2026, 3, 1);
+    fixture.componentInstance['allocatedAmount'].set(800);
+    fixture.componentInstance['month'].set(new Date(2026, 3, 1));
 
     // Act
     fixture.componentInstance['save']();

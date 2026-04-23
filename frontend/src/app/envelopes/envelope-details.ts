@@ -228,6 +228,7 @@ import { EnvelopeAllocationDialog } from './envelope-allocation-dialog';
             [visible]="true"
             [envelope]="env"
             (saved)="onAllocationSaved()"
+            (allocationDeleted)="onAllocationChanged()"
             (cancelled)="showAllocationDialog.set(false)"
           />
         }
@@ -334,6 +335,11 @@ export class EnvelopeDetailsPage {
 
   protected onAllocationSaved(): void {
     this.showAllocationDialog.set(false);
+    const env = this.envelope();
+    if (env) this.loadDetails(env.id);
+  }
+
+  protected onAllocationChanged(): void {
     const env = this.envelope();
     if (env) this.loadDetails(env.id);
   }

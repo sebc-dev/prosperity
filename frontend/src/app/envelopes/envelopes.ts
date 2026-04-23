@@ -331,6 +331,7 @@ interface AccountOption {
           [visible]="true"
           [envelope]="allocationEnvelope()"
           (saved)="onAllocationSaved()"
+          (allocationDeleted)="onAllocationChanged()"
           (cancelled)="closeAllocationDialog()"
         />
       }
@@ -535,6 +536,10 @@ export class EnvelopesPage {
 
   protected onAllocationSaved(): void {
     this.closeAllocationDialog();
+    this.loadEnvelopes();
+  }
+
+  protected onAllocationChanged(): void {
     this.loadEnvelopes();
   }
 

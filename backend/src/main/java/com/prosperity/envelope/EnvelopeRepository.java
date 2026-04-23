@@ -20,7 +20,7 @@ public interface EnvelopeRepository extends JpaRepository<Envelope, UUID> {
    */
   @Query(
       """
-      SELECT DISTINCT e FROM Envelope e
+      SELECT e FROM Envelope e
       JOIN e.bankAccount ba
       JOIN AccountAccess aa ON aa.bankAccount = ba
       WHERE aa.user.id = :userId
@@ -38,7 +38,7 @@ public interface EnvelopeRepository extends JpaRepository<Envelope, UUID> {
    */
   @Query(
       """
-      SELECT DISTINCT e FROM Envelope e
+      SELECT e FROM Envelope e
       JOIN e.bankAccount ba
       JOIN AccountAccess aa ON aa.bankAccount = ba
       WHERE aa.user.id = :userId
@@ -54,7 +54,7 @@ public interface EnvelopeRepository extends JpaRepository<Envelope, UUID> {
    */
   @Query(
       """
-      SELECT DISTINCT e FROM Envelope e
+      SELECT e FROM Envelope e
       JOIN e.bankAccount ba
       JOIN AccountAccess aa ON aa.bankAccount = ba
       WHERE aa.user.id = :userId

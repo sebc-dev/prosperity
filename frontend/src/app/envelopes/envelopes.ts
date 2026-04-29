@@ -104,9 +104,9 @@ interface AccountOption {
               <p-toggleswitch
                 [(ngModel)]="includeArchived"
                 inputId="includeArchived"
-                (onChange)="onFiltersChanged()"
+                (onChange)="onArchivedToggleChange($event)"
               />
-              <label for="includeArchived" class="ml-2">Afficher les archivees</label>
+              <label for="includeArchived" class="ml-2 text-color">Afficher les archivees</label>
             </div>
           </div>
         </div>
@@ -483,6 +483,11 @@ export class EnvelopesPage {
       },
       queryParamsHandling: 'merge',
     });
+  }
+
+  protected onArchivedToggleChange(event: { checked: boolean }): void {
+    this.includeArchived = event.checked;
+    this.onFiltersChanged();
   }
 
   protected onFilterAccountCleared(): void {

@@ -1,0 +1,169 @@
+{
+  "type": "followup",
+  "round": 2,
+  "branch": "feat/archunit-architecture-tests",
+  "base": "main",
+  "merge_base": "9d84c9dbbf2f40ab83b12bcbce8dcfbefe6496ca",
+  "previous_head": "af7010135db7e9d3da0dcd1f950b6f47c3731030",
+  "previous_session": ".claude/review/sessions/archunit-20260405.json",
+  "created_at": "2026-04-05T00:00:00Z",
+  "status": "completed",
+  "summary": {
+    "total_files": 4,
+    "completed": 4,
+    "resolved": 4,
+    "partially_resolved": 0,
+    "unresolved": 0,
+    "new_green": 8,
+    "new_yellow": 10,
+    "new_red": 0
+  },
+  "files": [
+    {
+      "index": 1,
+      "path": "backend/src/main/java/com/prosperity/auth/AuthController.java",
+      "category": "controllers-api",
+      "review_type": "new",
+      "original_note": "Refactoring issu de OBS-001 : AuthController dépendait directement de UserRepository, violation de l'architecture layered",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [],
+      "original_comments": [
+        "Correction de OBS-001 : injection de AuthService au lieu de UserRepository"
+      ],
+      "status": "completed",
+      "resolution": "resolved",
+      "green": 1,
+      "yellow": 1,
+      "red": 0,
+      "note": "UserNotFoundException handler ajouté, @ExceptionHandler retournant HTTP 404"
+    },
+    {
+      "index": 2,
+      "path": "backend/src/main/java/com/prosperity/auth/AuthService.java",
+      "category": "business-logic",
+      "review_type": "new",
+      "original_note": "Refactoring issu de OBS-001 : AuthService doit désormais exposer findUserResponseByEmail() et listAllUsers() pour satisfaire les controllers",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [],
+      "original_comments": [
+        "Correction de OBS-001 : nouvelles méthodes ajoutées dans AuthService"
+      ],
+      "status": "completed",
+      "resolution": "resolved",
+      "green": 1,
+      "yellow": 2,
+      "red": 0,
+      "note": "toUserResponse() passé private, @Transactional(readOnly=true) ajouté, 4 tests unitaires ajoutés dans AuthServiceTest"
+    },
+    {
+      "index": 3,
+      "path": "backend/src/main/java/com/prosperity/auth/UserController.java",
+      "category": "controllers-api",
+      "review_type": "new",
+      "original_note": "Refactoring issu de OBS-001 : UserController dépendait directement de UserRepository, violation de l'architecture layered",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 0,
+      "original_red": 0,
+      "original_observations": [],
+      "original_comments": [
+        "Correction de OBS-001 : injection de AuthService au lieu de UserRepository"
+      ],
+      "status": "completed",
+      "resolution": "resolved",
+      "green": 2,
+      "yellow": 3,
+      "red": 0,
+      "note": "Correction OBS-001 appliquée proprement, 0 bloquant"
+    },
+    {
+      "index": 4,
+      "path": "backend/src/test/java/com/prosperity/architecture/ArchitectureTest.java",
+      "category": "tests",
+      "review_type": "new",
+      "original_note": "3 observations appliquées dont OBS-001 nécessitant escalation humaine (Option A : refactoring production). Règle ArchUnit désormais universelle avec DescribedPredicate pour éviter faux positifs Spring Security. 92/92 tests passent.",
+      "original_blocking": 0,
+      "original_green": 0,
+      "original_yellow": 4,
+      "original_red": 0,
+      "original_observations": [
+        {
+          "id": "OBS-001",
+          "criterion": "architecture",
+          "severity": "suggestion",
+          "level": "yellow",
+          "line_start": 59,
+          "line_end": 71,
+          "text": "Exclusion auth dans controllersShouldNotDependOnRepositories masquait une violation réelle — AuthController et UserController dépendaient directement de UserRepository",
+          "correction_prompt": "Remove .and().resideOutsideOfPackage('com.prosperity.auth..') clause. Refactor AuthController and UserController to inject AuthService instead of UserRepository. Add findUserResponseByEmail() and listAllUsers() to AuthService. Restrict rule target to com.prosperity.. to avoid false positives on HttpSessionSecurityContextRepository.",
+          "verdict": "apply",
+          "verdict_reason": "Violation réelle confirmée. Refactoring production + correction règle ArchUnit. AuthController et UserController ne dépendent plus de UserRepository. Règle universelle avec DescribedPredicate restreignant la cible à com.prosperity.. APPLIED."
+        },
+        {
+          "id": "OBS-002",
+          "criterion": "architecture",
+          "severity": "suggestion",
+          "level": "yellow",
+          "line_start": 73,
+          "line_end": 86,
+          "text": "Filtre .and().resideInAnyPackage('com.prosperity..') redondant sur sujet de repositoriesShouldNotDependOnControllersOrServices — no-op vu @AnalyzeClasses(packages='com.prosperity')",
+          "correction_prompt": "Remove the .and().resideInAnyPackage('com.prosperity..') clause from the subject filter.",
+          "verdict": "apply",
+          "verdict_reason": "No-op confirmé, suppression chirurgicale d'1 ligne sans impact comportemental. APPLIED."
+        },
+        {
+          "id": "OBS-003",
+          "criterion": "architecture",
+          "severity": "suggestion",
+          "level": "yellow",
+          "line_start": 88,
+          "line_end": 100,
+          "text": "banking absent de la liste interdite dans authShouldNotDependOnFeaturePackages — asymétrie avec bankingShouldNotDependOnFeaturePackages qui inclut auth",
+          "correction_prompt": "Add 'com.prosperity.banking..' to resideInAnyPackage(...) list in authShouldNotDependOnFeaturePackages.",
+          "verdict": "apply",
+          "verdict_reason": "Asymétrie réelle, aucune dépendance production à refactoriser, fix d'1 ligne. APPLIED."
+        },
+        {
+          "id": "OBS-004",
+          "criterion": "test-coverage",
+          "severity": "suggestion",
+          "level": "yellow",
+          "line_start": 143,
+          "line_end": 152,
+          "text": "repositoriesShouldBeInterfaces fragile face aux *RepositoryImpl custom Spring Data",
+          "correction_prompt": "Add .and().haveSimpleNameNotEndingWith('Impl') exclusion.",
+          "verdict": "skip",
+          "verdict_reason": "Aucun *RepositoryImpl en production actuellement, spéculation hors périmètre du diff."
+        },
+        {
+          "id": "OBS-005",
+          "criterion": "test-coverage",
+          "severity": "suggestion",
+          "level": "yellow",
+          "line_start": 119,
+          "line_end": 128,
+          "text": "controllersShouldBeAnnotatedWithRestController trop large si @ControllerAdvice nommé *Controller",
+          "correction_prompt": "Add .and().areNotAnnotatedWith(@ControllerAdvice) exclusion.",
+          "verdict": "skip",
+          "verdict_reason": "Aucun @ControllerAdvice nommé *Controller, correction prématurée."
+        }
+      ],
+      "original_comments": [],
+      "status": "completed",
+      "resolution": "resolved",
+      "green": 4,
+      "yellow": 4,
+      "red": 0,
+      "note": "OBS-001/002/003 appliqués, 10/10 tests passent"
+    }
+  ],
+  "agent_tasks": {},
+  "user_comments": [],
+  "head_at_completion": "af7010135db7e9d3da0dcd1f950b6f47c3731030"
+}

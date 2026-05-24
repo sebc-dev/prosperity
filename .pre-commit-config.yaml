@@ -1,0 +1,33 @@
+# Local hooks delegated to uv-managed tools so versions stay pinned in
+# pyproject.toml / uv.lock (single source of truth, no drift with mirrors).
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --force-exclude --fix
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format --force-exclude
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+
+      - id: pyright
+        name: pyright (strict)
+        entry: uv run pyright
+        language: system
+        types: [python]
+        pass_filenames: false
+        require_serial: true
+
+      - id: pytest-modified
+        name: pytest (modified test files)
+        entry: uv run pytest
+        language: system
+        files: ^tests/.*\.py$
+        require_serial: true

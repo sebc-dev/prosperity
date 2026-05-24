@@ -15,3 +15,16 @@ layers =
     backend.modules.accounts
     backend.modules.auth
     backend.shared
+
+[importlinter:contract:2]
+name = Only public surface importable cross-module
+type = forbidden
+source_modules =
+    backend.modules.*
+forbidden_modules =
+    backend.modules.*.service
+    backend.modules.*.models
+    backend.modules.*.domain
+    backend.modules.*.repository
+    backend.modules.*.transports
+    backend.modules.*.handlers

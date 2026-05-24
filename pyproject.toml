@@ -1,0 +1,9 @@
+[project]
+name = "prosperity"
+version = "0.1.0"
+description = "Application de gestion des finances personnelles auto-hébergée pour un foyer."
+requires-python = ">=3.13,<3.14"
+dependencies = []
+
+[tool.uv]
+package = false

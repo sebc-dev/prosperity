@@ -18,6 +18,8 @@ dev = [
     "sqlalchemy>=2.0.49",
     "asyncpg>=0.31.0",
     "factory-boy>=3.3.3",
+    "coverage>=7.14.0",
+    "pytest-cov>=7.1.0",
 ]
 
 [tool.uv]
@@ -27,3 +29,19 @@ package = false
 pythonpath = ["."]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["backend"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"

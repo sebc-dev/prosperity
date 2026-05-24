@@ -28,3 +28,45 @@ forbidden_modules =
     backend.modules.*.repository
     backend.modules.*.transports
     backend.modules.*.handlers
+
+[importlinter:contract:3]
+name = shared imports nothing of modules
+type = forbidden
+source_modules =
+    backend.shared
+forbidden_modules =
+    backend.modules.*
+
+# Reader/provider split (ADR 0009): only banking.service.polling drives the
+# external BankingProvider; the rest of the codebase consumes BankingReader via
+# banking.public. banking.public itself re-exports the BankingProvider type
+# (for typing in polling), which is also whitelisted.
+[importlinter:contract:4]
+name = BankingProvider used only by polling
+type = forbidden
+source_modules =
+    backend
+forbidden_modules =
+    backend.modules.banking.providers
+ignore_imports =
+    backend.modules.banking.service.polling -> backend.modules.banking.providers
+    backend.modules.banking.public -> backend.modules.banking.providers
+unmatched_ignore_imports_alerting = none
+
+[importlinter:contract:5]
+name = MCP module is consumer-only
+type = forbidden
+source_modules =
+    backend.modules.auth
+    backend.modules.accounts
+    backend.modules.transactions
+    backend.modules.budget
+    backend.modules.banking
+    backend.modules.reconciliation
+    backend.modules.forecasting
+    backend.modules.debts
+    backend.modules.notifications
+    backend.modules.savings
+    backend.modules.sync
+forbidden_modules =
+    backend.modules.mcp

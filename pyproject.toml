@@ -23,6 +23,7 @@ dev = [
     "pyright>=1.1.405",
     "ruff>=0.14.0",
     "pre-commit>=4.0",
+    "import-linter>=2.3",
 ]
 
 [tool.uv]

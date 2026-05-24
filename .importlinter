@@ -1,0 +1,17 @@
+# Materialises ADR 0005 (directional import graph + public surface per module)
+# via 5 import-linter contracts. See docs/Stratégie de tests.md §4.3.
+
+[importlinter]
+root_package = backend
+
+[importlinter:contract:1]
+name = Directional graph respected
+type = layers
+layers =
+    backend.modules.mcp
+    backend.modules.sync
+    backend.modules.reconciliation | backend.modules.forecasting | backend.modules.debts | backend.modules.notifications
+    backend.modules.banking | backend.modules.transactions | backend.modules.budget
+    backend.modules.accounts
+    backend.modules.auth
+    backend.shared

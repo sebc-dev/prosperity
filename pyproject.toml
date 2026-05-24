@@ -20,6 +20,9 @@ dev = [
     "factory-boy>=3.3.3",
     "coverage>=7.14.0",
     "pytest-cov>=7.1.0",
+    "pyright>=1.1.405",
+    "ruff>=0.14.0",
+    "pre-commit>=4.0",
 ]
 
 [tool.uv]
@@ -45,3 +48,43 @@ exclude_lines = [
 
 [tool.coverage.html]
 directory = "htmlcov"
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = [".venv", "htmlcov", ".hypothesis", ".pytest_cache"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "PL"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["PLR2004"]  # allow magic numbers (e.g. status codes, sample counts) in tests
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# Type checker: pyright (cf. P01.3.1) — faster than mypy and better Pydantic v2 support.
+# Strict on backend/ (production surface); standard on tests/ where third-party
+# libs without stubs (testcontainers, factory_boy) would otherwise drown signal.
+[tool.pyright]
+include = ["backend", "tests"]
+exclude = ["**/__pycache__", ".venv", "htmlcov", ".hypothesis", ".pytest_cache"]
+pythonVersion = "3.13"
+pythonPlatform = "Linux"
+typeCheckingMode = "strict"
+extraPaths = ["."]
+reportMissingImports = "error"
+reportMissingTypeStubs = "warning"
+useLibraryCodeForTypes = true
+venvPath = "."
+venv = ".venv"
+
+[[tool.pyright.executionEnvironments]]
+root = "tests"
+reportMissingTypeStubs = "none"
+reportUnknownMemberType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownVariableType = "none"
+reportUnknownParameterType = "none"
+reportMissingParameterType = "none"

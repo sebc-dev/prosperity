@@ -25,6 +25,14 @@ repos:
         pass_filenames: false
         require_serial: true
 
+      - id: import-linter
+        name: import-linter (5 contracts, ADR 0005)
+        entry: uv run lint-imports
+        language: system
+        types: [python]
+        pass_filenames: false
+        require_serial: true
+
       - id: pytest-modified
         name: pytest (modified test files)
         entry: uv run pytest

@@ -15,6 +15,7 @@ uv run pre-commit install     # enable git hooks (ruff, pyright, pytest)
 uv run ruff check .           # lint
 uv run ruff format --check .  # format check
 uv run pyright                # strict type check
+uv run lint-imports           # architecture (5 import-linter contracts, ADR 0005)
 uv run pytest                 # tests (add --cov for coverage)
 uv run pre-commit run --all-files
 ```

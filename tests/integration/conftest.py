@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Iterator
 
+import docker
 import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -23,8 +24,6 @@ from testcontainers.postgres import PostgresContainer
 
 def _docker_available() -> bool:
     try:
-        import docker
-
         docker.from_env().ping()
     except Exception:
         return False

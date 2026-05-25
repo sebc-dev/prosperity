@@ -37,6 +37,21 @@ class Settings(BaseSettings):
         description="Async SQLAlchemy DSN. Override via DATABASE_URL.",
     )
 
+    # --- JWT (auth module — see story S02.2 / docs/roadmap/E02-auth-foundations.md) ---
+    # Dev-only defaults: override via JWT_* env vars in any non-dev environment.
+    jwt_secret: str = Field(
+        default="dev-secret-change-me",
+        description="HS256 signing key — must be overridden in prod via JWT_SECRET.",
+    )
+    jwt_algorithm: str = Field(
+        default="HS256",
+        description="JWT signing algorithm. Override via JWT_ALGORITHM.",
+    )
+    jwt_access_ttl_seconds: int = Field(
+        default=900,
+        description="Access-token lifetime in seconds (15 minutes — see roadmap E02).",
+    )
+
     @model_validator(mode="after")
     def _forbid_dev_default_in_prod(self) -> Settings:
         # Catches the "prod instance booted without DATABASE_URL" footgun:

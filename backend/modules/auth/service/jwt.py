@@ -1,0 +1,70 @@
+"""JWT issuance and verification helpers (story S02.2).
+
+Internal to the auth module: cross-module callers must import the public
+surface from `backend.modules.auth.public` instead.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from typing import Any
+from uuid import UUID
+
+from jose import ExpiredSignatureError, JWTError, jwt
+
+from backend.config import get_settings
+
+
+class InvalidTokenError(Exception):
+    """Raised when a token fails verification (bad signature, malformed, etc.)."""
+
+
+class ExpiredTokenError(InvalidTokenError):
+    """Raised when a token's `exp` claim is in the past.
+
+    Subclasses `InvalidTokenError` so broad `except InvalidTokenError`
+    handlers also catch expirations.
+    """
+
+
+def issue_access_token(user_id: UUID) -> str:
+    """Issue a signed HS256 access JWT for `user_id`.
+
+    The payload contains `sub` (stringified UUID), `iat`, and `exp` claims
+    (exp = iat + `settings.jwt_access_ttl_seconds`).
+    """
+    settings = get_settings()
+    now = datetime.now(tz=UTC)
+    payload: dict[str, Any] = {
+        "sub": str(user_id),
+        "iat": now,
+        "exp": now + timedelta(seconds=settings.jwt_access_ttl_seconds),
+    }
+    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def verify_access_token(token: str) -> UUID:
+    """Verify `token` and return the `user_id` from its `sub` claim.
+
+    Raises:
+        ExpiredTokenError: when the token's `exp` claim is in the past.
+        InvalidTokenError: on bad signature, malformed token, or missing/
+            malformed `sub` claim.
+    """
+    settings = get_settings()
+    try:
+        payload: dict[str, Any] = jwt.decode(
+            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
+        )
+    except ExpiredSignatureError as exc:
+        raise ExpiredTokenError("Access token has expired") from exc
+    except JWTError as exc:
+        raise InvalidTokenError("Access token is invalid") from exc
+
+    sub = payload.get("sub")
+    if not isinstance(sub, str):
+        raise InvalidTokenError("Access token has no valid 'sub' claim")
+    try:
+        return UUID(sub)
+    except ValueError as exc:
+        raise InvalidTokenError("Access token 'sub' is not a valid UUID") from exc

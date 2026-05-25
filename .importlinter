@@ -16,15 +16,6 @@ layers =
     backend.modules.auth
     backend.shared
 
-# Contract #2 enumerates source modules explicitly rather than using
-# `backend.modules.*`. Reason: import-linter's `forbidden` contract refuses to
-# compute chains when a source and a forbidden module share descendants — e.g.
-# source `backend.modules.auth` and forbidden `backend.modules.auth.service`
-# (the latter is a descendant of the former). With the wildcard source, every
-# module that grows internal subpackages would trip that check. Sources omit
-# any module that owns matching internal subpackages; for those modules,
-# contract #1 (layers) already prevents reaching other modules' internals, and
-# their own internals can legitimately be reached from their own `public.py`.
 [importlinter:contract:2]
 name = Only public surface importable cross-module (non-auth sources)
 type = forbidden

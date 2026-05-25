@@ -4,8 +4,10 @@ DSN flows from `backend.config.get_settings()` (which reads `DATABASE_URL`
 via pydantic-settings) unless an explicit `sqlalchemy.url` is already set
 on the `Config` object — tests inject the testcontainers DSN that way.
 
-`target_metadata` stays `None` until module-shipped models register a
-shared `MetaData` here. The baseline migration is intentionally empty.
+`target_metadata` aggregates the `MetaData` of every module that ships
+ORM models. The auth module is the first contributor (S02.1). Future
+modules append their own `Base.metadata` here; env.py is outside the
+`backend` import-linter root so the import is not policed.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 from backend.config import get_settings
+from backend.modules.auth.models import Base as AuthBase
 
 config = context.config
 
@@ -28,7 +31,7 @@ if config.config_file_name is not None:
 if not config.get_main_option("sqlalchemy.url"):
     config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
-target_metadata = None
+target_metadata = AuthBase.metadata
 
 
 def run_migrations_offline() -> None:

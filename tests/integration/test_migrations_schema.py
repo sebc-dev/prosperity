@@ -42,8 +42,7 @@ def _schema_snapshot(sync_dsn: str) -> str:
 
 def test_baseline_migration_round_trip(postgres_container: PostgresContainer) -> None:
     async_dsn = postgres_container.get_connection_url()
-    # Reflection runs synchronously via psycopg2; testcontainers[postgres]
-    # ships psycopg2-binary as a transitive dep.
+    # Reflection runs synchronously via psycopg2-binary (declared as dev dep).
     sync_dsn = async_dsn.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
 
     cfg = _alembic_config(async_dsn)

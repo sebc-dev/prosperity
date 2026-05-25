@@ -1,1 +1,2 @@
 alembic_version: version_num
+users: id, email, password_hash, display_name, role, created_at, disabled_at

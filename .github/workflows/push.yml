@@ -1,0 +1,76 @@
+name: push
+
+# Mirrors docs/Stratégie de tests §9.2: parallel jobs, target < 5 min total.
+# Triggers on every push and PR so feature branches + PRs share one run via
+# the concurrency group below.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pyright
+      - run: uv run lint-imports
+
+  backend-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen
+      - run: uv run pytest tests/unit/
+
+  backend-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen
+      # Migration schema-check lives in tests/integration/ but is owned by
+      # the dedicated backend-migrations job, so it's excluded here.
+      - run: uv run pytest tests/integration/ --ignore=tests/integration/test_migrations_schema.py
+
+  backend-sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      # Placeholder until the write upload handler ships in E13 (ADR 0014).
+      - run: echo "placeholder — backend-sync activates with E13 write upload handler tests"
+
+  backend-migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen
+      # Niveau 1 schema check: alembic upgrade head + snapshot diff + downgrade base.
+      - run: uv run pytest tests/integration/test_migrations_schema.py

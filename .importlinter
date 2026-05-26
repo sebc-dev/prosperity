@@ -9,7 +9,7 @@ name = Directional graph respected
 type = layers
 layers =
     backend.modules.mcp
-    backend.modules.sync
+    backend.modules.sync | backend.modules.savings
     backend.modules.reconciliation | backend.modules.forecasting | backend.modules.debts | backend.modules.notifications
     backend.modules.banking | backend.modules.transactions | backend.modules.budget
     backend.modules.accounts
@@ -17,10 +17,25 @@ layers =
     backend.shared
 
 [importlinter:contract:2]
-name = Only public surface importable cross-module
+name = Only public surface importable cross-module (non-auth sources)
 type = forbidden
+# Sources exclude any module that hosts its own internals (currently
+# `auth`) so source and forbidden subtrees never overlap — otherwise
+# grimp's `find_shortest_chains` rejects the pair as "shared descendants".
+# Auth gets its own contract `2-auth` below. As future modules grow
+# internals, mirror that split here.
 source_modules =
-    backend.modules.*
+    backend.modules.accounts
+    backend.modules.banking
+    backend.modules.budget
+    backend.modules.debts
+    backend.modules.forecasting
+    backend.modules.mcp
+    backend.modules.notifications
+    backend.modules.reconciliation
+    backend.modules.savings
+    backend.modules.sync
+    backend.modules.transactions
 forbidden_modules =
     backend.modules.*.service
     backend.modules.*.models
@@ -28,6 +43,84 @@ forbidden_modules =
     backend.modules.*.repository
     backend.modules.*.transports
     backend.modules.*.handlers
+
+[importlinter:contract:2-auth]
+name = auth must not import peer modules' internals
+type = forbidden
+# Auth-as-source needs its own contract: intra-module imports
+# (auth.public/auth.service → auth.models) are legitimate and must not be
+# flagged. We enumerate peer modules' internals explicitly so auth's own
+# internals never appear in `forbidden_modules` (which would trigger
+# grimp's shared-descendants error).
+source_modules =
+    backend.modules.auth
+forbidden_modules =
+    backend.modules.accounts.service
+    backend.modules.accounts.models
+    backend.modules.accounts.domain
+    backend.modules.accounts.repository
+    backend.modules.accounts.transports
+    backend.modules.accounts.handlers
+    backend.modules.banking.service
+    backend.modules.banking.models
+    backend.modules.banking.domain
+    backend.modules.banking.repository
+    backend.modules.banking.transports
+    backend.modules.banking.handlers
+    backend.modules.budget.service
+    backend.modules.budget.models
+    backend.modules.budget.domain
+    backend.modules.budget.repository
+    backend.modules.budget.transports
+    backend.modules.budget.handlers
+    backend.modules.debts.service
+    backend.modules.debts.models
+    backend.modules.debts.domain
+    backend.modules.debts.repository
+    backend.modules.debts.transports
+    backend.modules.debts.handlers
+    backend.modules.forecasting.service
+    backend.modules.forecasting.models
+    backend.modules.forecasting.domain
+    backend.modules.forecasting.repository
+    backend.modules.forecasting.transports
+    backend.modules.forecasting.handlers
+    backend.modules.mcp.service
+    backend.modules.mcp.models
+    backend.modules.mcp.domain
+    backend.modules.mcp.repository
+    backend.modules.mcp.transports
+    backend.modules.mcp.handlers
+    backend.modules.notifications.service
+    backend.modules.notifications.models
+    backend.modules.notifications.domain
+    backend.modules.notifications.repository
+    backend.modules.notifications.transports
+    backend.modules.notifications.handlers
+    backend.modules.reconciliation.service
+    backend.modules.reconciliation.models
+    backend.modules.reconciliation.domain
+    backend.modules.reconciliation.repository
+    backend.modules.reconciliation.transports
+    backend.modules.reconciliation.handlers
+    backend.modules.savings.service
+    backend.modules.savings.models
+    backend.modules.savings.domain
+    backend.modules.savings.repository
+    backend.modules.savings.transports
+    backend.modules.savings.handlers
+    backend.modules.sync.service
+    backend.modules.sync.models
+    backend.modules.sync.domain
+    backend.modules.sync.repository
+    backend.modules.sync.transports
+    backend.modules.sync.handlers
+    backend.modules.transactions.service
+    backend.modules.transactions.models
+    backend.modules.transactions.domain
+    backend.modules.transactions.repository
+    backend.modules.transactions.transports
+    backend.modules.transactions.handlers
 
 [importlinter:contract:3]
 name = shared imports nothing of modules

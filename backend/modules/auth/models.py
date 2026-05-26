@@ -16,7 +16,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import UUID, DateTime, Enum, Index, String, func, text
+from sqlalchemy import UUID, DateTime, Enum, ForeignKey, Index, String, func, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, validates
 
 
@@ -102,3 +102,60 @@ class User(Base):
         # Lowercase + strip so the functional unique index on lower(email)
         # can never disagree with the actual column value.
         return value.strip().lower()
+
+
+class RefreshToken(Base):
+    """A persisted refresh token bound to a `User`.
+
+    Only the sha256 hex digest of the random token is stored
+    (`token_hash`, 64 chars) — the raw token is returned once on issuance
+    and never re-derivable from the DB. Same pattern as PATs will use in
+    E10/V1; factor out when that lands.
+
+    `revoked_at` is the revocation tombstone; we never delete rows so an
+    audit trail (who/when) survives. `verify()` rejects any token that
+    is either past `expires_at` or has a non-null `revoked_at`.
+
+    `ondelete="CASCADE"` on the FK: removing a user drops their refresh
+    tokens, which prevents orphaned rows from accumulating after account
+    deletion (no rows to verify against anyway).
+    """
+
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE", name="fk_refresh_tokens_user_id_users"),
+        nullable=False,
+    )
+    # 64 hex chars = sha256 digest. Unique so `verify()` resolves a token
+    # to at most one row even if two random tokens collided (vanishingly
+    # unlikely with 256-bit entropy, but the constraint costs nothing).
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    device_label: Mapped[str | None] = mapped_column(
+        String(120),
+        nullable=True,
+    )
+
+    __table_args__ = (
+        Index("uq_refresh_tokens_token_hash", "token_hash", unique=True),
+        Index("ix_refresh_tokens_user_id", "user_id"),
+    )

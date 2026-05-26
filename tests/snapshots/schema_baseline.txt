@@ -4,6 +4,18 @@ table alembic_version
   col version_num: VARCHAR(32) NOT NULL
   pk alembic_version_pkc(version_num)
 
+table refresh_tokens
+  col device_label: VARCHAR(120) NULL
+  col expires_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col id: UUID NOT NULL
+  col issued_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col revoked_at: TIMESTAMP WITH TIME ZONE NULL
+  col token_hash: VARCHAR(64) NOT NULL
+  col user_id: UUID NOT NULL
+  pk pk_refresh_tokens(id)
+  idx ix_refresh_tokens_user_id INDEX: user_id
+  idx uq_refresh_tokens_token_hash UNIQUE: token_hash
+
 table users
   col created_at: TIMESTAMP WITH TIME ZONE NOT NULL
   col disabled_at: TIMESTAMP WITH TIME ZONE NULL

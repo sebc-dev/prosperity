@@ -24,6 +24,12 @@ type = forbidden
 # grimp's `find_shortest_chains` rejects the pair as "shared descendants".
 # Auth gets its own contract `2-auth` below. As future modules grow
 # internals, mirror that split here.
+#
+# `backend.modules.auth.*` internals are listed explicitly in `forbidden_modules`
+# (in addition to the `backend.modules.*.<layer>` globs) so peer modules cannot
+# bypass `auth.public` via `from backend.modules.auth.service.jwt import ...`.
+# `auth` is excluded from `source_modules`, so listing its internals as
+# forbidden does not trigger the shared-descendants error.
 source_modules =
     backend.modules.accounts
     backend.modules.banking
@@ -43,6 +49,12 @@ forbidden_modules =
     backend.modules.*.repository
     backend.modules.*.transports
     backend.modules.*.handlers
+    backend.modules.auth.service
+    backend.modules.auth.models
+    backend.modules.auth.domain
+    backend.modules.auth.repository
+    backend.modules.auth.transports
+    backend.modules.auth.handlers
 
 [importlinter:contract:2-auth]
 name = auth must not import peer modules' internals

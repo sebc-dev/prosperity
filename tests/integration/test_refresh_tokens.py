@@ -1,21 +1,23 @@
 """Integration tests for the refresh-token service (story S02.3).
 
-Covers the happy-path lifecycle (`issue → verify → revoke`), the
-configuration plumbing (`refresh_token_ttl_seconds`), and the
-DB-level safety net (FK to `users.id`).
+Drives the full `issue → verify → revoke` lifecycle against a real
+Postgres via testcontainers, plus the negative paths:
+
+- expired token (rows with past `expires_at`) → `ExpiredRefreshTokenError`,
+- revoked token (rows with non-null `revoked_at`) → `RevokedRefreshTokenError`,
+- isolated revoke (revoking one token leaves the user's other tokens
+  intact).
 
 Schema bootstrap mirrors `test_user_factory`: `Base.metadata.create_all`
 on the test's transactional connection materialises both `users` and
 `refresh_tokens` together (FK depends on `users.id`). Per-test rollback
 keeps state from leaking.
-
-The negative paths (expired/revoked/isolated-revoke) land in P02.3.3.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import cast
 from uuid import UUID
 
@@ -110,6 +112,85 @@ async def test_verify_rejects_unknown_token(auth_schema: AsyncSession) -> None:
     with pytest.raises(InvalidRefreshTokenError) as excinfo:
         await verify(auth_schema, "totally-not-a-real-token")
     assert not isinstance(excinfo.value, ExpiredRefreshTokenError | RevokedRefreshTokenError)
+
+
+async def test_verify_rejects_expired_token(auth_schema: AsyncSession) -> None:
+    """A token whose `expires_at` is in the past raises `ExpiredRefreshTokenError`.
+
+    Inserts directly rather than going through `issue()` so the test
+    binds to the verify-time deadline check, not to a clock-fudging
+    issuance path.
+    """
+    user = await _make_user(auth_schema, email="dave@example.com")
+    raw = "expired-token-raw-value"
+    now = datetime.now(tz=UTC)
+    auth_schema.add(
+        RefreshToken(
+            user_id=user.id,
+            token_hash=hash_refresh_token(raw),
+            issued_at=now - timedelta(days=31),
+            expires_at=now - timedelta(seconds=1),
+        )
+    )
+    await auth_schema.flush()
+
+    with pytest.raises(ExpiredRefreshTokenError):
+        await verify(auth_schema, raw)
+
+
+async def test_verify_rejects_revoked_token(auth_schema: AsyncSession) -> None:
+    """A revoked token raises `RevokedRefreshTokenError` even before it expires."""
+    user = await _make_user(auth_schema, email="erin@example.com")
+    raw = await issue(auth_schema, user.id)
+
+    await revoke(auth_schema, hash_refresh_token(raw))
+
+    with pytest.raises(RevokedRefreshTokenError):
+        await verify(auth_schema, raw)
+
+
+async def test_revoked_check_fires_before_expired_check(auth_schema: AsyncSession) -> None:
+    """If a token is both revoked AND expired, the revoked error wins.
+
+    Upstream handlers can log a deliberate revocation differently from a
+    natural expiration; pinning the order here prevents that distinction
+    from silently flipping in a refactor.
+    """
+    user = await _make_user(auth_schema, email="frank@example.com")
+    raw = "old-and-revoked"
+    now = datetime.now(tz=UTC)
+    auth_schema.add(
+        RefreshToken(
+            user_id=user.id,
+            token_hash=hash_refresh_token(raw),
+            issued_at=now - timedelta(days=31),
+            expires_at=now - timedelta(days=1),
+            revoked_at=now - timedelta(hours=1),
+        )
+    )
+    await auth_schema.flush()
+
+    with pytest.raises(RevokedRefreshTokenError):
+        await verify(auth_schema, raw)
+
+
+async def test_revoke_does_not_affect_other_tokens_for_same_user(
+    auth_schema: AsyncSession,
+) -> None:
+    """Revoking one of a user's tokens leaves the others usable.
+
+    Models the real-world flow where a user logs out from a single
+    device but other devices stay signed in.
+    """
+    user = await _make_user(auth_schema, email="gina@example.com")
+    raw_a = await issue(auth_schema, user.id, device_label="laptop")
+    raw_b = await issue(auth_schema, user.id, device_label="phone")
+
+    await revoke(auth_schema, hash_refresh_token(raw_a))
+
+    with pytest.raises(RevokedRefreshTokenError):
+        await verify(auth_schema, raw_a)
+    assert await verify(auth_schema, raw_b) == user.id
 
 
 async def test_revoke_is_idempotent(auth_schema: AsyncSession) -> None:

@@ -9,7 +9,7 @@ name = Directional graph respected
 type = layers
 layers =
     backend.modules.mcp
-    backend.modules.sync
+    backend.modules.sync | backend.modules.savings
     backend.modules.reconciliation | backend.modules.forecasting | backend.modules.debts | backend.modules.notifications
     backend.modules.banking | backend.modules.transactions | backend.modules.budget
     backend.modules.accounts

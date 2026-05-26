@@ -1,2 +1,16 @@
-alembic_version: version_num
-users: id, email, password_hash, display_name, role, created_at, disabled_at
+enum user_role: admin, member
+
+table alembic_version
+  col version_num: VARCHAR(32) NOT NULL
+  pk alembic_version_pkc(version_num)
+
+table users
+  col created_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col disabled_at: TIMESTAMP WITH TIME ZONE NULL
+  col display_name: VARCHAR(120) NOT NULL
+  col email: VARCHAR(254) NOT NULL
+  col id: UUID NOT NULL
+  col password_hash: VARCHAR NOT NULL
+  col role: user_role NOT NULL
+  pk pk_users(id)
+  idx uq_users_email_lower UNIQUE: lower((email)::text)

@@ -39,6 +39,13 @@ class UserFactory(SQLAlchemyModelFactory):
 
         UserFactory._meta.sqlalchemy_session = db_session
         user = UserFactory(password="hunter2")
+
+    NOTE: this assignment mutates a class-level attribute shared across
+    every test that loads the module — not thread-safe. Fine while
+    pytest runs serially (session-scoped loop, `asyncio_mode=auto`), but
+    do not enable `pytest-xdist` (or any intra-worker parallelism) until
+    callers migrate to `factory.Factory.build()` plus an explicit session
+    pass-through.
     """
 
     class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]

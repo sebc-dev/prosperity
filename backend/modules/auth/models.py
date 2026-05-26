@@ -12,14 +12,32 @@ sibling `Base`; cross-module model imports remain forbidden either way.
 
 from __future__ import annotations
 
+import enum
 import uuid
 from datetime import datetime
-from typing import Literal
 
-from sqlalchemy import UUID, DateTime, Enum, String, func
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import UUID, DateTime, Enum, Index, String, func, text
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, validates
 
-UserRole = Literal["admin", "member"]
+
+class UserRole(enum.StrEnum):
+    """Roles authorised to authenticate against the API.
+
+    Mirrored by the Postgres `user_role` ENUM (Alembic 0002). Adding a
+    value requires a migration that ALTERs that type. Subclassing
+    `enum.StrEnum` gives runtime enforcement on assignment plus a single
+    source of truth for the Pydantic transports landing in S02.4.
+    """
+
+    ADMIN = "admin"
+    MEMBER = "member"
+
+
+def _user_role_values(enum_cls: type[UserRole]) -> list[str]:
+    # SQLAlchemy's `Enum.values_callable` defaults to enum member *names*
+    # (`ADMIN`, `MEMBER`); the PG ENUM stores the lowercased *values*, so
+    # we override to keep both representations aligned.
+    return [member.value for member in enum_cls]
 
 
 class Base(DeclarativeBase):
@@ -33,6 +51,12 @@ class User(Base):
     raw password never reaches the database. `role` is a Postgres enum
     so future values require a deliberate migration rather than a free
     string column.
+
+    Email is normalised case-insensitively: the ORM lowercases on
+    assignment (`_normalize_email`) and a functional unique index on
+    `lower(email)` defends the column even against raw SQL inserts.
+    Without this, "Alice@x.com" and "alice@x.com" would create two
+    distinct accounts.
     """
 
     __tablename__ = "users"
@@ -42,11 +66,17 @@ class User(Base):
         primary_key=True,
         default=uuid.uuid4,
     )
-    email: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    # Functional unique index on `lower(email)` (see __table_args__) replaces
+    # a plain UNIQUE so case-different duplicates are also rejected.
+    email: Mapped[str] = mapped_column(String(254), nullable=False)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
-    display_name: Mapped[str] = mapped_column(String, nullable=False)
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
     role: Mapped[UserRole] = mapped_column(
-        Enum("admin", "member", name="user_role"),
+        Enum(
+            UserRole,
+            name="user_role",
+            values_callable=_user_role_values,
+        ),
         nullable=False,
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -58,3 +88,17 @@ class User(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+
+    __table_args__ = (
+        Index(
+            "uq_users_email_lower",
+            text("lower(email)"),
+            unique=True,
+        ),
+    )
+
+    @validates("email")
+    def _normalize_email(self, _key: str, value: str) -> str:
+        # Lowercase + strip so the functional unique index on lower(email)
+        # can never disagree with the actual column value.
+        return value.strip().lower()

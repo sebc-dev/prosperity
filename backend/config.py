@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     # --- JWT (auth module — see story S02.2 / docs/roadmap/E02-auth-foundations.md) ---
     # `SecretStr` keeps the value out of `repr()`/logs. The dev default is only
     # accepted when `app_env != "prod"` (see `_forbid_dev_defaults_in_prod`).
+    # Doubles as the HMAC pepper for `refresh_tokens.token_hash` (see
+    # `backend.modules.auth.service.refresh_tokens.hash_refresh_token`).
+    # Rotating this secret therefore invalidates every persisted refresh
+    # token in one shot — plan rotations as forced re-login events.
     jwt_secret: SecretStr = Field(
         default=SecretStr(_DEV_JWT_SECRET),
         description="HS256 signing key — must be overridden in prod via JWT_SECRET.",
@@ -56,6 +60,13 @@ class Settings(BaseSettings):
     jwt_access_ttl_seconds: int = Field(
         default=900,
         description="Access-token lifetime in seconds (15 minutes — see roadmap E02).",
+    )
+    refresh_token_ttl_seconds: int = Field(
+        # The DB stores `expires_at = issued_at + ttl`, so changing this at
+        # runtime only affects newly-issued tokens — existing rows keep
+        # their original deadline.
+        default=30 * 24 * 3600,
+        description="Refresh-token lifetime in seconds (30 days — see roadmap E02).",
     )
 
     @model_validator(mode="after")

@@ -133,8 +133,12 @@ def test_baseline_migration_round_trip(postgres_container: PostgresContainer) ->
 
     command.downgrade(cfg, "base")
     post = _schema_snapshot(sync_dsn)
-    # The two most likely regressions on a `0002_users.py` rewrite are an
-    # orphaned `user_role` ENUM or a leftover `users` table — both are
-    # silently invisible in column-name-only snapshots, so assert here.
+    # The most likely regressions on a migration rewrite are an orphaned
+    # `user_role` ENUM or a leftover `users` / `refresh_tokens` table —
+    # all silently invisible in column-name-only snapshots, so assert
+    # each one explicitly.
     assert "enum " not in post, f"ENUM type leaked after downgrade:\n{post}"
     assert "table users" not in post, f"users table leaked after downgrade:\n{post}"
+    assert "table refresh_tokens" not in post, (
+        f"refresh_tokens table leaked after downgrade:\n{post}"
+    )

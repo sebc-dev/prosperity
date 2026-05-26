@@ -6,7 +6,7 @@ surface from `backend.modules.auth.public` instead.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -34,13 +34,15 @@ def issue_access_token(user_id: UUID) -> str:
     (exp = iat + `settings.jwt_access_ttl_seconds`).
     """
     settings = get_settings()
-    now = datetime.now(tz=UTC)
+    now_ts = int(datetime.now(tz=UTC).timestamp())
     payload: dict[str, Any] = {
         "sub": str(user_id),
-        "iat": now,
-        "exp": now + timedelta(seconds=settings.jwt_access_ttl_seconds),
+        "iat": now_ts,
+        "exp": now_ts + settings.jwt_access_ttl_seconds,
     }
-    return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+    return jwt.encode(
+        payload, settings.jwt_secret.get_secret_value(), algorithm=settings.jwt_algorithm
+    )
 
 
 def verify_access_token(token: str) -> UUID:
@@ -53,8 +55,10 @@ def verify_access_token(token: str) -> UUID:
     """
     settings = get_settings()
     try:
+        # Algorithm whitelist is hardcoded (not read from settings) so a misconfigured
+        # `JWT_ALGORITHM` cannot open HS256/RS256 key-confusion or `alg=none` attacks.
         payload: dict[str, Any] = jwt.decode(
-            token, settings.jwt_secret, algorithms=[settings.jwt_algorithm]
+            token, settings.jwt_secret.get_secret_value(), algorithms=["HS256"]
         )
     except ExpiredSignatureError as exc:
         raise ExpiredTokenError("Access token has expired") from exc

@@ -57,6 +57,13 @@ class Settings(BaseSettings):
         default=900,
         description="Access-token lifetime in seconds (15 minutes — see roadmap E02).",
     )
+    refresh_token_ttl_seconds: int = Field(
+        # 30 days; the DB stores `expires_at = issued_at + ttl` so a runtime
+        # change only affects newly-issued tokens (existing rows keep their
+        # own deadline).
+        default=30 * 24 * 3600,
+        description="Refresh-token lifetime in seconds (30 days — see roadmap E02).",
+    )
 
     @model_validator(mode="after")
     def _forbid_dev_defaults_in_prod(self) -> Settings:

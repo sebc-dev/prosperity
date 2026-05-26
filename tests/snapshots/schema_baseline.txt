@@ -7,12 +7,15 @@ table alembic_version
 table refresh_tokens
   col device_label: VARCHAR(120) NULL
   col expires_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col family_id: UUID NOT NULL
   col id: UUID NOT NULL
   col issued_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col parent_id: UUID NULL
   col revoked_at: TIMESTAMP WITH TIME ZONE NULL
   col token_hash: VARCHAR(64) NOT NULL
   col user_id: UUID NOT NULL
   pk pk_refresh_tokens(id)
+  idx ix_refresh_tokens_family_id INDEX: family_id
   idx ix_refresh_tokens_user_id INDEX: user_id
   idx uq_refresh_tokens_token_hash UNIQUE: token_hash
 

@@ -23,7 +23,7 @@ from uuid import UUID
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -42,9 +42,9 @@ from backend.modules.auth.service.refresh_tokens import (
 from tests.factories.sqlalchemy import UserFactory
 
 
-@pytest.fixture(autouse=True)
-def _clear_settings_cache() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
-    """Re-read env-derived settings each test (e.g. when TTL is monkeypatched)."""
+@pytest.fixture
+def fresh_settings() -> Iterator[None]:
+    """Drop the `get_settings` cache around tests that mutate env vars."""
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()
@@ -74,7 +74,10 @@ async def test_issue_returns_raw_token_and_persists_only_hash(
     raw = await issue(auth_schema, user.id, device_label="laptop")
 
     assert isinstance(raw, str)
-    assert len(raw) >= 32  # token_urlsafe(32) → ~43 chars; cheap floor
+    # `secrets.token_urlsafe(32)` always returns 43 url-safe chars
+    # (base64 of 32 bytes, no padding). Pin the exact length so a future
+    # entropy bump (or accidental shrink) trips the test.
+    assert len(raw) == 43
 
     record = (
         await auth_schema.execute(select(RefreshToken).where(RefreshToken.user_id == user.id))
@@ -84,9 +87,11 @@ async def test_issue_returns_raw_token_and_persists_only_hash(
     assert record.token_hash == hash_refresh_token(raw)
     assert record.revoked_at is None
     assert record.device_label == "laptop"
-    # `expires_at` is now + default TTL (30 days). Allow a generous skew.
+    # `expires_at` is now + default TTL (30 days). `issued_at` and the
+    # local `now` are both set in Python within the same call so a
+    # second of skew is generous.
     delta = record.expires_at - record.issued_at
-    assert abs(delta - timedelta(seconds=30 * 24 * 3600)) < timedelta(seconds=5)
+    assert abs(delta - timedelta(seconds=30 * 24 * 3600)) < timedelta(seconds=1)
 
 
 async def test_issue_without_device_label_is_allowed(auth_schema: AsyncSession) -> None:
@@ -222,15 +227,40 @@ async def test_revoke_is_idempotent(auth_schema: AsyncSession) -> None:
 
 async def test_revoke_unknown_hash_is_silent(auth_schema: AsyncSession) -> None:
     # Logging out a token that doesn't exist (already cleaned up, replay,
-    # forged value) must be a no-op, not a 500.
-    await revoke(auth_schema, hash_refresh_token("never-issued"))
+    # forged value) must be a no-op, not a 500. We also assert no other
+    # rows were touched so a future buggy WHERE clause (e.g. always-true)
+    # cannot pass this test.
+    user = await _make_user(auth_schema, email="ken@example.com")
+    raw_live = await issue(auth_schema, user.id, device_label="phone")
+    pre_revoked_at = (
+        await auth_schema.execute(
+            select(RefreshToken.revoked_at).where(
+                RefreshToken.token_hash == hash_refresh_token(raw_live)
+            )
+        )
+    ).scalar_one()
+    assert pre_revoked_at is None
+
+    rowcount = await revoke(auth_schema, hash_refresh_token("never-issued"))
+
+    assert rowcount == 0
+    # The bystander token must still be live.
+    post_revoked_at = (
+        await auth_schema.execute(
+            select(RefreshToken.revoked_at).where(
+                RefreshToken.token_hash == hash_refresh_token(raw_live)
+            )
+        )
+    ).scalar_one()
+    assert post_revoked_at is None
 
 
 async def test_issue_respects_custom_ttl_setting(
-    auth_schema: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    auth_schema: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    fresh_settings: None,  # noqa: ARG001 — clears get_settings cache around this test
 ) -> None:
     monkeypatch.setenv("REFRESH_TOKEN_TTL_SECONDS", "60")
-    get_settings.cache_clear()
     user = await _make_user(auth_schema, email="ivy@example.com")
 
     await issue(auth_schema, user.id)
@@ -239,7 +269,7 @@ async def test_issue_respects_custom_ttl_setting(
         await auth_schema.execute(select(RefreshToken).where(RefreshToken.user_id == user.id))
     ).scalar_one()
     assert abs((record.expires_at - record.issued_at) - timedelta(seconds=60)) < timedelta(
-        seconds=2
+        seconds=1
     )
 
 
@@ -257,3 +287,145 @@ async def test_issue_for_unknown_user_id_violates_fk(auth_schema: AsyncSession) 
     # the FK in favour of "soft" linking.
     with pytest.raises(IntegrityError):
         await issue(auth_schema, UUID(int=0))
+
+
+async def test_deleting_user_cascades_to_refresh_tokens(
+    auth_schema: AsyncSession,
+) -> None:
+    """`ON DELETE CASCADE` removes a user's tokens when the user is deleted.
+
+    Pins the FK action so a future migration that drops `ondelete=CASCADE`
+    (or replaces it with `SET NULL`) is caught here — otherwise account
+    deletion would leave orphaned refresh tokens unable to authenticate
+    against any user.
+    """
+    user = await _make_user(auth_schema, email="lana@example.com")
+    await issue(auth_schema, user.id, device_label="laptop")
+    await issue(auth_schema, user.id, device_label="phone")
+    pre_count = (
+        await auth_schema.execute(select(RefreshToken).where(RefreshToken.user_id == user.id))
+    ).all()
+    assert len(pre_count) == 2
+
+    await auth_schema.execute(delete(User).where(User.id == user.id))
+    await auth_schema.flush()
+
+    remaining = (
+        await auth_schema.execute(select(RefreshToken).where(RefreshToken.user_id == user.id))
+    ).all()
+    assert remaining == []
+
+
+async def test_verify_rejects_token_expiring_exactly_now(
+    auth_schema: AsyncSession,
+) -> None:
+    """A token whose `expires_at` equals `now` is rejected (boundary `<=`).
+
+    Locks the `expires_at <= now` semantics in `verify()`: if a refactor
+    flipped it to `<`, a token at the exact deadline would still be
+    accepted for one more instant — measurable in practice given clock
+    skew between issuance and verification.
+    """
+    user = await _make_user(auth_schema, email="mia@example.com")
+    raw = "deadline-exactly-now"
+    now = datetime.now(tz=UTC)
+    auth_schema.add(
+        RefreshToken(
+            user_id=user.id,
+            token_hash=hash_refresh_token(raw),
+            issued_at=now - timedelta(seconds=60),
+            expires_at=now,
+        )
+    )
+    await auth_schema.flush()
+
+    with pytest.raises(ExpiredRefreshTokenError):
+        await verify(auth_schema, raw)
+
+
+async def test_revoke_marks_already_expired_token(auth_schema: AsyncSession) -> None:
+    """`revoke()` still flips `revoked_at` on a row whose `expires_at` is past.
+
+    The `WHERE` clause filters on `revoked_at IS NULL` but NOT on
+    `expires_at`, so revoking an expired-but-not-yet-revoked token
+    succeeds. Pinning this prevents a future "skip expired rows"
+    optimisation from making `revoke()` quietly miss tombstoning rows
+    needed for audit trails.
+    """
+    user = await _make_user(auth_schema, email="nina@example.com")
+    raw = "expired-but-still-revocable"
+    now = datetime.now(tz=UTC)
+    auth_schema.add(
+        RefreshToken(
+            user_id=user.id,
+            token_hash=hash_refresh_token(raw),
+            issued_at=now - timedelta(days=31),
+            expires_at=now - timedelta(seconds=1),
+        )
+    )
+    await auth_schema.flush()
+
+    rowcount = await revoke(auth_schema, hash_refresh_token(raw))
+
+    assert rowcount == 1
+    revoked_at = (
+        await auth_schema.execute(
+            select(RefreshToken.revoked_at).where(
+                RefreshToken.token_hash == hash_refresh_token(raw)
+            )
+        )
+    ).scalar_one()
+    assert revoked_at is not None
+
+
+async def test_issue_starts_a_fresh_family(auth_schema: AsyncSession) -> None:
+    """Each `issue()` for a fresh login is the root of a new rotation family.
+
+    Pins `parent_id is None` and `family_id` distinct across two calls
+    for the same user — otherwise the S02.4 rotation logic would think
+    two independent logins were part of the same chain and invalidate
+    both on a single replay.
+    """
+    user = await _make_user(auth_schema, email="oscar@example.com")
+    raw_a = await issue(auth_schema, user.id, device_label="laptop")
+    raw_b = await issue(auth_schema, user.id, device_label="phone")
+
+    rows = (
+        await auth_schema.execute(
+            select(RefreshToken.token_hash, RefreshToken.family_id, RefreshToken.parent_id).where(
+                RefreshToken.user_id == user.id
+            )
+        )
+    ).all()
+    by_hash = {row.token_hash: row for row in rows}
+    a = by_hash[hash_refresh_token(raw_a)]
+    b = by_hash[hash_refresh_token(raw_b)]
+
+    assert a.parent_id is None
+    assert b.parent_id is None
+    assert a.family_id != b.family_id
+
+
+async def test_parent_id_self_fk_rejects_unknown_uuid(
+    auth_schema: AsyncSession,
+) -> None:
+    """The self-FK on `parent_id` rejects rows pointing at a non-existent token.
+
+    Guards the S02.4 rotation contract: a refactor that drops the FK in
+    favour of "soft" linking (string column) would let dangling
+    `parent_id`s sneak in, silently breaking replay detection.
+    """
+    user = await _make_user(auth_schema, email="paige@example.com")
+    now = datetime.now(tz=UTC)
+    auth_schema.add(
+        RefreshToken(
+            user_id=user.id,
+            token_hash=hash_refresh_token("orphan"),
+            issued_at=now,
+            expires_at=now + timedelta(seconds=60),
+            parent_id=UUID(int=0),
+            family_id=UUID(int=1),
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await auth_schema.flush()

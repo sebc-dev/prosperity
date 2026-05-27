@@ -11,7 +11,7 @@ import logging
 from functools import cache
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pwdlib import PasswordHash
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +36,12 @@ from backend.modules.auth.service.refresh_tokens import rotate as rotate_refresh
 from backend.shared.db import get_db
 
 logger = logging.getLogger(__name__)
+
+# Applied on responses that carry tokens (`/auth/login`, `/auth/refresh`).
+# Prevents intermediary proxies (CDN, ALB, corp-proxy) or
+# `fetch({cache: 'force-cache'})` from caching the access/refresh pair
+# (OWASP ASVS V8.3.4).
+_NO_STORE_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -65,10 +71,11 @@ def _dummy_hash() -> str:
     return _password_hasher().hash("dummy")
 
 
-@router.post("/login", response_model=TokenPair, status_code=200)
+@router.post("/login", response_model=TokenPair, status_code=status.HTTP_200_OK)
 async def login(
     body: LoginRequest,
     request: Request,
+    response: Response,
     session: SessionDep,
     settings: SettingsDep,
 ) -> TokenPair:
@@ -79,33 +86,48 @@ async def login(
     unknown user, wrong password, and disabled account so the client
     cannot enumerate which case applies.
     """
+    # TODO(S02.5): rate-limit by client IP / email.
+    response.headers.update(_NO_STORE_HEADERS)
+
     user = (
-        await session.execute(
-            select(User).where(func.lower(User.email) == body.email.lower())
-        )
+        await session.execute(select(User).where(func.lower(User.email) == body.email.lower()))
     ).scalar_one_or_none()
+    password = body.password.get_secret_value()
+    client_ip = request.client.host if request.client else None
 
     if user is None or user.disabled_at is not None:
         # Run verify() against the dummy hash so the disabled / unknown
         # case takes the same Argon2id wall-clock time as the wrong-
         # password case.
         _password_hasher().verify("dummy", _dummy_hash())
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        logger.warning(
+            "login_failed",
+            extra={"reason": "user_unknown_or_disabled", "client_ip": client_ip},
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    if not _password_hasher().verify(body.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+    if not _password_hasher().verify(password, user.password_hash):
+        logger.warning(
+            "login_failed",
+            extra={
+                "reason": "bad_password",
+                "user_id": str(user.id),
+                "client_ip": client_ip,
+            },
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     device_label = sanitize_device_label(request.headers.get("user-agent"))
     access = issue_access_token(user.id, settings=settings)
-    refresh = await issue_refresh(
-        session, user.id, settings=settings, device_label=device_label
-    )
+    refresh = await issue_refresh(session, user.id, settings=settings, device_label=device_label)
     return TokenPair(access_token=access, refresh_token=refresh)
 
 
-@router.post("/refresh", response_model=TokenPair, status_code=200)
+@router.post("/refresh", response_model=TokenPair, status_code=status.HTTP_200_OK)
 async def refresh(
     body: RefreshRequest,
+    request: Request,
+    response: Response,
     session: SessionDep,
     settings: SettingsDep,
 ) -> TokenPair:
@@ -117,20 +139,28 @@ async def refresh(
     Replay of an already-revoked token triggers family-wide invalidation
     inside `rotate()` (see service docstring).
     """
+    # TODO(S02.5): rate-limit by client IP / refresh-token hash prefix.
+    response.headers.update(_NO_STORE_HEADERS)
     try:
-        user_id, new_refresh = await rotate_refresh(
-            session, body.refresh_token, settings=settings
-        )
+        user_id, new_refresh = await rotate_refresh(session, body.refresh_token, settings=settings)
     except InvalidRefreshTokenError as exc:
         # Parent class catches Invalid + Expired + Revoked → uniform 401.
-        logger.info("refresh_failed", extra={"reason": type(exc).__name__})
-        raise HTTPException(status_code=401, detail="Invalid refresh token") from exc
+        logger.warning(
+            "refresh_failed",
+            extra={
+                "reason": type(exc).__name__,
+                "client_ip": request.client.host if request.client else None,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token"
+        ) from exc
 
     access = issue_access_token(user_id, settings=settings)
     return TokenPair(access_token=access, refresh_token=new_refresh)
 
 
-@router.post("/logout", status_code=204)
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
     body: LogoutRequest,
     session: SessionDep,
@@ -142,6 +172,8 @@ async def logout(
     forged value, etc.) keeps the response shape uniform — no
     differential signal that would let a client probe for valid tokens.
     """
+    # TODO(S02.5): rate-limit by client IP — currently anyone can spam
+    # the route with guessed refresh tokens.
     token_hash = hash_refresh_token(body.refresh_token, settings=settings)
     await revoke_refresh(session, token_hash)
-    return Response(status_code=204)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

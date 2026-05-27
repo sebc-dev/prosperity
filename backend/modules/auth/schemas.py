@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, SecretStr
 
 DEVICE_LABEL_MAX = 120
 
@@ -35,7 +35,10 @@ def sanitize_device_label(raw: str | None) -> str | None:
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=1, max_length=1024)
+    # `SecretStr` keeps the password out of `repr()` (debug, Sentry tags,
+    # validator traces, structlog bindings). `max_length=128` matches
+    # OWASP ASVS V2.1.3 and caps the Argon2id verify CPU cost per request.
+    password: SecretStr = Field(min_length=1, max_length=128)
 
 
 class TokenPair(BaseModel):

@@ -29,9 +29,7 @@ UserMaker = Callable[..., Awaitable[User]]
 
 
 async def _login(client: AsyncClient, email: str, password: str) -> tuple[str, str]:
-    resp = await client.post(
-        "/auth/login", json={"email": email, "password": password}
-    )
+    resp = await client.post("/auth/login", json={"email": email, "password": password})
     assert resp.status_code == 200, resp.text
     body = resp.json()
     return body["access_token"], body["refresh_token"]
@@ -49,9 +47,7 @@ async def test_refresh_happy_path_returns_new_pair(
     user = await bound_user_factory(email="alice@example.com", password="pw")
     _, refresh_token = await _login(async_client, "alice@example.com", "pw")
 
-    resp = await async_client.post(
-        "/auth/refresh", json={"refresh_token": refresh_token}
-    )
+    resp = await async_client.post("/auth/refresh", json={"refresh_token": refresh_token})
 
     assert resp.status_code == 200
     body = resp.json()
@@ -76,9 +72,7 @@ async def test_refresh_preserves_family_and_chains_parent_id(
         )
     ).scalar_one()
 
-    resp = await async_client.post(
-        "/auth/refresh", json={"refresh_token": refresh_token}
-    )
+    resp = await async_client.post("/auth/refresh", json={"refresh_token": refresh_token})
     assert resp.status_code == 200
     new_refresh = resp.json()["refresh_token"]
 
@@ -108,9 +102,7 @@ async def test_refresh_reuse_returns_401_and_invalidates_family(
     await bound_user_factory(email="carol@example.com", password="pw")
     _, refresh_token = await _login(async_client, "carol@example.com", "pw")
 
-    first = await async_client.post(
-        "/auth/refresh", json={"refresh_token": refresh_token}
-    )
+    first = await async_client.post("/auth/refresh", json={"refresh_token": refresh_token})
     assert first.status_code == 200
     new_refresh = first.json()["refresh_token"]
     family_id = (
@@ -122,9 +114,7 @@ async def test_refresh_reuse_returns_401_and_invalidates_family(
     ).scalar_one()
 
     # Replay the original token: must 401 + nuke the family.
-    replay = await async_client.post(
-        "/auth/refresh", json={"refresh_token": refresh_token}
-    )
+    replay = await async_client.post("/auth/refresh", json={"refresh_token": refresh_token})
     assert replay.status_code == 401
     assert replay.json()["detail"] == "Invalid refresh token"
 
@@ -137,16 +127,12 @@ async def test_refresh_reuse_returns_401_and_invalidates_family(
     assert all(row.revoked_at is not None for row in rows)
 
     # The replacement token issued by the first rotation must also fail.
-    aftermath = await async_client.post(
-        "/auth/refresh", json={"refresh_token": new_refresh}
-    )
+    aftermath = await async_client.post("/auth/refresh", json={"refresh_token": new_refresh})
     assert aftermath.status_code == 401
 
 
 async def test_refresh_unknown_token_returns_401(async_client: AsyncClient) -> None:
-    resp = await async_client.post(
-        "/auth/refresh", json={"refresh_token": "never-existed"}
-    )
+    resp = await async_client.post("/auth/refresh", json={"refresh_token": "never-existed"})
     assert resp.status_code == 401
     assert resp.json()["detail"] == "Invalid refresh token"
 
@@ -217,22 +203,16 @@ async def test_logout_revokes_then_subsequent_refresh_fails(
     await bound_user_factory(email="frank@example.com", password="pw")
     _, refresh_token = await _login(async_client, "frank@example.com", "pw")
 
-    logout = await async_client.post(
-        "/auth/logout", json={"refresh_token": refresh_token}
-    )
+    logout = await async_client.post("/auth/logout", json={"refresh_token": refresh_token})
     assert logout.status_code == 204
 
-    follow_up = await async_client.post(
-        "/auth/refresh", json={"refresh_token": refresh_token}
-    )
+    follow_up = await async_client.post("/auth/refresh", json={"refresh_token": refresh_token})
     assert follow_up.status_code == 401
 
 
 async def test_logout_unknown_token_returns_204(async_client: AsyncClient) -> None:
     """Idempotent: no row → still 204, no enumeration signal."""
-    resp = await async_client.post(
-        "/auth/logout", json={"refresh_token": "never-existed"}
-    )
+    resp = await async_client.post("/auth/logout", json={"refresh_token": "never-existed"})
     assert resp.status_code == 204
 
 
@@ -243,14 +223,10 @@ async def test_logout_already_revoked_token_returns_204(
     await bound_user_factory(email="gina@example.com", password="pw")
     _, refresh_token = await _login(async_client, "gina@example.com", "pw")
 
-    first = await async_client.post(
-        "/auth/logout", json={"refresh_token": refresh_token}
-    )
+    first = await async_client.post("/auth/logout", json={"refresh_token": refresh_token})
     assert first.status_code == 204
 
-    second = await async_client.post(
-        "/auth/logout", json={"refresh_token": refresh_token}
-    )
+    second = await async_client.post("/auth/logout", json={"refresh_token": refresh_token})
     assert second.status_code == 204
 
 

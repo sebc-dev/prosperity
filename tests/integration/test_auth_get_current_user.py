@@ -25,7 +25,18 @@ from backend.modules.auth.service.jwt import issue_access_token
 
 _settings = get_settings()
 
+# Contract: every 401 from `get_current_user` returns this exact body
+# and headers, regardless of internal cause (anti-enumeration).
+_EXPECTED_401_BODY = {"detail": "Not authenticated"}
+_EXPECTED_WWW_AUTH = "Bearer"
+
 UserMaker = Callable[..., Awaitable[User]]
+
+
+def _assert_unified_401(resp) -> None:
+    assert resp.status_code == 401
+    assert resp.json() == _EXPECTED_401_BODY
+    assert resp.headers.get("WWW-Authenticate") == _EXPECTED_WWW_AUTH
 
 
 def _ensure_protected_route_registered(app_: FastAPI) -> None:
@@ -56,9 +67,7 @@ async def test_whoami_returns_user_with_valid_token(
     user = await bound_user_factory(email="alice@example.com")
     token = issue_access_token(user.id, settings=_settings)
 
-    resp = await async_client.get(
-        "/test/whoami", headers={"Authorization": f"Bearer {token}"}
-    )
+    resp = await async_client.get("/test/whoami", headers={"Authorization": f"Bearer {token}"})
 
     assert resp.status_code == 200
     body = resp.json()
@@ -74,9 +83,7 @@ async def test_whoami_accepts_lowercase_bearer_scheme(
     user = await bound_user_factory(email="bob@example.com")
     token = issue_access_token(user.id, settings=_settings)
 
-    resp = await async_client.get(
-        "/test/whoami", headers={"authorization": f"bearer {token}"}
-    )
+    resp = await async_client.get("/test/whoami", headers={"authorization": f"bearer {token}"})
     assert resp.status_code == 200
 
 
@@ -84,7 +91,7 @@ async def test_whoami_rejects_missing_authorization_header(
     async_client: AsyncClient,
 ) -> None:
     resp = await async_client.get("/test/whoami")
-    assert resp.status_code == 401
+    _assert_unified_401(resp)
 
 
 async def test_whoami_rejects_wrong_scheme(async_client: AsyncClient) -> None:
@@ -93,19 +100,15 @@ async def test_whoami_rejects_wrong_scheme(async_client: AsyncClient) -> None:
     Starlette's HTTPBearer parses any scheme; we reject anything that
     isn't "bearer" (case-insensitive) ourselves.
     """
-    resp = await async_client.get(
-        "/test/whoami", headers={"Authorization": "Basic Zm9vOmJhcg=="}
-    )
-    assert resp.status_code == 401
+    resp = await async_client.get("/test/whoami", headers={"Authorization": "Basic Zm9vOmJhcg=="})
+    _assert_unified_401(resp)
 
 
 async def test_whoami_rejects_corrupted_bearer_token(
     async_client: AsyncClient,
 ) -> None:
-    resp = await async_client.get(
-        "/test/whoami", headers={"Authorization": "Bearer not.a.jwt"}
-    )
-    assert resp.status_code == 401
+    resp = await async_client.get("/test/whoami", headers={"Authorization": "Bearer not.a.jwt"})
+    _assert_unified_401(resp)
 
 
 async def test_whoami_rejects_expired_token(
@@ -122,10 +125,8 @@ async def test_whoami_rejects_expired_token(
     )
     token = issue_access_token(user.id, settings=expired_settings)
 
-    resp = await async_client.get(
-        "/test/whoami", headers={"Authorization": f"Bearer {token}"}
-    )
-    assert resp.status_code == 401
+    resp = await async_client.get("/test/whoami", headers={"Authorization": f"Bearer {token}"})
+    _assert_unified_401(resp)
 
 
 async def test_whoami_rejects_token_signed_with_other_key(
@@ -145,10 +146,8 @@ async def test_whoami_rejects_token_signed_with_other_key(
         algorithm="HS256",
     )
 
-    resp = await async_client.get(
-        "/test/whoami", headers={"Authorization": f"Bearer {forged}"}
-    )
-    assert resp.status_code == 401
+    resp = await async_client.get("/test/whoami", headers={"Authorization": f"Bearer {forged}"})
+    _assert_unified_401(resp)
 
 
 async def test_whoami_rejects_token_for_disabled_user(
@@ -163,10 +162,8 @@ async def test_whoami_rejects_token_for_disabled_user(
     user.disabled_at = datetime.now(tz=UTC)
     await auth_schema.flush()
 
-    resp = await async_client.get(
-        "/test/whoami", headers={"Authorization": f"Bearer {token}"}
-    )
-    assert resp.status_code == 401
+    resp = await async_client.get("/test/whoami", headers={"Authorization": f"Bearer {token}"})
+    _assert_unified_401(resp)
 
 
 async def test_whoami_rejects_token_for_unknown_user(
@@ -178,7 +175,61 @@ async def test_whoami_rejects_token_for_unknown_user(
     resp = await async_client.get(
         "/test/whoami", headers={"Authorization": f"Bearer {ghost_token}"}
     )
-    assert resp.status_code == 401
+    _assert_unified_401(resp)
+
+
+async def test_whoami_401_branches_return_strictly_identical_response(
+    async_client: AsyncClient,
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    """All 401 branches must return the exact same body, status, and headers.
+
+    Pins the anti-enumeration contract: even a careful attacker
+    comparing responses across rejection causes cannot tell which
+    internal branch fired.
+    """
+    user = await bound_user_factory(email="vera@example.com")
+    expired_settings = Settings(
+        jwt_secret=_settings.jwt_secret,
+        jwt_algorithm=_settings.jwt_algorithm,
+        jwt_access_ttl_seconds=-1,
+    )
+    expired_token = issue_access_token(user.id, settings=expired_settings)
+    now_ts = int(datetime.now(tz=UTC).timestamp())
+    forged_token = jose_jwt.encode(
+        {"sub": str(user.id), "iat": now_ts, "exp": now_ts + 900},
+        "different-secret",
+        algorithm="HS256",
+    )
+    ghost_token = issue_access_token(uuid4(), settings=_settings)
+
+    # Disable the user so the disabled-branch response is captured last
+    # (with a fresh token issued before the disable).
+    fresh_token = issue_access_token(user.id, settings=_settings)
+    user.disabled_at = datetime.now(tz=UTC)
+    await auth_schema.flush()
+
+    requests: list[dict[str, str]] = [
+        {},  # missing header
+        {"Authorization": "Basic Zm9vOmJhcg=="},  # wrong scheme
+        {"Authorization": "Bearer not.a.jwt"},  # malformed
+        {"Authorization": f"Bearer {expired_token}"},  # expired
+        {"Authorization": f"Bearer {forged_token}"},  # bad signature
+        {"Authorization": f"Bearer {ghost_token}"},  # unknown sub
+        {"Authorization": f"Bearer {fresh_token}"},  # disabled user
+    ]
+
+    responses = [await async_client.get("/test/whoami", headers=h) for h in requests]
+
+    first = responses[0]
+    assert first.status_code == 401
+    assert first.json() == _EXPECTED_401_BODY
+    assert first.headers.get("WWW-Authenticate") == _EXPECTED_WWW_AUTH
+    for resp in responses[1:]:
+        assert resp.status_code == first.status_code
+        assert resp.json() == first.json()
+        assert resp.headers.get("WWW-Authenticate") == first.headers.get("WWW-Authenticate")
 
 
 async def test_whoami_rejects_secret_disclosure_token() -> None:

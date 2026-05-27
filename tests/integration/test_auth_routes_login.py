@@ -11,7 +11,9 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from unittest.mock import patch
 
+import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,8 +23,9 @@ from backend.modules.auth.models import RefreshToken, User
 from backend.modules.auth.schemas import DEVICE_LABEL_MAX
 from backend.modules.auth.service.jwt import verify_access_token
 from backend.modules.auth.service.refresh_tokens import (
-    verify as verify_refresh,
+    verify_readonly as verify_refresh,
 )
+from backend.modules.auth.transports import http as auth_http
 
 _settings = get_settings()
 
@@ -71,9 +74,7 @@ async def test_login_persists_sanitized_device_label(
     assert resp.status_code == 200
 
     record = (
-        await auth_schema.execute(
-            select(RefreshToken).where(RefreshToken.user_id == user.id)
-        )
+        await auth_schema.execute(select(RefreshToken).where(RefreshToken.user_id == user.id))
     ).scalar_one()
     assert record.device_label == ua
 
@@ -95,9 +96,7 @@ async def test_login_device_label_truncated_at_120_chars(
     assert resp.status_code == 200
 
     record = (
-        await auth_schema.execute(
-            select(RefreshToken).where(RefreshToken.user_id == user.id)
-        )
+        await auth_schema.execute(select(RefreshToken).where(RefreshToken.user_id == user.id))
     ).scalar_one()
     assert record.device_label is not None
     assert len(record.device_label) == DEVICE_LABEL_MAX
@@ -125,9 +124,7 @@ async def test_login_strips_bidi_and_zwj_from_device_label(
     assert resp.status_code == 200
 
     record = (
-        await auth_schema.execute(
-            select(RefreshToken).where(RefreshToken.user_id == user.id)
-        )
+        await auth_schema.execute(select(RefreshToken).where(RefreshToken.user_id == user.id))
     ).scalar_one()
     assert record.device_label == "Firefox/120.0"
 
@@ -148,9 +145,7 @@ async def test_login_device_label_none_when_no_user_agent_header(
     assert resp.status_code == 200
 
     record = (
-        await auth_schema.execute(
-            select(RefreshToken).where(RefreshToken.user_id == user.id)
-        )
+        await auth_schema.execute(select(RefreshToken).where(RefreshToken.user_id == user.id))
     ).scalar_one()
     # Empty UA header → sanitize returns None.
     assert record.device_label is None
@@ -228,4 +223,132 @@ async def test_login_rejects_empty_password_with_422(
         "/auth/login",
         json={"email": "ivy@example.com", "password": ""},
     )
+    assert resp.status_code == 422
+
+
+async def test_login_rejects_password_above_max_length_with_422(
+    async_client: AsyncClient,
+) -> None:
+    """`max_length=128` is the contractual bound — bump tripping must surface."""
+    resp = await async_client.post(
+        "/auth/login",
+        json={"email": "jane@example.com", "password": "x" * 129},
+    )
+    assert resp.status_code == 422
+
+
+async def test_login_sets_no_store_cache_headers(
+    async_client: AsyncClient,
+    bound_user_factory: UserMaker,
+) -> None:
+    """OWASP ASVS V8.3.4 — token-bearing responses must not be cached."""
+    await bound_user_factory(email="kira@example.com", password="pw")
+    resp = await async_client.post(
+        "/auth/login",
+        json={"email": "kira@example.com", "password": "pw"},
+    )
+    assert resp.status_code == 200
+    assert resp.headers.get("Cache-Control") == "no-store"
+    assert resp.headers.get("Pragma") == "no-cache"
+
+
+@pytest.mark.parametrize(
+    "scenario",
+    ["unknown_user", "disabled_user", "wrong_password"],
+)
+async def test_login_failure_branches_call_argon2_verify_exactly_once(
+    async_client: AsyncClient,
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+    scenario: str,
+) -> None:
+    """Timing-equaliser: every 401 branch must trigger Argon2id verify once.
+
+    The dummy-hash anti-enumeration only works if the user-unknown /
+    user-disabled branches actually invoke `verify()` against the dummy
+    hash. If the line is ever skipped, the test fails — even if the 401
+    body still looks uniform to a client.
+    """
+    payload: dict[str, str]
+    if scenario == "unknown_user":
+        payload = {"email": "ghost@example.com", "password": "pw"}
+    elif scenario == "disabled_user":
+        user = await bound_user_factory(email="liam@example.com", password="pw")
+        user.disabled_at = datetime.now(tz=UTC)
+        await auth_schema.flush()
+        payload = {"email": "liam@example.com", "password": "pw"}
+    else:
+        await bound_user_factory(email="mona@example.com", password="real-password")
+        payload = {"email": "mona@example.com", "password": "wrong"}
+
+    hasher = auth_http._password_hasher()  # pyright: ignore[reportPrivateUsage]
+    with patch.object(hasher, "verify", wraps=hasher.verify) as spy:
+        resp = await async_client.post("/auth/login", json=payload)
+
+    assert resp.status_code == 401
+    assert spy.call_count == 1
+
+
+async def test_login_401_branches_return_strictly_identical_response(
+    async_client: AsyncClient,
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    """All login 401 branches return identical status, body, and cache headers.
+
+    Locks the anti-enumeration contract beyond a single `detail` string:
+    everything an attacker can observe must match across branches.
+    """
+    await bound_user_factory(email="nina@example.com", password="real-password")
+    disabled = await bound_user_factory(email="otto@example.com", password="pw")
+    disabled.disabled_at = datetime.now(tz=UTC)
+    await auth_schema.flush()
+
+    payloads = [
+        {"email": "ghost@example.com", "password": "pw"},  # unknown
+        {"email": "otto@example.com", "password": "pw"},  # disabled
+        {"email": "nina@example.com", "password": "wrong"},  # bad password
+    ]
+    responses = [await async_client.post("/auth/login", json=p) for p in payloads]
+
+    first = responses[0]
+    assert first.status_code == 401
+    for resp in responses[1:]:
+        assert resp.status_code == first.status_code
+        assert resp.json() == first.json()
+        assert resp.headers.get("Cache-Control") == first.headers.get("Cache-Control")
+
+
+async def test_refresh_route_sets_no_store_cache_headers(
+    async_client: AsyncClient,
+    bound_user_factory: UserMaker,
+) -> None:
+    await bound_user_factory(email="pia@example.com", password="pw")
+    login = await async_client.post(
+        "/auth/login",
+        json={"email": "pia@example.com", "password": "pw"},
+    )
+    refresh_token = login.json()["refresh_token"]
+
+    resp = await async_client.post("/auth/refresh", json={"refresh_token": refresh_token})
+    assert resp.status_code == 200
+    assert resp.headers.get("Cache-Control") == "no-store"
+    assert resp.headers.get("Pragma") == "no-cache"
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "field", "value"),
+    [
+        ("/auth/refresh", "refresh_token", "x" * 513),  # max_length=512
+        ("/auth/logout", "refresh_token", "x" * 513),
+    ],
+)
+async def test_refresh_token_max_length_bound(
+    async_client: AsyncClient,
+    endpoint: str,
+    field: str,
+    value: str,
+) -> None:
+    """Pydantic `max_length=512` on refresh_token must reject longer payloads."""
+    resp = await async_client.post(endpoint, json={field: value})
     assert resp.status_code == 422

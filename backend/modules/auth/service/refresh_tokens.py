@@ -16,6 +16,7 @@ inject via `Depends(get_settings)`.
 from __future__ import annotations
 
 import hmac
+import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
@@ -28,6 +29,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import Settings
 from backend.modules.auth.models import RefreshToken
+
+logger = logging.getLogger(__name__)
 
 # 32 bytes = 256 bits → 43 url-safe characters after base64. Wide enough
 # that collisions on `token_hash` are not a realistic concern (the UNIQUE
@@ -102,7 +105,7 @@ async def issue(
     return raw_token
 
 
-async def verify(session: AsyncSession, raw_token: str, *, settings: Settings) -> UUID:
+async def verify_readonly(session: AsyncSession, raw_token: str, *, settings: Settings) -> UUID:
     """Return the `user_id` bound to `raw_token` if it is still usable.
 
     Raises:
@@ -116,10 +119,11 @@ async def verify(session: AsyncSession, raw_token: str, *, settings: Settings) -
     revoked token never looks like "merely expired" to upstream handlers
     (which would otherwise log it less loudly).
 
-    NB: `verify()` does NOT take a row lock and is therefore vulnerable
-    to TOCTOU when used as the pre-flight for a write. The S02.4 refresh
-    route uses `rotate()` (which is single-statement atomic) instead;
-    `verify()` remains exposed for read-only callers.
+    **Read-only contract — explicit in the name.** This function does
+    NOT take a row lock; using it as the pre-flight check before a write
+    re-introduces the S02.3 TOCTOU. Routes that need to consume a
+    refresh token (rotate, revoke) must use `rotate()` / `revoke()`
+    which are single-statement atomic.
     """
     token_hash = hash_refresh_token(raw_token, settings=settings)
     result = await session.execute(
@@ -135,9 +139,7 @@ async def verify(session: AsyncSession, raw_token: str, *, settings: Settings) -
     return record.user_id
 
 
-async def rotate(
-    session: AsyncSession, raw_token: str, *, settings: Settings
-) -> tuple[UUID, str]:
+async def rotate(session: AsyncSession, raw_token: str, *, settings: Settings) -> tuple[UUID, str]:
     """Atomically revoke `raw_token`, issue a new one in the same family.
 
     Returns `(user_id, new_raw_token)`. Raises:
@@ -146,12 +148,11 @@ async def rotate(
       - `RevokedRefreshTokenError`: row already revoked → triggers
         family-wide invalidation (replay detected) before raising.
 
-    Atomicity: the `UPDATE … RETURNING` is single-statement atomic. The
-    engine runs at REPEATABLE READ (cf. `backend.shared.db`) which
-    prevents a concurrent replay's family-revocation UPDATE from missing
-    the new token inserted here in a still-uncommitted sibling
-    transaction. As defense-in-depth, step 3 re-checks the family
-    revocation predicate after the INSERT.
+    Atomicity: the `UPDATE … RETURNING` of step 1 is single-statement
+    atomic and runs under REPEATABLE READ (cf. `backend.shared.db`).
+    Concurrent rotations on the same row see exactly one winner — losers
+    get `rowcount=0` and fall through to the replay branch, which then
+    revokes the whole family.
     """
     token_hash = hash_refresh_token(raw_token, settings=settings)
     now = datetime.now(tz=UTC)
@@ -169,9 +170,7 @@ async def rotate(
                 RefreshToken.expires_at > now,
             )
             .values(revoked_at=now)
-            .returning(
-                RefreshToken.id, RefreshToken.user_id, RefreshToken.family_id
-            )
+            .returning(RefreshToken.id, RefreshToken.user_id, RefreshToken.family_id)
         ),
     )
     row = update_result.one_or_none()
@@ -179,14 +178,21 @@ async def rotate(
     if row is None:
         # Distinguish unknown / revoked / expired for logging and replay.
         existing = (
-            await session.execute(
-                select(RefreshToken).where(RefreshToken.token_hash == token_hash)
-            )
+            await session.execute(select(RefreshToken).where(RefreshToken.token_hash == token_hash))
         ).scalar_one_or_none()
         if existing is None:
             raise InvalidRefreshTokenError("Refresh token is invalid")
         if existing.revoked_at is not None:
             # Replay detected → invalidate the entire family.
+            logger.warning(
+                "refresh_token_replay_family_invalidated",
+                extra={
+                    "user_id": str(existing.user_id),
+                    "family_id": str(existing.family_id),
+                    "token_hash_prefix": token_hash[:8],
+                    "time_since_revocation_seconds": (now - existing.revoked_at).total_seconds(),
+                },
+            )
             await session.execute(
                 update(RefreshToken)
                 .where(
@@ -196,9 +202,7 @@ async def rotate(
                 .values(revoked_at=now)
             )
             await session.flush()
-            raise RevokedRefreshTokenError(
-                "Refresh token replay detected; family invalidated"
-            )
+            raise RevokedRefreshTokenError("Refresh token replay detected; family invalidated")
         raise ExpiredRefreshTokenError("Refresh token has expired")
 
     # `row` is a SQLAlchemy `Row`; access by named attribute (not `.t`).
@@ -218,33 +222,6 @@ async def rotate(
     )
     session.add(record)
     await session.flush()
-
-    # Step 3 — defense-in-depth: if a concurrent replay marked the family
-    # compromised between step 1 and our INSERT (theoretically impossible
-    # under REPEATABLE READ, but belt-and-braces), revoke our new token
-    # and raise. A "compromised" sibling is a revoked root row whose
-    # `parent_id IS NULL` was set by the family-wide revocation above.
-    compromised_sibling = (
-        await session.execute(
-            select(RefreshToken.id)
-            .where(
-                RefreshToken.family_id == family_id,
-                RefreshToken.id != record.id,
-                RefreshToken.id != parent_id,
-                RefreshToken.revoked_at.isnot(None),
-                RefreshToken.parent_id.is_(None),
-            )
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    if compromised_sibling is not None:
-        await session.execute(
-            update(RefreshToken)
-            .where(RefreshToken.id == record.id)
-            .values(revoked_at=now)
-        )
-        await session.flush()
-        raise RevokedRefreshTokenError("Family compromised during rotation")
 
     return user_id, new_raw
 

@@ -28,17 +28,21 @@ def _settings(
     jwt_secret: SecretStr = _DEFAULT_TEST_SECRET,
     jwt_algorithm: str = "HS256",
     jwt_access_ttl_seconds: int = 900,
+    jwt_audience: str = "prosperity-api",
+    jwt_issuer: str = "prosperity-auth",
 ) -> Settings:
     """Build a fresh `Settings` for a single test.
 
-    Tests opt-in to overrides (e.g. negative TTL, alternate secret)
-    per-call rather than via the `lru_cache`-mediated `get_settings()`
-    they used to rely on.
+    Tests opt-in to overrides (e.g. negative TTL, alternate secret,
+    alternate aud/iss for ADR 0016 negative paths) per-call rather than
+    via the `lru_cache`-mediated `get_settings()` they used to rely on.
     """
     return Settings(
         jwt_secret=jwt_secret,
         jwt_algorithm=jwt_algorithm,
         jwt_access_ttl_seconds=jwt_access_ttl_seconds,
+        jwt_audience=jwt_audience,
+        jwt_issuer=jwt_issuer,
     )
 
 
@@ -46,14 +50,29 @@ def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
+_OMIT = object()
+
+
 def _forge_token_with_claims(claims: dict[str, object], settings: Settings) -> str:
     """Encode a JWT signed with the supplied secret but arbitrary claims.
 
     Used to drive `verify_access_token`'s payload-validation branches without
     going through `issue_access_token` (which enforces a well-formed `sub`).
+
+    Defaults `aud` / `iss` to the settings values so most negative-path
+    tests can exercise their target branch (no `sub`, malformed `sub`, …)
+    without each one having to remember the ADR 0016 claims. Tests that
+    target the ADR 0016 branch itself pass `aud=_OMIT` or override the
+    value explicitly to drop / change the claim.
     """
+    enriched: dict[str, object] = {
+        "aud": settings.jwt_audience,
+        "iss": settings.jwt_issuer,
+        **claims,
+    }
+    enriched = {k: v for k, v in enriched.items() if v is not _OMIT}
     return jose_jwt.encode(
-        claims,
+        enriched,
         settings.jwt_secret.get_secret_value(),
         algorithm=settings.jwt_algorithm,
     )
@@ -196,3 +215,87 @@ def test_token_with_none_algorithm_is_rejected() -> None:
     unsigned_token = f"{header}.{payload}."
     with pytest.raises(InvalidTokenError):
         verify_access_token(unsigned_token, settings=settings)
+
+
+# --- ADR 0016: `aud` / `iss` pinning ------------------------------------------
+#
+# `JWT_SECRET` doubles as the refresh-token HMAC pepper, so any future
+# artefact signed under the same key would otherwise be accepted by
+# `verify_access_token`. The tests below pin the rejection contract:
+# a token must carry `aud=settings.jwt_audience` AND `iss=settings.jwt_issuer`
+# to be accepted. They also document the python-jose asymmetry: jose
+# rejects missing `iss` (via `claims.get("iss") not in (...)`) but
+# silently accepts missing `aud` — `verify_access_token` adds an explicit
+# `"aud" not in payload` check to close that gap.
+
+
+def test_issued_token_carries_pinned_aud_and_iss() -> None:
+    # Round-trip sanity: the claims `verify_access_token` requires are the
+    # ones `issue_access_token` actually writes.
+    settings = _settings()
+    token = issue_access_token(uuid4(), settings=settings)
+    claims = jose_jwt.get_unverified_claims(token)
+    assert claims["aud"] == settings.jwt_audience
+    assert claims["iss"] == settings.jwt_issuer
+
+
+def test_token_without_aud_claim_is_rejected() -> None:
+    # Pins the defense against the python-jose quirk: `jwt.decode(...,
+    # audience=...)` silently passes a token missing `aud`. The explicit
+    # `"aud" not in payload` check after decode catches it.
+    settings = _settings()
+    token = _forge_token_with_claims({"sub": str(uuid4()), "aud": _OMIT}, settings)
+    with pytest.raises(InvalidTokenError):
+        verify_access_token(token, settings=settings)
+
+
+def test_token_with_wrong_aud_is_rejected() -> None:
+    # Cross-service scenario: a token signed with the same `JWT_SECRET`
+    # but emitted by/for another service must not be accepted by the API.
+    settings = _settings()
+    token = _forge_token_with_claims({"sub": str(uuid4()), "aud": "some-other-service"}, settings)
+    with pytest.raises(InvalidTokenError):
+        verify_access_token(token, settings=settings)
+
+
+def test_token_without_iss_claim_is_rejected() -> None:
+    # Two redundant rejections cover this: (1) jose's `_validate_iss`
+    # compares `claims.get("iss") not in (issuer,)`, so `None not in
+    # ("prosperity-auth",)` raises `JWTClaimsError`; (2) the explicit
+    # `"iss" not in payload` check after `decode` catches it again as
+    # defense-in-depth, mirroring the `aud` check (in case a future jose
+    # change loosens `_validate_iss` the way `_validate_aud` already is).
+    settings = _settings()
+    token = _forge_token_with_claims({"sub": str(uuid4()), "iss": _OMIT}, settings)
+    with pytest.raises(InvalidTokenError):
+        verify_access_token(token, settings=settings)
+
+
+def test_token_with_wrong_iss_is_rejected() -> None:
+    settings = _settings()
+    token = _forge_token_with_claims({"sub": str(uuid4()), "iss": "some-other-issuer"}, settings)
+    with pytest.raises(InvalidTokenError):
+        verify_access_token(token, settings=settings)
+
+
+def test_token_aud_iss_rejection_is_invalid_not_expired() -> None:
+    # `aud` / `iss` mismatches must surface as `InvalidTokenError`, never
+    # the `ExpiredTokenError` subclass — operators grepping for expirations
+    # should not see cross-service token attempts in that bucket.
+    settings = _settings()
+    token = _forge_token_with_claims({"sub": str(uuid4()), "aud": "some-other-service"}, settings)
+    with pytest.raises(InvalidTokenError) as excinfo:
+        verify_access_token(token, settings=settings)
+    assert not isinstance(excinfo.value, ExpiredTokenError)
+
+
+def test_token_issued_for_one_audience_rejected_when_verifier_expects_another() -> None:
+    # Models a deployment that renamed `jwt_audience` (or a separate
+    # service that legitimately emits to a different aud): the verifier
+    # configured for "prosperity-api" must reject a token issued for
+    # "prosperity-mcp" even though signature, sub, and ttl are valid.
+    issuer_settings = _settings(jwt_audience="prosperity-mcp")
+    token = issue_access_token(uuid4(), settings=issuer_settings)
+    verifier_settings = _settings()  # default jwt_audience="prosperity-api"
+    with pytest.raises(InvalidTokenError):
+        verify_access_token(token, settings=verifier_settings)

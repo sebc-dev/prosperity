@@ -57,6 +57,20 @@ class Settings(BaseSettings):
         default="HS256",
         description="JWT signing algorithm. Override via JWT_ALGORITHM.",
     )
+    # `aud` / `iss` pinning (ADR 0016): the same `jwt_secret` doubles as the
+    # refresh-token HMAC pepper, so any other artefact signed under that key
+    # would otherwise be accepted by `verify_access_token`. Pinning audience
+    # and issuer distinguishes a Prosperity access token from any other
+    # HS256 token under the same secret. Values are stable service constants;
+    # env overrides exist for staging/multi-tenant scenarios.
+    jwt_audience: str = Field(
+        default="prosperity-api",
+        description="Expected `aud` claim on access tokens. Override via JWT_AUDIENCE.",
+    )
+    jwt_issuer: str = Field(
+        default="prosperity-auth",
+        description="Expected `iss` claim on access tokens. Override via JWT_ISSUER.",
+    )
     jwt_access_ttl_seconds: int = Field(
         default=900,
         description="Access-token lifetime in seconds (15 minutes — see roadmap E02).",

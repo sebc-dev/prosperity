@@ -11,6 +11,7 @@ from typing import Any
 from uuid import UUID
 
 from jose import ExpiredSignatureError, JWTError, jwt
+from jose.exceptions import JWTClaimsError
 
 from backend.config import Settings
 
@@ -30,8 +31,9 @@ class ExpiredTokenError(InvalidTokenError):
 def issue_access_token(user_id: UUID, *, settings: Settings) -> str:
     """Issue a signed HS256 access JWT for `user_id`.
 
-    The payload contains `sub` (stringified UUID), `iat`, and `exp` claims
-    (exp = iat + `settings.jwt_access_ttl_seconds`).
+    The payload contains `sub` (stringified UUID), `iat`, `exp`
+    (exp = iat + `settings.jwt_access_ttl_seconds`), and the pinned
+    `aud` / `iss` claims (ADR 0016).
 
     `settings` is passed kw-only so the caller controls config injection
     (FastAPI routes use `Depends(get_settings)`); avoids the cached-import
@@ -42,6 +44,8 @@ def issue_access_token(user_id: UUID, *, settings: Settings) -> str:
         "sub": str(user_id),
         "iat": now_ts,
         "exp": now_ts + settings.jwt_access_ttl_seconds,
+        "aud": settings.jwt_audience,
+        "iss": settings.jwt_issuer,
     }
     return jwt.encode(
         payload, settings.jwt_secret.get_secret_value(), algorithm=settings.jwt_algorithm
@@ -57,13 +61,17 @@ _CLOCK_SKEW_LEEWAY_SECONDS = 30
 def verify_access_token(token: str, *, settings: Settings) -> UUID:
     """Verify `token` and return the `user_id` from its `sub` claim.
 
+    `aud` / `iss` are pinned per ADR 0016: a token missing those claims
+    or carrying values different from `settings.jwt_audience` /
+    `settings.jwt_issuer` is rejected as `InvalidTokenError`.
+
     Raises:
         ExpiredTokenError: when the token's `exp` claim is in the past
             (a 30 s NTP leeway is applied before declaring expiration).
         InvalidTokenError: on bad signature, malformed token, missing/
-            malformed `sub` claim, or `iat` further in the future than
-            the same 30 s leeway (defense in depth against backdated
-            tokens).
+            malformed `sub` claim, missing/wrong `aud` or `iss`, or
+            `iat` further in the future than the same 30 s leeway
+            (defense in depth against backdated tokens).
     """
     try:
         # Algorithm whitelist is hardcoded (not read from settings) so a misconfigured
@@ -72,16 +80,37 @@ def verify_access_token(token: str, *, settings: Settings) -> UUID:
         # symmetrically to tolerate NTP skew. python-jose's `verify_iat` does NOT
         # reject future-iat tokens (it only validates the type) — the explicit
         # check below provides that defense-in-depth.
+        # `audience=` + `issuer=` enforce ADR 0016. Important asymmetry in
+        # python-jose's claim validation (see `jose/jwt.py:_validate_aud` /
+        # `_validate_iss`):
+        #   - `iss`: when `issuer=` is passed, jose compares
+        #     `claims.get("iss")` against the expected value, so a missing
+        #     `iss` (→ `None`) is rejected as `JWTClaimsError("Invalid issuer")`.
+        #   - `aud`: when `audience=` is passed, jose only validates the
+        #     claim **if present** — a token without `aud` slips through
+        #     silently (the early-return path on `"aud" not in claims`).
+        # The explicit `aud` check after `decode` closes that gap.
         payload: dict[str, Any] = jwt.decode(
             token,
             settings.jwt_secret.get_secret_value(),
             algorithms=["HS256"],
+            audience=settings.jwt_audience,
+            issuer=settings.jwt_issuer,
             options={"verify_iat": True, "leeway": _CLOCK_SKEW_LEEWAY_SECONDS},
         )
     except ExpiredSignatureError as exc:
         raise ExpiredTokenError("Access token has expired") from exc
+    except JWTClaimsError as exc:
+        # `JWTClaimsError` is the dedicated branch for claim-shape failures
+        # (`aud` mismatch, `iss` mismatch / missing, `exp` non-int, etc.).
+        # `JWTError` (caught below) covers the structural / signature
+        # failures — keep them distinct so a future caller can refine.
+        raise InvalidTokenError("Access token has invalid claims") from exc
     except JWTError as exc:
         raise InvalidTokenError("Access token is invalid") from exc
+
+    if "aud" not in payload:
+        raise InvalidTokenError("Access token has no 'aud' claim")
 
     iat = payload.get("iat")
     if isinstance(iat, int | float):

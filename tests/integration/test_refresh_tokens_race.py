@@ -7,23 +7,21 @@ committed state. We therefore build a dedicated engine pinned to
 production isolation (REPEATABLE READ) and create the auth schema
 committed for the duration of each test.
 
-Surfaced two pre-existing defects in `rotate()` while writing these
-tests (both filed as follow-ups, not fixed here):
+Two race shapes covered:
 
-- #57: under true REPEATABLE READ contention the loser receives
-  `SerializationFailure` (DBAPIError) instead of falling through to
-  the replay branch. The barrier variant below pins this gap with a
-  permissive assertion until #57 lands.
-- #58: the family invalidation flushed in the replay branch is rolled
-  back by `get_db`'s `except Exception: rollback` in production. The
-  test infra (`_override_get_db`) yields the session without that wrap
-  and therefore masks the bug — the assertions on family state below
-  reflect the test-time semantics, not production semantics.
+- `test_rotate_replay_branch_fires_when_loser_starts_after_commit` —
+  `asyncio.Event` makes the loser open its REPEATABLE READ snapshot
+  strictly after the winner has committed. Pins the deterministic
+  `rowcount=0` → replay branch path.
+- `test_rotate_concurrent_race_with_barrier` — `asyncio.Barrier`
+  forces both tasks to issue their UPDATE inside the same snapshot
+  window. Pins the SerializationFailure (SQLSTATE 40001) → replay
+  recovery path added by issue #57.
 
-The first test uses an `asyncio.Event` to make the loser start strictly
-after the winner commits — pinning the deterministic `rowcount=0` →
-replay path. The barrier variant intentionally creates true contention
-and observes whichever loss mode `rotate()` currently exposes.
+Both tests verify post-race family state via a third independent
+session, which is the canonical pinning for "the family invalidation
+committed by `rotate()` actually persisted to the database"
+(cf. ADR 0015 and issue #58).
 """
 
 from __future__ import annotations
@@ -31,6 +29,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 
+import pytest
 import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import (
@@ -152,9 +151,10 @@ async def test_rotate_replay_branch_fires_when_loser_starts_after_commit(
                 await session.commit()
                 return ("success", None)
             except RevokedRefreshTokenError as exc:
-                # Replay branch ran the family invalidation; persist that
-                # before reporting.
-                await session.commit()
+                # No `session.commit()` here on purpose: the replay branch
+                # of `rotate()` commits the family invalidation itself
+                # (ADR 0015). If we observe the family revoked from a
+                # separate session below, the contract holds.
                 return ("revoked", exc)
             except InvalidRefreshTokenError as exc:
                 await session.rollback()
@@ -207,13 +207,14 @@ async def test_rotate_concurrent_race_with_barrier(
     both transactions take their REPEATABLE READ snapshot first, then
     contend on the UPDATE row lock simultaneously.
 
-    **Current observed behaviour (pinning the gap from #57)**: the
-    loser surfaces a Postgres `SerializationFailure` (40001) wrapped as
-    `sqlalchemy.exc.DBAPIError` — NOT the replay branch. `rotate()`
-    does not catch that exception, so in production the route returns
-    500. This assertion is therefore deliberately permissive (just
-    "exactly one success") until #57 lands. Tighten to
-    `["revoked", "success"]` strict as part of that fix.
+    Under true contention the Postgres loser is aborted with
+    `SerializationFailure` (SQLSTATE 40001); `rotate()` catches that,
+    rolls back the aborted txn, runs the replay branch against a fresh
+    snapshot, and commits the family invalidation before raising
+    `RevokedRefreshTokenError` (cf. issue #57 + ADR 0015). The strict
+    assertion below pins that behaviour: exactly one success, the
+    other revoked, and the entire family marked revoked in the
+    database from the point of view of a third session.
     """
     sm = async_sessionmaker(committed_engine, expire_on_commit=False)
 
@@ -230,6 +231,15 @@ async def test_rotate_concurrent_race_with_barrier(
         raw_t0 = await issue(session, user_id, settings=_settings)
         await session.commit()
 
+    async with sm() as session:
+        family_id_seed = (
+            await session.execute(
+                select(RefreshToken.family_id).where(
+                    RefreshToken.token_hash == hash_refresh_token(raw_t0, settings=_settings)
+                )
+            )
+        ).scalar_one()
+
     barrier = asyncio.Barrier(2)
 
     async def attempt() -> tuple[str, str | None]:
@@ -245,7 +255,10 @@ async def test_rotate_concurrent_race_with_barrier(
                 await session.commit()
                 return ("success", None)
             except RevokedRefreshTokenError:
-                await session.commit()
+                # `rotate()` already committed the family invalidation
+                # internally (race-recovery path, ADR 0015). Don't add a
+                # second commit — the verification below uses an
+                # independent session.
                 return ("revoked", None)
             except InvalidRefreshTokenError as exc:
                 await session.rollback()
@@ -257,8 +270,107 @@ async def test_rotate_concurrent_race_with_barrier(
     outcomes = await asyncio.gather(attempt(), attempt())
     statuses = sorted(o[0] for o in outcomes)
 
-    # Exactly one task must succeed; the other must NOT also succeed.
-    # The losing branch is left intentionally permissive — see docstring.
-    assert statuses.count("success") == 1, (
-        f"expected exactly one success; got {statuses}, detail: {[(s, d) for s, d in outcomes]}"
+    # Strict outcome contract: one success, one revoked. No 500-class
+    # leakage ("other") and no double-success.
+    assert statuses == ["revoked", "success"], (
+        f"unexpected race outcome: {statuses}; detail: {[(s, d) for s, d in outcomes]}"
+    )
+
+    # Family fully invalidated, witnessed from an independent session.
+    # This is the pinning for #58: the family revocation committed by
+    # `rotate()` survived without help from any caller-side commit.
+    async with sm() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(RefreshToken).where(RefreshToken.family_id == family_id_seed)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    # T0 + the successor inserted by the winner = 2 rows. Both must be
+    # revoked: the winner revoked T0, then the loser's race-recovery
+    # branch revoked every still-live row in the family (the winner's
+    # successor included).
+    assert len(rows) == 2
+    assert all(row.revoked_at is not None for row in rows), (
+        f"expected every row in the family to be revoked; got: "
+        f"{[(r.token_hash[:8], r.revoked_at) for r in rows]}"
+    )
+
+
+async def test_rotate_replay_family_invalidation_persists_across_sessions(
+    committed_engine: AsyncEngine,
+) -> None:
+    """Replay branch's family invalidation must survive caller-side rollback.
+
+    Direct service-level pinning of issue #58: when `rotate()` detects
+    a replay it commits the family invalidation itself (ADR 0015).
+    Simulating the `get_db` `except: rollback` contract — the caller
+    rolls back its session after `RevokedRefreshTokenError` — must
+    not erase the tombstone. A third, independent session then
+    asserts the family is fully revoked.
+
+    Without the commit-inside-service in `rotate()`'s replay branch,
+    the caller's rollback would revert the family invalidation flush
+    and this test's final assertion would fail. With the test infra
+    fix in `conftest.py:_override_get_db` this same contract is
+    exercised end-to-end via `/auth/refresh`; this test corners the
+    service layer directly so a future regression is attributed to
+    `rotate()`, not to the HTTP transport.
+    """
+    sm = async_sessionmaker(committed_engine, expire_on_commit=False)
+
+    async with sm() as session:
+        user = User(
+            email="replay-pin@example.com",
+            password_hash="x" * 60,
+            display_name="Replay Pin",
+            role=UserRole.MEMBER,
+        )
+        session.add(user)
+        await session.flush()
+        user_id = user.id
+        raw_t0 = await issue(session, user_id, settings=_settings)
+        await session.commit()
+
+    async with sm() as session:
+        _, _raw_t1 = await rotate(session, raw_t0, settings=_settings)
+        await session.commit()
+
+    async with sm() as session:
+        family_id = (
+            await session.execute(
+                select(RefreshToken.family_id).where(
+                    RefreshToken.token_hash == hash_refresh_token(raw_t0, settings=_settings)
+                )
+            )
+        ).scalar_one()
+
+    # Caller mimics `get_db`: enters a session, calls `rotate()`,
+    # rollbacks on the resulting exception. The family invalidation
+    # must already be committed by `rotate()` so this rollback is a
+    # no-op for the security tombstone.
+    async with sm() as session:
+        with pytest.raises(RevokedRefreshTokenError):
+            try:
+                await rotate(session, raw_t0, settings=_settings)
+            except Exception:
+                await session.rollback()
+                raise
+
+    # Independent connection observes the family. If the replay branch
+    # only flushed (no commit), the rollback above would have erased
+    # the UPDATE and the live successor would still be live here.
+    async with sm() as session:
+        rows = (
+            (await session.execute(select(RefreshToken).where(RefreshToken.family_id == family_id)))
+            .scalars()
+            .all()
+        )
+    assert len(rows) == 2
+    assert all(row.revoked_at is not None for row in rows), (
+        f"family invalidation did not persist across rollback: "
+        f"{[(r.token_hash[:8], r.revoked_at) for r in rows]}"
     )

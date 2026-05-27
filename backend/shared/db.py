@@ -30,10 +30,13 @@ from backend.config import Settings, get_settings
 def build_engine(settings: Settings) -> AsyncEngine:
     """Build the async engine with REPEATABLE READ isolation.
 
-    Defense-in-depth against the replay-vs-rotate race. Any rare
-    `SerializationError` from a true conflict bubbles up to a 500 — that
-    is acceptable for the auth routes (which only touch a small set of
-    rows) and a deliberate signal in upstream logs.
+    Defense-in-depth against the replay-vs-rotate race. True concurrent
+    contention surfaces as Postgres SQLSTATE 40001
+    (`serialization_failure`); `service.refresh_tokens.rotate()` catches
+    it and treats the loser as a replay (cf. ADR 0015). Callers in other
+    services that don't handle 40001 will see it bubble up to a 500 —
+    deliberate signal, since no other path currently exercises true
+    concurrent UPDATEs on the same row.
     """
     return create_async_engine(
         settings.database_url,

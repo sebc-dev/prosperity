@@ -26,7 +26,12 @@ from backend.modules.auth.models import Base as AuthBase
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # `disable_existing_loggers=False` so loading the Alembic logging
+    # config does not silence the backend loggers (e.g. structured
+    # warnings on refresh-token replay) created before this call —
+    # otherwise running migrations from within the app process leaves
+    # the app log-deaf.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 if not config.get_main_option("sqlalchemy.url"):
     config.set_main_option("sqlalchemy.url", get_settings().database_url)

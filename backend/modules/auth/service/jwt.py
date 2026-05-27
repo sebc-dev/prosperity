@@ -12,7 +12,7 @@ from uuid import UUID
 
 from jose import ExpiredSignatureError, JWTError, jwt
 
-from backend.config import get_settings
+from backend.config import Settings
 
 
 class InvalidTokenError(Exception):
@@ -27,13 +27,16 @@ class ExpiredTokenError(InvalidTokenError):
     """
 
 
-def issue_access_token(user_id: UUID) -> str:
+def issue_access_token(user_id: UUID, *, settings: Settings) -> str:
     """Issue a signed HS256 access JWT for `user_id`.
 
     The payload contains `sub` (stringified UUID), `iat`, and `exp` claims
     (exp = iat + `settings.jwt_access_ttl_seconds`).
+
+    `settings` is passed kw-only so the caller controls config injection
+    (FastAPI routes use `Depends(get_settings)`); avoids the cached-import
+    coupling that forced `cache_clear()` in tests.
     """
-    settings = get_settings()
     now_ts = int(datetime.now(tz=UTC).timestamp())
     payload: dict[str, Any] = {
         "sub": str(user_id),
@@ -45,7 +48,7 @@ def issue_access_token(user_id: UUID) -> str:
     )
 
 
-def verify_access_token(token: str) -> UUID:
+def verify_access_token(token: str, *, settings: Settings) -> UUID:
     """Verify `token` and return the `user_id` from its `sub` claim.
 
     Raises:
@@ -53,7 +56,6 @@ def verify_access_token(token: str) -> UUID:
         InvalidTokenError: on bad signature, malformed token, or missing/
             malformed `sub` claim.
     """
-    settings = get_settings()
     try:
         # Algorithm whitelist is hardcoded (not read from settings) so a misconfigured
         # `JWT_ALGORITHM` cannot open HS256/RS256 key-confusion or `alg=none` attacks.

@@ -9,17 +9,33 @@ If Docker is not reachable on the host (typical local dev without Docker
 Desktop's WSL integration enabled), the container fixture skips —
 keeping the unit/http tiers green while the integration tier defers to
 CI where Docker is available.
+
+Also exposes:
+- `auth_schema` — db_session with `users` + `refresh_tokens` materialised
+- `bound_user_factory` — factory that creates a `User` against `db_session`
+- `async_client` — httpx AsyncClient bound to the FastAPI app, with
+  `get_db` overridden to yield the test's `db_session` (no commit, so
+  the transactional rollback teardown reverts everything).
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from typing import cast
 
 import docker
 import pytest
 import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
+
+from backend.main import app
+from backend.modules.auth.models import Base as AuthBase
+from backend.modules.auth.models import User
+from backend.shared.db import get_db
+from tests.factories.sqlalchemy import UserFactory
 
 
 def _docker_available() -> bool:
@@ -58,3 +74,59 @@ async def db_session(db_engine) -> AsyncIterator[AsyncSession]:
                 yield session
             finally:
                 await transaction.rollback()
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def auth_schema(db_session: AsyncSession) -> AsyncSession:
+    """Create `users` + `refresh_tokens` on the test's transactional connection.
+
+    Promoted from `test_refresh_tokens.py` so S02.4 integration tests can
+    depend on it without re-declaring the bootstrap.
+    """
+    conn = await db_session.connection()
+    await conn.run_sync(AuthBase.metadata.create_all)
+    return db_session
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def bound_user_factory(
+    auth_schema: AsyncSession,
+) -> Callable[..., Awaitable[User]]:
+    """Async helper that persists a `User` against the test's session.
+
+    Extracted from the `_make_user` helper that lived in
+    `test_refresh_tokens.py` once S02.4 introduced a second consumer
+    (auth routes tests). Kept here (not in the global `tests/conftest.py`)
+    so the unit tier never pulls in `db_session`.
+    """
+
+    async def _make_user(**overrides: object) -> User:
+        def _create(sync_session: Session) -> User:
+            UserFactory._meta.sqlalchemy_session = sync_session  # type: ignore[attr-defined]
+            return cast(User, UserFactory(**overrides))
+
+        return await auth_schema.run_sync(_create)
+
+    return _make_user
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def async_client(auth_schema: AsyncSession) -> AsyncIterator[AsyncClient]:
+    """httpx AsyncClient wired to the FastAPI app with `get_db` overridden.
+
+    The override yields the test's `db_session` (via `auth_schema`)
+    without committing — the per-test rollback in `db_session` reverts
+    every write. `try/finally` + `pop(get_db, None)` so adjacent fixtures
+    that register their own overrides are not clobbered.
+    """
+
+    async def _override_get_db() -> AsyncIterator[AsyncSession]:
+        yield auth_schema
+
+    app.dependency_overrides[get_db] = _override_get_db
+    transport = ASGITransport(app=app)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            yield client
+    finally:
+        app.dependency_overrides.pop(get_db, None)

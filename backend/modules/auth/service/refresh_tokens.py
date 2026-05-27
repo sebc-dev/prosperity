@@ -237,6 +237,14 @@ async def revoke(session: AsyncSession, token_hash: str) -> int:
     Idempotent: a no-op when no row matches, or when the row is already
     revoked. We never delete rows (tombstone semantics) so audit logs
     and concurrent verifies still see the explicit revocation.
+
+    Deliberately ignores `expires_at` — already-expired tokens still
+    get a `revoked_at` timestamp. A logout (or admin revoke) on a
+    token whose deadline has just elapsed is still a meaningful audit
+    event: it records the user's intent to terminate the session and
+    keeps the tombstone shape uniform across live and expired rows
+    (a row with `expires_at < now AND revoked_at IS NULL` would
+    otherwise be indistinguishable from one that was simply forgotten).
     """
     # `AsyncSession.execute` is typed as returning the generic `Result`,
     # but for DML SQLAlchemy returns a `CursorResult` at runtime; cast so

@@ -8,6 +8,7 @@ Internal to `modules.auth`: cross-module callers go through
 from __future__ import annotations
 
 import logging
+import secrets
 from functools import cache
 from typing import Annotated
 
@@ -63,12 +64,17 @@ def _password_hasher() -> PasswordHash:
 def _dummy_hash() -> str:
     """Pre-computed Argon2id hash used to equalise verify timing.
 
-    Calling `verify("dummy", _dummy_hash())` when the supplied email
+    Calling `verify(<random>, _dummy_hash())` when the supplied email
     doesn't resolve to a user prevents timing-based account
     enumeration: an attacker can't distinguish "user unknown" from
     "user exists, password wrong" by measuring response latency.
+
+    The pre-image is `secrets.token_urlsafe(32)` (computed once per
+    process) rather than a fixed literal so an attacker who obtains
+    this exact hash from a memory dump cannot fingerprint it as the
+    "unknown user" sentinel — the value differs across processes.
     """
-    return _password_hasher().hash("dummy")
+    return _password_hasher().hash(secrets.token_urlsafe(32))
 
 
 @router.post("/login", response_model=TokenPair, status_code=status.HTTP_200_OK)

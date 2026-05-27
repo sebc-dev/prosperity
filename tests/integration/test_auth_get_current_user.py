@@ -116,12 +116,12 @@ async def test_whoami_rejects_expired_token(
     bound_user_factory: UserMaker,
 ) -> None:
     user = await bound_user_factory(email="carol@example.com")
-    # Negative TTL → token is born expired (pattern already used in
-    # `test_auth_jwt`). Avoids time-travel mocking.
+    # Negative TTL well past the 30 s NTP leeway → token is unambiguously
+    # expired. Avoids time-travel mocking.
     expired_settings = Settings(
         jwt_secret=_settings.jwt_secret,
         jwt_algorithm=_settings.jwt_algorithm,
-        jwt_access_ttl_seconds=-1,
+        jwt_access_ttl_seconds=-60,
     )
     token = issue_access_token(user.id, settings=expired_settings)
 

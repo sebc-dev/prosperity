@@ -19,6 +19,15 @@ def test_sanitize_invariants(s: str) -> None:
     )
 
 
+@given(st.text())
+def test_sanitize_is_idempotent(s: str) -> None:
+    """sanitize(sanitize(x)) == sanitize(x) — guards against drift if strip/
+    truncate ever reintroduce non-printable chars or trailing whitespace."""
+    once = sanitize_device_label(s)
+    twice = sanitize_device_label(once)
+    assert once == twice
+
+
 def test_sanitize_returns_none_for_none() -> None:
     assert sanitize_device_label(None) is None
 

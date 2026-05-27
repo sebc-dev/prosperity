@@ -4,6 +4,15 @@ table alembic_version
   col version_num: VARCHAR(32) NOT NULL
   pk alembic_version_pkc(version_num)
 
+table household
+  col base_currency: VARCHAR(3) NOT NULL
+  col created_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col id: UUID NOT NULL
+  col initialized_at: TIMESTAMP WITH TIME ZONE NULL
+  col name: VARCHAR(120) NOT NULL
+  pk pk_household(id)
+  ck ck_household_singleton: (id = '00000000-0000-0000-0000-000000000001'::uuid)
+
 table refresh_tokens
   col device_label: VARCHAR(120) NULL
   col expires_at: TIMESTAMP WITH TIME ZONE NOT NULL

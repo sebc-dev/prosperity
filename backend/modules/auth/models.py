@@ -4,10 +4,10 @@ These declarations are internal to `modules.auth`: cross-module callers
 must go through `modules.auth.public`. Import-linter contract 2 enforces
 that no other module imports from `modules.auth.models`.
 
-`Base` lives here because auth is the first module to ship persisted
-models. When future modules add their own tables they can either reuse
-this `Base` (via Alembic's `target_metadata` aggregator) or declare a
-sibling `Base`; cross-module model imports remain forbidden either way.
+`Base` is shared with every persisted module via `backend.shared.models`
+(a single metadata makes `create_all()` and Alembic's `target_metadata`
+trivially correct, and lets cross-module FKs declare without metadata
+reconciliation). Cross-module model imports remain forbidden by contract 2.
 """
 
 from __future__ import annotations
@@ -22,25 +22,14 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Index,
-    MetaData,
     String,
     UniqueConstraint,
     func,
     text,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, validates
+from sqlalchemy.orm import Mapped, mapped_column, validates
 
-# Explicit naming convention so constraints created via `create_all` (used in
-# tests) match the names Alembic produces via `op.f(...)`. Without this, a
-# future `alembic revision --autogenerate` would diff every constraint and
-# generate noisy renames.
-NAMING_CONVENTION = {
-    "ix": "ix_%(table_name)s_%(column_0_N_label)s",
-    "uq": "uq_%(table_name)s_%(column_0_N_name)s",
-    "ck": "ck_%(table_name)s_%(constraint_name)s",
-    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
-    "pk": "pk_%(table_name)s",
-}
+from backend.shared.models import Base
 
 
 class UserRole(enum.StrEnum):
@@ -61,12 +50,6 @@ def _user_role_values(enum_cls: type[UserRole]) -> list[str]:
     # (`ADMIN`, `MEMBER`); the PG ENUM stores the lowercased *values*, so
     # we override to keep both representations aligned.
     return [member.value for member in enum_cls]
-
-
-class Base(DeclarativeBase):
-    """Declarative base for auth-module ORM models."""
-
-    metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
 class User(Base):

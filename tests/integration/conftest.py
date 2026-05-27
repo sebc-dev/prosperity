@@ -31,10 +31,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
 
+import backend.modules.accounts.models  # noqa: F401  # pyright: ignore[reportUnusedImport]  side-effect: register tables on `Base.metadata`
 from backend.main import app
-from backend.modules.auth.models import Base as AuthBase
 from backend.modules.auth.models import User
 from backend.shared.db import get_db
+from backend.shared.models import Base
 from tests.factories.sqlalchemy import UserFactory
 
 
@@ -78,13 +79,17 @@ async def db_session(db_engine) -> AsyncIterator[AsyncSession]:
 
 @pytest_asyncio.fixture(loop_scope="session")
 async def auth_schema(db_session: AsyncSession) -> AsyncSession:
-    """Create `users` + `refresh_tokens` on the test's transactional connection.
+    """Create every persisted-module table on the test's transactional connection.
 
-    Promoted from `test_refresh_tokens.py` so S02.4 integration tests can
-    depend on it without re-declaring the bootstrap.
+    Historically scoped to the auth tables; with the shared `Base`
+    `create_all` materialises every module's tables in one shot. The
+    name is preserved so S02.* consumers keep working; new callers
+    should treat it as "all-modules schema". Setup is cheap (one DDL
+    round-trip) and the transaction-level rollback teardown still
+    guarantees per-test isolation.
     """
     conn = await db_session.connection()
-    await conn.run_sync(AuthBase.metadata.create_all)
+    await conn.run_sync(Base.metadata.create_all)
     return db_session
 
 

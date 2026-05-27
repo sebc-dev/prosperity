@@ -40,7 +40,6 @@ from sqlalchemy.ext.asyncio import (
 from testcontainers.postgres import PostgresContainer
 
 from backend.config import get_settings
-from backend.modules.auth.models import Base as AuthBase
 from backend.modules.auth.models import RefreshToken, User, UserRole
 from backend.modules.auth.service.refresh_tokens import (
     InvalidRefreshTokenError,
@@ -49,6 +48,7 @@ from backend.modules.auth.service.refresh_tokens import (
     issue,
     rotate,
 )
+from backend.shared.models import Base
 
 _settings = get_settings()
 
@@ -75,11 +75,11 @@ async def committed_engine(
     )
     try:
         async with engine.begin() as conn:
-            await conn.run_sync(AuthBase.metadata.create_all)
+            await conn.run_sync(Base.metadata.create_all)
         yield engine
     finally:
         async with engine.begin() as conn:
-            await conn.run_sync(AuthBase.metadata.drop_all)
+            await conn.run_sync(Base.metadata.drop_all)
         await engine.dispose()
 
 

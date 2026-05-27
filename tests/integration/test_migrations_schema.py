@@ -12,6 +12,10 @@ The snapshot captures:
 - Per-table column name, dialect-compiled type, and nullability (catches
   a column dropped, renamed, retyped, or with flipped NULL/NOT NULL).
 - Per-table primary key (name + columns).
+- Per-table CHECK constraints with their normalised SQL body (catches
+  a constraint silently dropped between revisions — e.g., the household
+  singleton CHECK whose absence would let raw INSERTs spawn a second
+  foyer; ADR 0010).
 - Per-table non-PK indexes including functional ones, with their full
   expression (catches a missing `lower(email)` index or any UNIQUE
   index dropped).
@@ -101,6 +105,14 @@ def _format_schema(engine: Engine) -> str:
         if pk["constrained_columns"]:
             pk_cols = ", ".join(pk["constrained_columns"])
             lines.append(f"  pk {pk_name}({pk_cols})")
+        # CHECK constraints surface here (not via pg_indexes); the
+        # snapshot needs them because a missing CHECK is invisible in a
+        # column-name-only diff (e.g. dropping `ck_household_singleton`
+        # would let raw SQL spawn a second foyer; ADR 0010).
+        for ck in sorted(insp.get_check_constraints(table), key=lambda c: c["name"] or ""):
+            ck_name = ck.get("name") or ""
+            ck_sql = ck.get("sqltext") or ""
+            lines.append(f"  ck {ck_name}: ({ck_sql})")
         # pg_indexes also lists the PK-backing index under the same name;
         # skip it to avoid duplicating the constraint above.
         for indexname, indexdef in indexes_by_table.get(table, []):
@@ -142,3 +154,4 @@ def test_baseline_migration_round_trip(postgres_container: PostgresContainer) ->
     assert "table refresh_tokens" not in post, (
         f"refresh_tokens table leaked after downgrade:\n{post}"
     )
+    assert "table household" not in post, f"household table leaked after downgrade:\n{post}"

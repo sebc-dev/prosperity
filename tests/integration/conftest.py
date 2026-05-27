@@ -31,6 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
 
+import backend.modules.accounts.models  # noqa: F401  # pyright: ignore[reportUnusedImport]  side-effect: register tables on `Base.metadata`
 from backend.main import app
 from backend.modules.auth.models import User
 from backend.shared.db import get_db

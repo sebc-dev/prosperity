@@ -13,6 +13,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -65,3 +66,23 @@ async def test_initialized_at_can_be_set_post_insert(
     h.initialized_at = datetime.now(tz=UTC)
     await auth_schema.flush()
     assert h.initialized_at is not None
+
+
+async def test_raw_sql_insert_with_wrong_uuid_violates_check(
+    auth_schema: AsyncSession,
+) -> None:
+    # Migration 0004's docstring claims the CHECK fires against raw
+    # SQL that bypasses the ORM default. The ORM-path test above
+    # exercises that claim through `Household(id=...)`, which still
+    # routes through the ORM insert pipeline. This test goes around
+    # the ORM entirely via `text()`, locking the defense-in-depth.
+    stmt = text("INSERT INTO household (id, name, base_currency) VALUES (:id, :name, :ccy)")
+    with pytest.raises(IntegrityError):
+        await auth_schema.execute(
+            stmt,
+            {
+                "id": uuid.UUID("22222222-2222-2222-2222-222222222222"),
+                "name": "Raw",
+                "ccy": "EUR",
+            },
+        )

@@ -119,3 +119,26 @@ async def test_returned_object_survives_session_close(auth_schema: AsyncSession)
     # No DetachedInstanceError because no lazy-load is triggered
     # (the model declares no relationships).
     assert h.name == "Detached"
+
+
+async def test_cache_survives_rollback_locks_post_commit_contract(
+    auth_schema: AsyncSession,
+) -> None:
+    # The cache stores a detached object whose attributes remain
+    # readable after the originating transaction is rolled back —
+    # exactly the mechanism that creates the S03.2 cache-poisoning
+    # risk (priming on an uncommitted write leaks a phantom singleton).
+    # This test pins the behavior: if `expunge` were removed or the
+    # cache were tied to session liveness, the assertion below would
+    # break, forcing the post-commit contract to be re-examined.
+    auth_schema.add(
+        Household(
+            name="Phantom",
+            base_currency="EUR",
+            initialized_at=datetime.now(tz=UTC),
+        )
+    )
+    await auth_schema.flush()
+    h = await get_household(auth_schema)
+    await auth_schema.rollback()
+    assert h.name == "Phantom"

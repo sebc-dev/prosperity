@@ -22,9 +22,7 @@ from backend.shared.models import Base
 
 # Fixed singleton identifier (ADR 0010). Hard-coded everywhere — no DB
 # lookup. Re-exported via `accounts.public.HOUSEHOLD_ID`.
-HOUSEHOLD_SINGLETON_UUID: Final[uuid.UUID] = uuid.UUID(
-    "00000000-0000-0000-0000-000000000001"
-)
+HOUSEHOLD_SINGLETON_UUID: Final[uuid.UUID] = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 
 class Household(Base):

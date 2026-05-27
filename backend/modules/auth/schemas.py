@@ -34,6 +34,10 @@ def sanitize_device_label(raw: str | None) -> str | None:
 
 
 class LoginRequest(BaseModel):
+    # `EmailStr` accepts the 422-on-malformed vs 401-on-unknown channel,
+    # bounded by the login rate-limit (S02.5). Pydantic v2 forces
+    # `check_deliverability=False` on every call to `email_validator`, so no
+    # DNS timing oracle leaks domain existence — pinned in `test_auth_schemas`.
     email: EmailStr
     # `SecretStr` keeps the password out of `repr()` (debug, Sentry tags,
     # validator traces, structlog bindings). `max_length=128` matches

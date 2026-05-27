@@ -260,6 +260,5 @@ async def test_rotate_concurrent_race_with_barrier(
     # Exactly one task must succeed; the other must NOT also succeed.
     # The losing branch is left intentionally permissive — see docstring.
     assert statuses.count("success") == 1, (
-        f"expected exactly one success; got {statuses}, "
-        f"detail: {[(s, d) for s, d in outcomes]}"
+        f"expected exactly one success; got {statuses}, detail: {[(s, d) for s, d in outcomes]}"
     )

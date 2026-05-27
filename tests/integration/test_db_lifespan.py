@@ -69,15 +69,12 @@ async def lifespan_app(
 
         # Materialise the marker table on a separate connection so it
         # survives the test's own transactional churn. Drop it at teardown.
-        prep_engine = create_async_engine(
-            postgres_container.get_connection_url(), future=True
-        )
+        prep_engine = create_async_engine(postgres_container.get_connection_url(), future=True)
         try:
             async with prep_engine.begin() as conn:
                 await conn.execute(
                     text(
-                        "CREATE TABLE IF NOT EXISTS smoke_lifespan_marker "
-                        "(value text PRIMARY KEY)"
+                        "CREATE TABLE IF NOT EXISTS smoke_lifespan_marker (value text PRIMARY KEY)"
                     )
                 )
             yield app
@@ -156,8 +153,6 @@ async def test_get_db_rolls_back_on_exception(lifespan_app: FastAPI) -> None:
 
         async with lifespan_app.state.engine.begin() as conn:
             row = await conn.execute(
-                text(
-                    "SELECT value FROM smoke_lifespan_marker WHERE value = 'rolled-back-value'"
-                )
+                text("SELECT value FROM smoke_lifespan_marker WHERE value = 'rolled-back-value'")
             )
             assert row.scalar_one_or_none() is None

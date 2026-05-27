@@ -98,6 +98,14 @@ async def test_refresh_reuse_returns_401_and_invalidates_family(
     After the second attempt the new child returned by the first rotation
     must also be revoked: the legitimate user loses their session — that
     is the cost of replay detection and is the intended behaviour.
+
+    Note on isolation: `auth_schema` shares the test connection with the
+    request session (via `join_transaction_mode="create_savepoint"` in
+    `conftest.py:_override_get_db`), so the family read below sees the
+    commit `rotate()` performs through that savepoint. The true
+    cross-connection pinning for ADR 0015 (family commit survives a
+    caller-side rollback against an independent connection) lives in
+    `test_refresh_tokens_race.py::test_rotate_replay_family_invalidation_persists_across_sessions`.
     """
     await bound_user_factory(email="carol@example.com", password="pw")
     _, refresh_token = await _login(async_client, "carol@example.com", "pw")

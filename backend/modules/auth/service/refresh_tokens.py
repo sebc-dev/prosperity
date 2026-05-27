@@ -263,6 +263,13 @@ async def _invalidate_family_after_race(
     Commit happens *inside* the service deliberately — see ADR 0015 for
     the rationale (the exception that follows would otherwise trigger
     `get_db`'s rollback and erase the family tombstone).
+
+    Not retried on a recursive 40001: if a *third* rotation commits
+    between this function's rollback-recovered snapshot and its own
+    UPDATE/commit, the second SerializationFailure bubbles out as a 500.
+    The window requires triple-contention on the same row and the third
+    rotation will itself have committed (or marked) the family, so the
+    security tombstone is still in place; the 500 is acceptable signal.
     """
     existing = (
         await session.execute(select(RefreshToken).where(RefreshToken.token_hash == token_hash))

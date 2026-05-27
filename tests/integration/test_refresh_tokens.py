@@ -18,19 +18,17 @@ keeps state from leaking.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
-from typing import cast
 from uuid import UUID
 
 import pytest
-import pytest_asyncio
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 
 from backend.config import Settings, get_settings
-from backend.modules.auth.models import Base, RefreshToken, User
+from backend.modules.auth.models import RefreshToken, User
 from backend.modules.auth.service.refresh_tokens import (
     ExpiredRefreshTokenError,
     InvalidRefreshTokenError,
@@ -40,7 +38,6 @@ from backend.modules.auth.service.refresh_tokens import (
     revoke,
     verify,
 )
-from tests.factories.sqlalchemy import UserFactory
 
 # Settings are pulled once at module load; tests that need a custom
 # value (e.g. shorter TTL) build a fresh `Settings()` locally rather
@@ -48,26 +45,14 @@ from tests.factories.sqlalchemy import UserFactory
 _settings = get_settings()
 
 
-@pytest_asyncio.fixture(loop_scope="session")
-async def auth_schema(db_session: AsyncSession) -> AsyncSession:
-    """Create `users` + `refresh_tokens` on the test's transactional connection."""
-    conn = await db_session.connection()
-    await conn.run_sync(Base.metadata.create_all)
-    return db_session
-
-
-async def _make_user(session: AsyncSession, **overrides: object) -> User:
-    def _create(sync_session: Session) -> User:
-        UserFactory._meta.sqlalchemy_session = sync_session  # type: ignore[attr-defined]
-        return cast(User, UserFactory(**overrides))
-
-    return await session.run_sync(_create)
+UserMaker = Callable[..., Awaitable[User]]
 
 
 async def test_issue_returns_raw_token_and_persists_only_hash(
     auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
 ) -> None:
-    user = await _make_user(auth_schema, email="alice@example.com")
+    user = await bound_user_factory(email="alice@example.com")
 
     raw = await issue(auth_schema, user.id, settings=_settings, device_label="laptop")
 
@@ -89,8 +74,11 @@ async def test_issue_returns_raw_token_and_persists_only_hash(
     assert abs(delta - timedelta(seconds=30 * 24 * 3600)) < timedelta(seconds=1)
 
 
-async def test_issue_without_device_label_is_allowed(auth_schema: AsyncSession) -> None:
-    user = await _make_user(auth_schema, email="bob@example.com")
+async def test_issue_without_device_label_is_allowed(
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    user = await bound_user_factory(email="bob@example.com")
     raw = await issue(auth_schema, user.id, settings=_settings)
     record = (
         await auth_schema.execute(select(RefreshToken).where(RefreshToken.user_id == user.id))
@@ -99,8 +87,11 @@ async def test_issue_without_device_label_is_allowed(auth_schema: AsyncSession) 
     assert record.token_hash == hash_refresh_token(raw, settings=_settings)
 
 
-async def test_verify_returns_user_id_for_a_valid_token(auth_schema: AsyncSession) -> None:
-    user = await _make_user(auth_schema, email="carol@example.com")
+async def test_verify_returns_user_id_for_a_valid_token(
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    user = await bound_user_factory(email="carol@example.com")
     raw = await issue(auth_schema, user.id, settings=_settings)
 
     assert await verify(auth_schema, raw, settings=_settings) == user.id
@@ -133,14 +124,17 @@ async def test_verify_rejects_non_ascii_raw_token(auth_schema: AsyncSession) -> 
     assert not isinstance(excinfo.value, ExpiredRefreshTokenError | RevokedRefreshTokenError)
 
 
-async def test_verify_rejects_expired_token(auth_schema: AsyncSession) -> None:
+async def test_verify_rejects_expired_token(
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
     """A token whose `expires_at` is in the past raises `ExpiredRefreshTokenError`.
 
     Inserts directly rather than going through `issue()` so the test
     binds to the verify-time deadline check, not to a clock-fudging
     issuance path.
     """
-    user = await _make_user(auth_schema, email="dave@example.com")
+    user = await bound_user_factory(email="dave@example.com")
     raw = "expired-token-raw-value"
     now = datetime.now(tz=UTC)
     auth_schema.add(
@@ -157,9 +151,12 @@ async def test_verify_rejects_expired_token(auth_schema: AsyncSession) -> None:
         await verify(auth_schema, raw, settings=_settings)
 
 
-async def test_verify_rejects_revoked_token(auth_schema: AsyncSession) -> None:
+async def test_verify_rejects_revoked_token(
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
     """A revoked token raises `RevokedRefreshTokenError` even before it expires."""
-    user = await _make_user(auth_schema, email="erin@example.com")
+    user = await bound_user_factory(email="erin@example.com")
     raw = await issue(auth_schema, user.id, settings=_settings)
 
     await revoke(auth_schema, hash_refresh_token(raw, settings=_settings))
@@ -168,14 +165,17 @@ async def test_verify_rejects_revoked_token(auth_schema: AsyncSession) -> None:
         await verify(auth_schema, raw, settings=_settings)
 
 
-async def test_revoked_check_fires_before_expired_check(auth_schema: AsyncSession) -> None:
+async def test_revoked_check_fires_before_expired_check(
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
     """If a token is both revoked AND expired, the revoked error wins.
 
     Upstream handlers can log a deliberate revocation differently from a
     natural expiration; pinning the order here prevents that distinction
     from silently flipping in a refactor.
     """
-    user = await _make_user(auth_schema, email="frank@example.com")
+    user = await bound_user_factory(email="frank@example.com")
     raw = "old-and-revoked"
     now = datetime.now(tz=UTC)
     auth_schema.add(
@@ -195,13 +195,14 @@ async def test_revoked_check_fires_before_expired_check(auth_schema: AsyncSessio
 
 async def test_revoke_does_not_affect_other_tokens_for_same_user(
     auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
 ) -> None:
     """Revoking one of a user's tokens leaves the others usable.
 
     Models the real-world flow where a user logs out from a single
     device but other devices stay signed in.
     """
-    user = await _make_user(auth_schema, email="gina@example.com")
+    user = await bound_user_factory(email="gina@example.com")
     raw_a = await issue(auth_schema, user.id, settings=_settings, device_label="laptop")
     raw_b = await issue(auth_schema, user.id, settings=_settings, device_label="phone")
 
@@ -212,12 +213,15 @@ async def test_revoke_does_not_affect_other_tokens_for_same_user(
     assert await verify(auth_schema, raw_b, settings=_settings) == user.id
 
 
-async def test_revoke_is_idempotent(auth_schema: AsyncSession) -> None:
+async def test_revoke_is_idempotent(
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
     """Revoking twice keeps the original `revoked_at` and never raises.
 
     Logout retries (network blip → client replay) must not error.
     """
-    user = await _make_user(auth_schema, email="hank@example.com")
+    user = await bound_user_factory(email="hank@example.com")
     raw = await issue(auth_schema, user.id, settings=_settings)
     token_hash = hash_refresh_token(raw, settings=_settings)
 
@@ -239,12 +243,15 @@ async def test_revoke_is_idempotent(auth_schema: AsyncSession) -> None:
     assert second_revocation == first_revocation
 
 
-async def test_revoke_unknown_hash_is_silent(auth_schema: AsyncSession) -> None:
+async def test_revoke_unknown_hash_is_silent(
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
     # Logging out a token that doesn't exist (already cleaned up, replay,
     # forged value) must be a no-op, not a 500. We also assert no other
     # rows were touched so a future buggy WHERE clause (e.g. always-true)
     # cannot pass this test.
-    user = await _make_user(auth_schema, email="ken@example.com")
+    user = await bound_user_factory(email="ken@example.com")
     raw_live = await issue(auth_schema, user.id, settings=_settings, device_label="phone")
     pre_revoked_at = (
         await auth_schema.execute(
@@ -271,11 +278,14 @@ async def test_revoke_unknown_hash_is_silent(auth_schema: AsyncSession) -> None:
     assert post_revoked_at is None
 
 
-async def test_issue_respects_custom_ttl_setting(auth_schema: AsyncSession) -> None:
+async def test_issue_respects_custom_ttl_setting(
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
     # Build an ad-hoc `Settings` instead of mutating env vars + clearing
     # caches; the new kw-only `settings=` API makes this trivially safe.
     custom = Settings(jwt_secret=_settings.jwt_secret, refresh_token_ttl_seconds=60)
-    user = await _make_user(auth_schema, email="ivy@example.com")
+    user = await bound_user_factory(email="ivy@example.com")
 
     await issue(auth_schema, user.id, settings=custom)
 
@@ -287,10 +297,13 @@ async def test_issue_respects_custom_ttl_setting(auth_schema: AsyncSession) -> N
     )
 
 
-async def test_issued_tokens_are_unique_across_calls(auth_schema: AsyncSession) -> None:
+async def test_issued_tokens_are_unique_across_calls(
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
     # `token_urlsafe(32)` collisions are astronomically improbable, but a
     # bug that returned a constant string would be caught here cheaply.
-    user = await _make_user(auth_schema, email="judy@example.com")
+    user = await bound_user_factory(email="judy@example.com")
     raws = {await issue(auth_schema, user.id, settings=_settings) for _ in range(5)}
     assert len(raws) == 5
 
@@ -305,6 +318,7 @@ async def test_issue_for_unknown_user_id_violates_fk(auth_schema: AsyncSession) 
 
 async def test_deleting_user_cascades_to_refresh_tokens(
     auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
 ) -> None:
     """`ON DELETE CASCADE` removes a user's tokens when the user is deleted.
 
@@ -313,7 +327,7 @@ async def test_deleting_user_cascades_to_refresh_tokens(
     deletion would leave orphaned refresh tokens unable to authenticate
     against any user.
     """
-    user = await _make_user(auth_schema, email="lana@example.com")
+    user = await bound_user_factory(email="lana@example.com")
     await issue(auth_schema, user.id, settings=_settings, device_label="laptop")
     await issue(auth_schema, user.id, settings=_settings, device_label="phone")
     pre_count = (
@@ -332,6 +346,7 @@ async def test_deleting_user_cascades_to_refresh_tokens(
 
 async def test_verify_rejects_token_expiring_exactly_now(
     auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
 ) -> None:
     """A token whose `expires_at` equals `now` is rejected (boundary `<=`).
 
@@ -340,7 +355,7 @@ async def test_verify_rejects_token_expiring_exactly_now(
     accepted for one more instant — measurable in practice given clock
     skew between issuance and verification.
     """
-    user = await _make_user(auth_schema, email="mia@example.com")
+    user = await bound_user_factory(email="mia@example.com")
     raw = "deadline-exactly-now"
     now = datetime.now(tz=UTC)
     auth_schema.add(
@@ -357,7 +372,10 @@ async def test_verify_rejects_token_expiring_exactly_now(
         await verify(auth_schema, raw, settings=_settings)
 
 
-async def test_revoke_marks_already_expired_token(auth_schema: AsyncSession) -> None:
+async def test_revoke_marks_already_expired_token(
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
     """`revoke()` still flips `revoked_at` on a row whose `expires_at` is past.
 
     The `WHERE` clause filters on `revoked_at IS NULL` but NOT on
@@ -366,7 +384,7 @@ async def test_revoke_marks_already_expired_token(auth_schema: AsyncSession) -> 
     optimisation from making `revoke()` quietly miss tombstoning rows
     needed for audit trails.
     """
-    user = await _make_user(auth_schema, email="nina@example.com")
+    user = await bound_user_factory(email="nina@example.com")
     raw = "expired-but-still-revocable"
     now = datetime.now(tz=UTC)
     auth_schema.add(
@@ -392,7 +410,10 @@ async def test_revoke_marks_already_expired_token(auth_schema: AsyncSession) -> 
     assert revoked_at is not None
 
 
-async def test_issue_starts_a_fresh_family(auth_schema: AsyncSession) -> None:
+async def test_issue_starts_a_fresh_family(
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
     """Each `issue()` for a fresh login is the root of a new rotation family.
 
     Pins `parent_id is None` and `family_id` distinct across two calls
@@ -400,7 +421,7 @@ async def test_issue_starts_a_fresh_family(auth_schema: AsyncSession) -> None:
     two independent logins were part of the same chain and invalidate
     both on a single replay.
     """
-    user = await _make_user(auth_schema, email="oscar@example.com")
+    user = await bound_user_factory(email="oscar@example.com")
     raw_a = await issue(auth_schema, user.id, settings=_settings, device_label="laptop")
     raw_b = await issue(auth_schema, user.id, settings=_settings, device_label="phone")
 
@@ -422,6 +443,7 @@ async def test_issue_starts_a_fresh_family(auth_schema: AsyncSession) -> None:
 
 async def test_parent_id_self_fk_rejects_unknown_uuid(
     auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
 ) -> None:
     """The self-FK on `parent_id` rejects rows pointing at a non-existent token.
 
@@ -429,7 +451,7 @@ async def test_parent_id_self_fk_rejects_unknown_uuid(
     favour of "soft" linking (string column) would let dangling
     `parent_id`s sneak in, silently breaking replay detection.
     """
-    user = await _make_user(auth_schema, email="paige@example.com")
+    user = await bound_user_factory(email="paige@example.com")
     now = datetime.now(tz=UTC)
     auth_schema.add(
         RefreshToken(

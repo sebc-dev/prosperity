@@ -89,7 +89,10 @@ def verify_access_token(token: str, *, settings: Settings) -> UUID:
         #   - `aud`: when `audience=` is passed, jose only validates the
         #     claim **if present** — a token without `aud` slips through
         #     silently (the early-return path on `"aud" not in claims`).
-        # The explicit `aud` check after `decode` closes that gap.
+        # The explicit `"aud" not in payload` check after `decode` closes
+        # that gap; we mirror it for `"iss"` as defense-in-depth so a
+        # future jose change that loosens `_validate_iss` the same way
+        # cannot reintroduce the issue.
         payload: dict[str, Any] = jwt.decode(
             token,
             settings.jwt_secret.get_secret_value(),
@@ -111,6 +114,8 @@ def verify_access_token(token: str, *, settings: Settings) -> UUID:
 
     if "aud" not in payload:
         raise InvalidTokenError("Access token has no 'aud' claim")
+    if "iss" not in payload:
+        raise InvalidTokenError("Access token has no 'iss' claim")
 
     iat = payload.get("iat")
     if isinstance(iat, int | float):

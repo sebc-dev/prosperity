@@ -259,10 +259,12 @@ def test_token_with_wrong_aud_is_rejected() -> None:
 
 
 def test_token_without_iss_claim_is_rejected() -> None:
-    # jose's `_validate_iss` compares `claims.get("iss") not in (issuer,)`,
-    # so `None not in ("prosperity-auth",)` raises — we pin the behavior
-    # so a future jose change that loosens this would surface as a test
-    # failure here.
+    # Two redundant rejections cover this: (1) jose's `_validate_iss`
+    # compares `claims.get("iss") not in (issuer,)`, so `None not in
+    # ("prosperity-auth",)` raises `JWTClaimsError`; (2) the explicit
+    # `"iss" not in payload` check after `decode` catches it again as
+    # defense-in-depth, mirroring the `aud` check (in case a future jose
+    # change loosens `_validate_iss` the way `_validate_aud` already is).
     settings = _settings()
     token = _forge_token_with_claims({"sub": str(uuid4()), "iss": _OMIT}, settings)
     with pytest.raises(InvalidTokenError):

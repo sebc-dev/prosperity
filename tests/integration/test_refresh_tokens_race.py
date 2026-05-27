@@ -19,6 +19,11 @@ tests (both filed as follow-ups, not fixed here):
   test infra (`_override_get_db`) yields the session without that wrap
   and therefore masks the bug — the assertions on family state below
   reflect the test-time semantics, not production semantics.
+
+The first test uses an `asyncio.Event` to make the loser start strictly
+after the winner commits — pinning the deterministic `rowcount=0` →
+replay path. The barrier variant intentionally creates true contention
+and observes whichever loss mode `rotate()` currently exposes.
 """
 
 from __future__ import annotations
@@ -49,11 +54,16 @@ from backend.modules.auth.service.refresh_tokens import (
 _settings = get_settings()
 
 
-@pytest_asyncio.fixture(loop_scope="session")
+@pytest_asyncio.fixture(loop_scope="session", scope="module")
 async def committed_engine(
     postgres_container: PostgresContainer,
 ) -> AsyncIterator[AsyncEngine]:
     """Dedicated engine with committed auth schema, pinned to REPEATABLE READ.
+
+    Module-scoped so the `create_all` / `drop_all` cycle runs once for
+    the whole file instead of per test. The two race tests use distinct
+    user emails + capture their own `family_id`, so they remain isolated
+    despite sharing the committed schema.
 
     Drops the schema at teardown so other tests (which depend on the
     transactional `db_session` fixture and create their schema inside a
@@ -74,19 +84,23 @@ async def committed_engine(
         await engine.dispose()
 
 
-async def test_rotate_concurrent_race_via_asyncio_gather(
+async def test_rotate_replay_branch_fires_when_loser_starts_after_commit(
     committed_engine: AsyncEngine,
 ) -> None:
-    """Two `rotate(T0)` launched in parallel on independent sessions.
+    """Two `rotate(T0)` on independent sessions; loser starts after winner commits.
 
-    `asyncio.gather()` without explicit synchronisation typically
-    serialises the two transactions enough that the loser observes the
-    revoked state in its REPEATABLE READ snapshot and lands in the
-    replay branch via `rowcount=0` (no row matches `revoked_at IS NULL`
-    anymore). This is the path the `rotate()` docstring describes.
+    Pins the `rowcount=0` → replay branch path described in `rotate()`'s
+    docstring: the loser opens its REPEATABLE READ snapshot **after**
+    the winner has committed, so the row already shows `revoked_at IS
+    NOT NULL`; its UPDATE filter (`revoked_at IS NULL`) matches zero
+    rows and the replay-detection branch fires.
 
-    The barrier variant below stresses the true-contention case where
-    that path does **not** fire — see #57.
+    Coordination via an `asyncio.Event` rather than relying on the
+    default `asyncio.gather()` scheduling. Without that explicit sync
+    the outcome would depend on Python-version / loop-impl ordering and
+    could occasionally flake into the true-contention case where the
+    loser surfaces `SerializationFailure` (40001) instead of revoked —
+    see #57 and the barrier variant below for the contention path.
     """
     sm = async_sessionmaker(committed_engine, expire_on_commit=False)
 
@@ -101,7 +115,6 @@ async def test_rotate_concurrent_race_via_asyncio_gather(
         session.add(user)
         await session.flush()
         user_id = user.id
-        family_id_seed = None  # captured below
         raw_t0 = await issue(session, user_id, settings=_settings)
         await session.commit()
 
@@ -116,7 +129,23 @@ async def test_rotate_concurrent_race_via_asyncio_gather(
         ).scalar_one()
         family_id_seed = t0.family_id
 
-    async def attempt() -> tuple[str, BaseException | None]:
+    winner_committed = asyncio.Event()
+
+    async def winner() -> tuple[str, BaseException | None]:
+        async with sm() as session:
+            try:
+                _, _new_raw = await rotate(session, raw_t0, settings=_settings)
+                await session.commit()
+                return ("success", None)
+            except Exception as exc:  # noqa: BLE001 — defensive: surface, never hang
+                await session.rollback()
+                return ("winner-failed", exc)
+            finally:
+                # Unblock the loser even on failure so `gather()` doesn't hang.
+                winner_committed.set()
+
+    async def loser() -> tuple[str, BaseException | None]:
+        await winner_committed.wait()
         async with sm() as session:
             try:
                 _, _new_raw = await rotate(session, raw_t0, settings=_settings)
@@ -134,14 +163,11 @@ async def test_rotate_concurrent_race_via_asyncio_gather(
                 await session.rollback()
                 return ("other", exc)
 
-    outcomes = await asyncio.gather(attempt(), attempt())
-    statuses = sorted(o[0] for o in outcomes)
+    outcomes = await asyncio.gather(winner(), loser())
+    statuses = [o[0] for o in outcomes]
 
-    # Pinned outcome: we observe one success and one revoked under
-    # REPEATABLE READ on Postgres 17. If this assertion ever flips to
-    # `("other", "success")` or similar, `rotate()`'s race contract has
-    # drifted — investigate before "fixing" the test.
-    assert statuses == ["revoked", "success"], (
+    # Order is deterministic by construction: winner first, loser second.
+    assert statuses == ["success", "revoked"], (
         f"unexpected race outcome: {statuses}; "
         f"raw outcomes: {[(s, type(e).__name__ if e else None) for s, e in outcomes]}"
     )

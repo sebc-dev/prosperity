@@ -2,12 +2,15 @@
 
 Issue / verify / revoke long-lived refresh tokens persisted in the
 `refresh_tokens` table. The raw token is a 256-bit URL-safe random
-string returned once by `issue()`; only its sha256 hex digest is stored
-on disk so a DB read alone cannot resurrect a session.
+string returned once by `issue()`; only its HMAC-SHA256 hex digest is
+stored on disk so a DB read alone cannot resurrect a session.
 
 Internal to the auth module — cross-module callers must go through
-`backend.modules.auth.public` (none of these helpers are exposed there
-yet; the S02.4 transports live inside `modules.auth` itself).
+`backend.modules.auth.public`.
+
+Settings are passed kw-only (`*, settings: Settings`) to keep these
+helpers testable without `get_settings.cache_clear()`. FastAPI routes
+inject via `Depends(get_settings)`.
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ from sqlalchemy import select, update
 from sqlalchemy.engine.cursor import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.config import get_settings
+from backend.config import Settings
 from backend.modules.auth.models import RefreshToken
 
 # 32 bytes = 256 bits → 43 url-safe characters after base64. Wide enough
@@ -44,7 +47,7 @@ class RevokedRefreshTokenError(InvalidRefreshTokenError):
     """Raised when the token has been explicitly revoked."""
 
 
-def hash_refresh_token(raw_token: str) -> str:
+def hash_refresh_token(raw_token: str, *, settings: Settings) -> str:
     """Return the HMAC-SHA256 hex digest of `raw_token` keyed by `JWT_SECRET`.
 
     Exposed (rather than kept module-private) because `revoke()` takes a
@@ -62,20 +65,22 @@ def hash_refresh_token(raw_token: str) -> str:
     any stored hash). Plan a secret rotation as a forced re-login event,
     not a transparent ops task.
     """
-    secret = get_settings().jwt_secret.get_secret_value().encode("utf-8")
+    secret = settings.jwt_secret.get_secret_value().encode("utf-8")
     return hmac.new(secret, raw_token.encode("utf-8"), sha256).hexdigest()
 
 
 async def issue(
     session: AsyncSession,
     user_id: UUID,
+    *,
+    settings: Settings,
     device_label: str | None = None,
 ) -> str:
     """Persist a new refresh token for `user_id` and return the raw value.
 
-    The raw token is returned **once** — the caller (login/refresh route)
-    must hand it to the client immediately because the DB only retains a
-    one-way hash. `expires_at` is computed from the current settings'
+    The raw token is returned **once** — the caller (login route) must
+    hand it to the client immediately because the DB only retains a
+    one-way hash. `expires_at` is computed from the supplied settings'
     `refresh_token_ttl_seconds`.
 
     Each call starts a new rotation family: `family_id = uuid4()`,
@@ -85,10 +90,9 @@ async def issue(
     """
     raw_token = secrets.token_urlsafe(_TOKEN_ENTROPY_BYTES)
     now = datetime.now(tz=UTC)
-    settings = get_settings()
     record = RefreshToken(
         user_id=user_id,
-        token_hash=hash_refresh_token(raw_token),
+        token_hash=hash_refresh_token(raw_token, settings=settings),
         issued_at=now,
         expires_at=now + timedelta(seconds=settings.refresh_token_ttl_seconds),
         device_label=device_label,
@@ -99,7 +103,7 @@ async def issue(
     return raw_token
 
 
-async def verify(session: AsyncSession, raw_token: str) -> UUID:
+async def verify(session: AsyncSession, raw_token: str, *, settings: Settings) -> UUID:
     """Return the `user_id` bound to `raw_token` if it is still usable.
 
     Raises:
@@ -113,7 +117,7 @@ async def verify(session: AsyncSession, raw_token: str) -> UUID:
     revoked token never looks like "merely expired" to upstream handlers
     (which would otherwise log it less loudly).
     """
-    token_hash = hash_refresh_token(raw_token)
+    token_hash = hash_refresh_token(raw_token, settings=settings)
     result = await session.execute(
         select(RefreshToken).where(RefreshToken.token_hash == token_hash)
     )
@@ -143,7 +147,7 @@ async def revoke(session: AsyncSession, token_hash: str) -> int:
     # but for DML SQLAlchemy returns a `CursorResult` at runtime; cast so
     # `.rowcount` types correctly.
     result = cast(
-        CursorResult[None],
+        "CursorResult[None]",
         await session.execute(
             update(RefreshToken)
             .where(

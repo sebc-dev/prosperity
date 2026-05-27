@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import secrets
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
@@ -81,8 +82,8 @@ def test_default_access_ttl_is_15_minutes() -> None:
 
 
 def test_expired_token_raises_expired_token_error() -> None:
-    # Negative TTL => token is already expired at issuance time.
-    settings = _settings(jwt_access_ttl_seconds=-1)
+    # Negative TTL well past the 30 s leeway => token is unambiguously expired.
+    settings = _settings(jwt_access_ttl_seconds=-60)
     token = issue_access_token(uuid4(), settings=settings)
     with pytest.raises(ExpiredTokenError):
         verify_access_token(token, settings=settings)
@@ -90,10 +91,53 @@ def test_expired_token_raises_expired_token_error() -> None:
 
 def test_expired_token_is_also_invalid_token_error() -> None:
     # ExpiredTokenError must subclass InvalidTokenError so broad handlers work.
-    settings = _settings(jwt_access_ttl_seconds=-1)
+    settings = _settings(jwt_access_ttl_seconds=-60)
     token = issue_access_token(uuid4(), settings=settings)
     with pytest.raises(InvalidTokenError):
         verify_access_token(token, settings=settings)
+
+
+def test_token_expired_within_leeway_is_accepted() -> None:
+    # exp = now - 5s; with 30s leeway the token is still inside the acceptance
+    # window. Mirrors a client whose clock is a few seconds ahead of ours.
+    settings = _settings()
+    now_ts = int(datetime.now(tz=UTC).timestamp())
+    user_id = uuid4()
+    token = _forge_token_with_claims(
+        {"sub": str(user_id), "iat": now_ts - 60, "exp": now_ts - 5},
+        settings,
+    )
+    assert verify_access_token(token, settings=settings) == user_id
+
+
+def test_token_with_future_iat_outside_leeway_is_rejected() -> None:
+    # iat = now + 60s, well past the 30s leeway → backdated token (or attacker
+    # with a forged clock). Must be rejected as Invalid (not Expired) because
+    # `exp` is also in the future — only `iat` is anomalous.
+    settings = _settings()
+    now_ts = int(datetime.now(tz=UTC).timestamp())
+    token = _forge_token_with_claims(
+        {"sub": str(uuid4()), "iat": now_ts + 60, "exp": now_ts + 900},
+        settings,
+    )
+    with pytest.raises(InvalidTokenError) as excinfo:
+        verify_access_token(token, settings=settings)
+    # Must not be the Expired subclass — we want operators to grep `Invalid…`
+    # without surfacing ExpiredTokenError noise.
+    assert not isinstance(excinfo.value, ExpiredTokenError)
+
+
+def test_token_with_future_iat_within_leeway_is_accepted() -> None:
+    # iat = now + 5s — within the 30s skew tolerance. Mirrors a client whose
+    # clock is a few seconds ahead of the verifier.
+    settings = _settings()
+    now_ts = int(datetime.now(tz=UTC).timestamp())
+    user_id = uuid4()
+    token = _forge_token_with_claims(
+        {"sub": str(user_id), "iat": now_ts + 5, "exp": now_ts + 900},
+        settings,
+    )
+    assert verify_access_token(token, settings=settings) == user_id
 
 
 def test_corrupted_signature_raises_invalid_token_error() -> None:

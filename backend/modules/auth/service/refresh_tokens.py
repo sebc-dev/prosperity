@@ -25,6 +25,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select, update
 from sqlalchemy.engine.cursor import CursorResult
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import Settings
@@ -145,35 +146,56 @@ async def rotate(session: AsyncSession, raw_token: str, *, settings: Settings) -
     Returns `(user_id, new_raw_token)`. Raises:
       - `InvalidRefreshTokenError`: token unknown.
       - `ExpiredRefreshTokenError`: row exists, `expires_at <= now`, never revoked.
-      - `RevokedRefreshTokenError`: row already revoked → triggers
-        family-wide invalidation (replay detected) before raising.
+      - `RevokedRefreshTokenError`: row already revoked OR concurrent race
+        loser → triggers family-wide invalidation (replay detected) before
+        raising.
 
     Atomicity: the `UPDATE … RETURNING` of step 1 is single-statement
     atomic and runs under REPEATABLE READ (cf. `backend.shared.db`).
-    Concurrent rotations on the same row see exactly one winner — losers
-    get `rowcount=0` and fall through to the replay branch, which then
-    revokes the whole family.
+    Concurrent rotations on the same row converge through two paths,
+    both treated as replay:
+      - Sequential (loser starts after winner commits): the loser's
+        snapshot already sees `revoked_at IS NOT NULL`, the UPDATE
+        matches `rowcount=0`, the replay branch fires.
+      - True race (both UPDATEs in flight): Postgres aborts the loser
+        with SerializationFailure (SQLSTATE 40001) once the winner
+        commits. Caught here, the session is rolled back and the replay
+        branch is re-run against a fresh snapshot.
+
+    Both replay paths **commit the family invalidation before raising**
+    (cf. ADR 0015) so the 401 the route raises afterwards doesn't cause
+    `get_db`'s exception-rollback to erase the security-critical
+    tombstone.
     """
     token_hash = hash_refresh_token(raw_token, settings=settings)
     now = datetime.now(tz=UTC)
 
-    # Step 1 — atomic UPDATE on the live row. The `revoked_at IS NULL`
-    # predicate means at most one of N concurrent rotations wins; the
-    # losers see `rowcount=0` and fall through to the replay branch.
-    update_result = cast(
-        "CursorResult[tuple[UUID, UUID, UUID]]",
-        await session.execute(
-            update(RefreshToken)
-            .where(
-                RefreshToken.token_hash == token_hash,
-                RefreshToken.revoked_at.is_(None),
-                RefreshToken.expires_at > now,
-            )
-            .values(revoked_at=now)
-            .returning(RefreshToken.id, RefreshToken.user_id, RefreshToken.family_id)
-        ),
-    )
-    row = update_result.one_or_none()
+    # Step 1 — atomic UPDATE on the live row.
+    try:
+        update_result = cast(
+            "CursorResult[tuple[UUID, UUID, UUID]]",
+            await session.execute(
+                update(RefreshToken)
+                .where(
+                    RefreshToken.token_hash == token_hash,
+                    RefreshToken.revoked_at.is_(None),
+                    RefreshToken.expires_at > now,
+                )
+                .values(revoked_at=now)
+                .returning(RefreshToken.id, RefreshToken.user_id, RefreshToken.family_id)
+            ),
+        )
+        row = update_result.one_or_none()
+    except DBAPIError as exc:
+        # SQLSTATE 40001 = serialization_failure under REPEATABLE READ.
+        # The loser of a true concurrent rotate sees this once the winner
+        # commits. Postgres has aborted our transaction — clear it and
+        # treat as replay against a fresh snapshot.
+        if getattr(exc.orig, "sqlstate", None) != "40001":
+            raise
+        await session.rollback()
+        await _invalidate_family_after_race(session, token_hash=token_hash, now=now)
+        raise RevokedRefreshTokenError("Refresh token replay detected; family invalidated") from exc
 
     if row is None:
         # Distinguish unknown / revoked / expired for logging and replay.
@@ -201,7 +223,9 @@ async def rotate(session: AsyncSession, raw_token: str, *, settings: Settings) -
                 )
                 .values(revoked_at=now)
             )
-            await session.flush()
+            # Commit inside the service so the family tombstone survives
+            # the route's 401 → get_db rollback. Cf. ADR 0015.
+            await session.commit()
             raise RevokedRefreshTokenError("Refresh token replay detected; family invalidated")
         raise ExpiredRefreshTokenError("Refresh token has expired")
 
@@ -224,6 +248,54 @@ async def rotate(session: AsyncSession, raw_token: str, *, settings: Settings) -
     await session.flush()
 
     return user_id, new_raw
+
+
+async def _invalidate_family_after_race(
+    session: AsyncSession, *, token_hash: str, now: datetime
+) -> None:
+    """Revoke and commit the family of the row matching `token_hash`.
+
+    Called from the SerializationFailure recovery path of `rotate()`.
+    The caller has already rolled back the aborted txn; this function
+    reads in a fresh REPEATABLE READ snapshot (so the winner's commit
+    is visible), revokes any remaining live siblings, and commits.
+
+    Commit happens *inside* the service deliberately — see ADR 0015 for
+    the rationale (the exception that follows would otherwise trigger
+    `get_db`'s rollback and erase the family tombstone).
+
+    Not retried on a recursive 40001: if a *third* rotation commits
+    between this function's rollback-recovered snapshot and its own
+    UPDATE/commit, the second SerializationFailure bubbles out as a 500.
+    The window requires triple-contention on the same row and the third
+    rotation will itself have committed (or marked) the family, so the
+    security tombstone is still in place; the 500 is acceptable signal.
+    """
+    existing = (
+        await session.execute(select(RefreshToken).where(RefreshToken.token_hash == token_hash))
+    ).scalar_one_or_none()
+    if existing is None:
+        # The row that just lost a SerializationFailure cannot have
+        # vanished — but defensively avoid committing an empty UPDATE.
+        return
+    logger.warning(
+        "refresh_token_replay_family_invalidated",
+        extra={
+            "user_id": str(existing.user_id),
+            "family_id": str(existing.family_id),
+            "token_hash_prefix": token_hash[:8],
+            "race_recovery": True,
+        },
+    )
+    await session.execute(
+        update(RefreshToken)
+        .where(
+            RefreshToken.family_id == existing.family_id,
+            RefreshToken.revoked_at.is_(None),
+        )
+        .values(revoked_at=now)
+    )
+    await session.commit()
 
 
 async def revoke(session: AsyncSession, token_hash: str) -> int:

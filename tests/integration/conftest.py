@@ -114,14 +114,36 @@ async def bound_user_factory(
 async def async_client(auth_schema: AsyncSession) -> AsyncIterator[AsyncClient]:
     """httpx AsyncClient wired to the FastAPI app with `get_db` overridden.
 
-    The override yields the test's `db_session` (via `auth_schema`)
-    without committing — the per-test rollback in `db_session` reverts
-    every write. `try/finally` + `pop(get_db, None)` so adjacent fixtures
-    that register their own overrides are not clobbered.
+    Mirrors prod `get_db` semantics: each request gets its **own** session
+    bound to the test's connection, with `join_transaction_mode="create_savepoint"`
+    so request-level commit/rollback maps to SAVEPOINT release/revert
+    inside the outer test transaction. The test's setup writes (via
+    `auth_schema` and `bound_user_factory`) stay in the outer transaction
+    untouched, so a request that 4xx-rollbacks does not wipe schema or
+    fixture users.
+
+    Critically, this means `service.rotate()`'s commit-inside-service
+    (ADR 0015) actually survives the route's exception handler in
+    tests — the bug fixed in #58 was masked by the previous override
+    that yielded the shared session without any commit/rollback wrap.
+    `try/finally` + `pop(get_db, None)` so adjacent fixtures that
+    register their own overrides are not clobbered.
     """
+    connection = await auth_schema.connection()
+    request_session_factory = async_sessionmaker(
+        bind=connection,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
 
     async def _override_get_db() -> AsyncIterator[AsyncSession]:
-        yield auth_schema
+        async with request_session_factory() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
 
     app.dependency_overrides[get_db] = _override_get_db
     transport = ASGITransport(app=app)

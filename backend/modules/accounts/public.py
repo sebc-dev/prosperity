@@ -1,1 +1,26 @@
-"""Public surface of the accounts module — re-exports for cross-module use."""
+"""Public surface of the accounts module — re-exports for cross-module use.
+
+This module is the only one in `backend.modules.accounts` that other
+modules may import from. The import-linter contract "Only public
+surface importable cross-module" forbids any cross-module import that
+reaches into `backend.modules.accounts.{service,models,domain,repository}`.
+
+`HOUSEHOLD_SINGLETON_UUID` is re-exported under the shorter name
+`HOUSEHOLD_ID` because that is the name the rest of the codebase
+references (matches the S03.1 issue acceptance criteria and the future
+RBAC code in E04).
+"""
+
+from __future__ import annotations
+
+from backend.modules.accounts.models import HOUSEHOLD_SINGLETON_UUID as HOUSEHOLD_ID
+from backend.modules.accounts.service.household import (
+    HouseholdNotInitializedError,
+    get_household,
+)
+
+__all__ = [
+    "HOUSEHOLD_ID",
+    "HouseholdNotInitializedError",
+    "get_household",
+]

@@ -4,10 +4,12 @@ DSN flows from `backend.config.get_settings()` (which reads `DATABASE_URL`
 via pydantic-settings) unless an explicit `sqlalchemy.url` is already set
 on the `Config` object — tests inject the testcontainers DSN that way.
 
-`target_metadata` aggregates the `MetaData` of every module that ships
-ORM models. The auth module is the first contributor (S02.1). Future
-modules append their own `Base.metadata` here; env.py is outside the
-`backend` import-linter root so the import is not policed.
+`target_metadata` is the single `Base.metadata` shared by every persisted
+module (cf. `backend/shared/models.py`). Each module's models file is
+imported here purely for its side-effect of registering its tables on
+that shared metadata — without these imports Alembic's autogenerate
+would see an empty schema and emit spurious drops. env.py is outside the
+`backend` import-linter root so the cross-module imports are not policed.
 """
 
 from __future__ import annotations
@@ -19,9 +21,13 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+# Side-effect import below registers the auth module's tables on
+# `Base.metadata` (cf. module docstring); the bare module import looks
+# unused to flake8/F401. Future modules add their own import here.
+import backend.modules.auth.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
 from alembic import context
 from backend.config import get_settings
-from backend.modules.auth.models import Base as AuthBase
+from backend.shared.models import Base
 
 config = context.config
 
@@ -36,7 +42,7 @@ if config.config_file_name is not None:
 if not config.get_main_option("sqlalchemy.url"):
     config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
-target_metadata = AuthBase.metadata
+target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:

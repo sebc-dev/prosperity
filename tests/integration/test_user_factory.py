@@ -37,7 +37,8 @@ from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-from backend.modules.auth.models import Base, User
+from backend.modules.auth.models import User
+from backend.shared.models import Base
 from tests.factories.sqlalchemy import UserFactory
 
 

@@ -18,9 +18,11 @@ from backend.modules.accounts.service.household import (
     HouseholdNotInitializedError,
     get_household,
 )
+from backend.modules.accounts.service.setup import bootstrap_initial_admin_from_env
 
 __all__ = [
     "HOUSEHOLD_ID",
     "HouseholdNotInitializedError",
+    "bootstrap_initial_admin_from_env",
     "get_household",
 ]

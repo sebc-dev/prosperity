@@ -1,9 +1,12 @@
-"""Pin the SQLSTATE-based IntegrityError discrimination on POST /setup.
+"""Pin the SQLSTATE-based DBAPIError discrimination on POST /setup.
 
-Only race-lost SQLSTATEs (23505 unique_violation, 23514 check_violation)
-collapse to 404. Anything else — NOT NULL (23502), FK (23503),
-serialization failure (40001), absent sqlstate — re-raises so an
-application bug surfaces as 500 instead of being masked as
+Race-lost SQLSTATEs collapse to 404:
+  * 23505 unique_violation (PK on household, UNIQUE on lower(email))
+  * 23514 check_violation (singleton CHECK)
+  * 40001 serialization_failure (REPEATABLE READ concurrent flush)
+
+Anything else — NOT NULL (23502), FK (23503), absent sqlstate — re-raises
+so an application bug surfaces as 500 instead of being masked as
 "setup locked".
 
 httpx's `ASGITransport` defaults `raise_app_exceptions=True`, so an
@@ -12,8 +15,8 @@ in tests; in prod Starlette's `ServerErrorMiddleware` catches the same
 exception and converts it to 500. We pin both shapes:
 
 * race-lost SQLSTATEs → `await client.post` returns 404 cleanly.
-* every other SQLSTATE → `await client.post` raises `IntegrityError`,
-  proving the route did not silently swallow the bug.
+* every other SQLSTATE → `await client.post` raises, proving the route
+  did not silently swallow the bug.
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.accounts.service.household import invalidate_household_cache
@@ -59,6 +62,17 @@ def _integrity_error_with_sqlstate(sqlstate: str | None) -> IntegrityError:
     else:
         fake_orig = type("PgError", (), {"sqlstate": sqlstate})()
     return IntegrityError("forged", params=None, orig=fake_orig)  # type: ignore[arg-type]
+
+
+def _dbapi_error_with_sqlstate(sqlstate: str) -> DBAPIError:
+    """Build a `DBAPIError` (not the `IntegrityError` subclass) for 40001.
+
+    Postgres raises serialization_failure under REPEATABLE READ as a
+    plain `DBAPIError`, not as an `IntegrityError`. Forging this shape
+    proves the route's `except DBAPIError` catches the parent class.
+    """
+    fake_orig = type("PgError", (), {"sqlstate": sqlstate})()
+    return DBAPIError("forged", params=None, orig=fake_orig)  # type: ignore[arg-type]
 
 
 async def test_post_setup_propagates_not_null_violation(
@@ -117,12 +131,17 @@ async def test_post_setup_check_violation_collapses_to_404(
     assert resp.status_code == 404
 
 
-async def test_post_setup_serialization_failure_propagates(
+async def test_post_setup_serialization_failure_collapses_to_404(
     async_client: AsyncClient,
     auth_schema: AsyncSession,  # noqa: ARG001
 ) -> None:
-    """40001 serialization_failure = REPEATABLE READ conflict → re-raise."""
-    exc = _integrity_error_with_sqlstate("40001")
+    """40001 serialization_failure = REPEATABLE READ race-lost → 404.
+
+    Postgres raises 40001 as `DBAPIError`, not `IntegrityError`. The
+    route catches the parent class and treats this as race-lost
+    semantics (same as 23505).
+    """
+    exc = _dbapi_error_with_sqlstate("40001")
 
     async def _explode(*_args: object, **_kwargs: object) -> None:
         raise exc
@@ -131,8 +150,9 @@ async def test_post_setup_serialization_failure_propagates(
         "backend.modules.accounts.transports.http.initialize_bootstrap",
         side_effect=_explode,
     ):
-        with pytest.raises(IntegrityError):
-            await async_client.post("/setup", json=_setup_payload())
+        resp = await async_client.post("/setup", json=_setup_payload())
+
+    assert resp.status_code == 404
 
 
 async def test_post_setup_integrity_error_without_sqlstate_propagates(

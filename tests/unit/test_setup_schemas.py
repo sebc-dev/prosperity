@@ -55,6 +55,18 @@ def test_email_malformed_raises() -> None:
         SetupRequest(**_payload(email="not-an-email"))  # type: ignore[arg-type]
 
 
+def test_email_above_max_length_raises() -> None:
+    """Oversized email is rejected before Argon2id runs (CPU-DoS guard).
+
+    254 chars is the `String(254)` column ceiling on `User.email`; a body
+    that exceeds it must fail Pydantic validation, not reach Argon2id.
+    """
+    too_long = ("x" * 250) + "@a.io"  # 255 chars, > 254
+    assert len(too_long) > 254
+    with pytest.raises(ValidationError):
+        SetupRequest(**_payload(email=too_long))  # type: ignore[arg-type]
+
+
 def test_display_name_empty_raises() -> None:
     with pytest.raises(ValidationError):
         SetupRequest(**_payload(display_name=""))  # type: ignore[arg-type]

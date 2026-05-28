@@ -64,3 +64,84 @@ def test_jwt_secret_is_not_leaked_by_repr(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("JWT_SECRET", "super-secret-do-not-leak")
     settings = Settings()
     assert "super-secret-do-not-leak" not in repr(settings)
+
+
+# ---------------------------------------------------------------------------
+# S03.3 — INITIAL_ADMIN_* env-var bootstrap settings
+# ---------------------------------------------------------------------------
+
+
+def _clear_initial_admin_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for key in (
+        "INITIAL_ADMIN_EMAIL",
+        "INITIAL_ADMIN_PASSWORD_HASH",
+        "INITIAL_ADMIN_DISPLAY_NAME",
+        "INITIAL_HOUSEHOLD_NAME",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
+def test_initial_admin_defaults_when_env_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Normal mode: env vars absent → both `None` / sensible defaults.
+
+    The orchestrator relies on `None` for the email/hash pair to
+    distinguish "no bootstrap requested" from "partial config".
+    """
+    _clear_initial_admin_env(monkeypatch)
+    settings = Settings()
+    assert settings.initial_admin_email is None
+    assert settings.initial_admin_password_hash is None
+    assert settings.initial_admin_display_name == "Admin"
+    assert settings.initial_household_name == "Foyer"
+
+
+def test_initial_admin_email_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Partial config: only EMAIL set — the orchestrator will skip + warn."""
+    _clear_initial_admin_env(monkeypatch)
+    monkeypatch.setenv("INITIAL_ADMIN_EMAIL", "admin@example.com")
+    settings = Settings()
+    assert settings.initial_admin_email == "admin@example.com"
+    assert settings.initial_admin_password_hash is None
+
+
+def test_initial_admin_hash_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Partial config: only PASSWORD_HASH set."""
+    _clear_initial_admin_env(monkeypatch)
+    monkeypatch.setenv(
+        "INITIAL_ADMIN_PASSWORD_HASH",
+        "$argon2id$v=19$m=65536,t=3,p=4$AAA$BBB",
+    )
+    settings = Settings()
+    assert settings.initial_admin_email is None
+    assert settings.initial_admin_password_hash is not None
+
+
+def test_initial_admin_password_hash_uses_secret_str(monkeypatch: pytest.MonkeyPatch) -> None:
+    """SecretStr keeps the hash out of `repr()` — parity with `jwt_secret`.
+
+    A hash isn't a plaintext password, but exposing it via Sentry frames
+    or SQLAlchemy debug logs would give an attacker free brute-force
+    material. Defense in depth.
+    """
+    sensitive_hash = "$argon2id$v=19$m=65536,t=3,p=4$AAAAAA$BBBBBB-do-not-leak"
+    _clear_initial_admin_env(monkeypatch)
+    monkeypatch.setenv("INITIAL_ADMIN_PASSWORD_HASH", sensitive_hash)
+    settings = Settings()
+    assert sensitive_hash not in repr(settings)
+
+
+def test_initial_admin_custom_display_and_household(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_initial_admin_env(monkeypatch)
+    monkeypatch.setenv("INITIAL_ADMIN_DISPLAY_NAME", "Alice")
+    monkeypatch.setenv("INITIAL_HOUSEHOLD_NAME", "Foyer Dupont")
+    settings = Settings()
+    assert settings.initial_admin_display_name == "Alice"
+    assert settings.initial_household_name == "Foyer Dupont"
+
+
+def test_initial_admin_email_validates_format(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`EmailStr` parity with `SetupRequest.email` rejects malformed values."""
+    _clear_initial_admin_env(monkeypatch)
+    monkeypatch.setenv("INITIAL_ADMIN_EMAIL", "not-an-email")
+    with pytest.raises(ValidationError):
+        Settings()

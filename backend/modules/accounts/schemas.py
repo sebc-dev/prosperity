@@ -19,6 +19,11 @@ from pydantic import BaseModel, EmailStr, Field, SecretStr
 _PASSWORD_MIN_LENGTH = 12
 _PASSWORD_MAX_LENGTH = 128
 
+# Matches the `String(254)` column on `User.email` so an oversized body
+# is rejected at the schema boundary, before Argon2id runs on the
+# password — closes a CPU-DoS vector during the unauth `/setup` window.
+_EMAIL_MAX_LENGTH = 254
+
 
 class SetupRequest(BaseModel):
     """Bootstrap form posted once per deployment to `POST /setup`.
@@ -29,7 +34,7 @@ class SetupRequest(BaseModel):
     and the cost of asking is nil (single-use form on an empty DB).
     """
 
-    email: EmailStr
+    email: EmailStr = Field(max_length=_EMAIL_MAX_LENGTH)
     password: SecretStr = Field(
         min_length=_PASSWORD_MIN_LENGTH,
         max_length=_PASSWORD_MAX_LENGTH,

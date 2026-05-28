@@ -49,6 +49,12 @@ asyncio_default_fixture_loop_scope = "session"
 [tool.coverage.run]
 source = ["backend"]
 branch = true
+# SQLAlchemy's async stack and FastAPI's threaded sync routes both
+# require explicit concurrency tracking — without these, route bodies
+# and async-backed DB calls report uncovered even when fully exercised
+# in tests (the bodies execute in worker threads/greenlets that
+# coverage's default tracer doesn't see).
+concurrency = ["greenlet", "thread"]
 
 [tool.coverage.report]
 show_missing = true

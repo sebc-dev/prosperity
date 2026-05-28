@@ -216,6 +216,21 @@ forbidden_modules =
     backend.modules.transactions.repository
     backend.modules.transactions.transports
     backend.modules.transactions.handlers
+# Edges that constitute the legitimate `accounts → auth.public` surface
+# (S03.2 `/setup` flow): re-exports defined inside `auth.public` are
+# how accounts is allowed to consume auth. `find_shortest_chains`
+# would otherwise surface `accounts → auth.public → auth.{models,
+# service.*, transports.dependencies}` as broken chains; ignoring the
+# *second hop* (auth.public → auth.X) makes those chains invisible
+# without weakening the direct-import protection (a hypothetical
+# `accounts.service.X → auth.models` would still be flagged).
+ignore_imports =
+    backend.modules.auth.public -> backend.modules.auth.models
+    backend.modules.auth.public -> backend.modules.auth.service.jwt
+    backend.modules.auth.public -> backend.modules.auth.service.refresh_tokens
+    backend.modules.auth.public -> backend.modules.auth.service.users
+    backend.modules.auth.public -> backend.modules.auth.transports.dependencies
+unmatched_ignore_imports_alerting = error
 
 [importlinter:contract:3]
 name = shared imports nothing of modules

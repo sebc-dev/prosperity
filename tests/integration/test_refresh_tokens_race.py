@@ -27,17 +27,10 @@ committed by `rotate()` actually persisted to the database"
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
 
 import pytest
-import pytest_asyncio
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import (
-    AsyncEngine,
-    async_sessionmaker,
-    create_async_engine,
-)
-from testcontainers.postgres import PostgresContainer
+from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from backend.config import get_settings
 from backend.modules.auth.models import RefreshToken, User, UserRole
@@ -48,39 +41,14 @@ from backend.modules.auth.service.refresh_tokens import (
     issue,
     rotate,
 )
-from backend.shared.models import Base
+
+# Truncate every Base.metadata table before & after each test on the
+# shared module-scoped `committed_engine`. Without this opt-in cleanup
+# the per-user fixtures below would collide on the UNIQUE email index
+# after the first run.
+pytestmark = [pytest.mark.usefixtures("_clean_committed_db")]
 
 _settings = get_settings()
-
-
-@pytest_asyncio.fixture(loop_scope="session", scope="module")
-async def committed_engine(
-    postgres_container: PostgresContainer,
-) -> AsyncIterator[AsyncEngine]:
-    """Dedicated engine with committed auth schema, pinned to REPEATABLE READ.
-
-    Module-scoped so the `create_all` / `drop_all` cycle runs once for
-    the whole file instead of per test. The two race tests use distinct
-    user emails + capture their own `family_id`, so they remain isolated
-    despite sharing the committed schema.
-
-    Drops the schema at teardown so other tests (which depend on the
-    transactional `db_session` fixture and create their schema inside a
-    rolled-back transaction) keep their fully-isolated semantics.
-    """
-    engine = create_async_engine(
-        postgres_container.get_connection_url(),
-        future=True,
-        isolation_level="REPEATABLE READ",
-    )
-    try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        yield engine
-    finally:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
-        await engine.dispose()
 
 
 async def test_rotate_replay_branch_fires_when_loser_starts_after_commit(

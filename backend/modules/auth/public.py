@@ -1,27 +1,49 @@
 """Public surface of the auth module — re-exports for cross-module use.
 
-This module is the only one in `backend.modules.auth` that other modules may
-import from. The import-linter contract "Only public surface importable
-cross-module" forbids any cross-module import that reaches into
-`backend.modules.auth.service`, `.models`, `.domain`, etc.
+This module is the only one in `backend.modules.auth` that other modules
+may import from. The import-linter contract "Only public surface
+importable cross-module" forbids any cross-module import that reaches
+into `backend.modules.auth.service`, `.models`, `.transports`, etc.
+
+The current consumers cross-module are:
+- `accounts.service.setup` — needs `create_user`, `any_user_exists`,
+  `UserRole` for the `/setup` bootstrap flow (S03.2).
+- `accounts.transports.http` — needs `issue_access_token`,
+  `issue_refresh_token`, `TokenPair`, `sanitize_device_label` for
+  auto-login at the end of `/setup` (S03.2).
+- generic FastAPI dependencies in any module — `get_current_user`,
+  which itself returns `User`.
+
+`RefreshToken` and `_password_hasher` deliberately stay intra-auth:
+hashing is encapsulated by `create_user` and refresh-token row
+construction by `issue_refresh_token`.
 """
 
 from __future__ import annotations
 
-from backend.modules.auth.models import User
+from backend.modules.auth.models import User, UserRole
+from backend.modules.auth.schemas import TokenPair, sanitize_device_label
 from backend.modules.auth.service.jwt import (
     ExpiredTokenError,
     InvalidTokenError,
     issue_access_token,
     verify_access_token,
 )
+from backend.modules.auth.service.refresh_tokens import issue as issue_refresh_token
+from backend.modules.auth.service.users import any_user_exists, create_user
 from backend.modules.auth.transports.dependencies import get_current_user
 
 __all__ = [
     "ExpiredTokenError",
     "InvalidTokenError",
+    "TokenPair",
     "User",
+    "UserRole",
+    "any_user_exists",
+    "create_user",
     "get_current_user",
     "issue_access_token",
+    "issue_refresh_token",
+    "sanitize_device_label",
     "verify_access_token",
 ]

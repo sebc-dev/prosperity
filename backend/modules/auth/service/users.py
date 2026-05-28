@@ -51,6 +51,19 @@ async def create_user(
     UNIQUE / NOT NULL violation surfaces as `IntegrityError` at this call
     site rather than at the outer commit — keeping error attribution
     legible.
+
+    Caller contract:
+
+    * `role` is **not** authorised here. Routes that mint privileged
+      roles from client-supplied data MUST gate the call site (e.g.
+      `/setup` is gated by `is_setup_open()` + lock-after-init). Any new
+      cross-module caller that forwards a client-controlled `role` value
+      without an authz check turns this helper into an admin-minting
+      primitive.
+    * `password` length / shape is **not** validated here. The
+      `/setup` route enforces 12-128 via `SetupRequest`; future callers
+      reading from env vars or untrusted JSON MUST cap the input
+      themselves to avoid burning Argon2id CPU on megabyte payloads.
     """
     user = User(
         # `_normalize_email` validator on `User` lowercases + strips so the
@@ -107,6 +120,15 @@ async def create_user_with_hash(
 
 
 async def any_user_exists(session: AsyncSession) -> bool:
-    """True iff at least one row exists in the `users` table."""
+    """True iff at least one row exists in the `users` table.
+
+    This is **not** a lock. Two concurrent callers can both observe
+    `False` and race into a write — production safety relies on the DB
+    constraints that absorb the race-lost case (PK on
+    `household.id` + UNIQUE `lower(email)`). Callers using this as a
+    security gate (e.g. the S03.3 boot hook) MUST pair it with an
+    insertion path that surfaces the race-lost SQLSTATE so the loser
+    can be skipped or retried, not silently dropped.
+    """
     result = await session.execute(select(exists().select_from(User)))
     return bool(result.scalar())

@@ -77,9 +77,15 @@ async def test_two_concurrent_post_setup_one_wins_one_404(
     scheduling — both code paths satisfy this test. The forced-race
     variant below pins the IntegrityError window explicitly.
     """
-    responses = await asyncio.gather(
-        committed_client.post("/setup", json=_setup_payload(email="alice@example.com")),
-        committed_client.post("/setup", json=_setup_payload(email="bob@example.com")),
+    # `wait_for` guards against a future regression that leaves one of
+    # the requests blocked (e.g. a hanging lock on the singleton row) —
+    # without the timeout the suite would hang instead of failing fast.
+    responses = await asyncio.wait_for(
+        asyncio.gather(
+            committed_client.post("/setup", json=_setup_payload(email="alice@example.com")),
+            committed_client.post("/setup", json=_setup_payload(email="bob@example.com")),
+        ),
+        timeout=10.0,
     )
     statuses = sorted(r.status_code for r in responses)
     # Strict outcome contract: one 200, one 404. No 500 leakage and no
@@ -141,9 +147,17 @@ async def test_concurrent_post_setup_with_barrier_hits_integrity_error_branch(
         ),
         caplog.at_level("WARNING", logger="backend.modules.accounts.transports.http"),
     ):
-        responses = await asyncio.gather(
-            committed_client.post("/setup", json=_setup_payload(email="alice@example.com")),
-            committed_client.post("/setup", json=_setup_payload(email="bob@example.com")),
+        # `Barrier(2)` can deadlock if a future refactor short-circuits
+        # one racer before it reaches `_coordinated_is_open` (e.g. a 422
+        # on body validation), leaving the other side blocked on
+        # `barrier.wait()` forever. `wait_for` fails the test loudly
+        # instead of hanging the suite.
+        responses = await asyncio.wait_for(
+            asyncio.gather(
+                committed_client.post("/setup", json=_setup_payload(email="alice@example.com")),
+                committed_client.post("/setup", json=_setup_payload(email="bob@example.com")),
+            ),
+            timeout=10.0,
         )
 
     statuses = sorted(r.status_code for r in responses)

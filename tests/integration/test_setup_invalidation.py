@@ -32,6 +32,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from backend.modules.accounts.models import Household
 from backend.modules.accounts.public import get_household
 from backend.modules.accounts.service import household as household_service
+from backend.modules.accounts.service.household import (
+    get_household_cache_for_testing,
+    set_household_cache_for_testing,
+)
 from backend.modules.accounts.service.setup import initialize_bootstrap
 from backend.modules.auth.models import User, UserRole
 
@@ -72,15 +76,15 @@ async def test_post_setup_invalidates_cache_after_commit(
 ) -> None:
     """Happy path: after a real commit, the listener fires and the cache is None."""
     sentinel = _sentinel_household()
-    household_service._household_cache = sentinel  # pyright: ignore[reportPrivateUsage]
-    assert household_service._household_cache is sentinel  # pyright: ignore[reportPrivateUsage]
+    set_household_cache_for_testing(sentinel)
+    assert get_household_cache_for_testing() is sentinel
 
     resp = await committed_client.post("/setup", json=_setup_payload())
     assert resp.status_code == 200
 
     # Listener fired post-commit → cache cleared. The next call to
     # `get_household()` will re-read from DB.
-    assert household_service._household_cache is None  # pyright: ignore[reportPrivateUsage]
+    assert get_household_cache_for_testing() is None
 
 
 async def test_initialize_bootstrap_rollback_does_not_fire_listener(
@@ -105,7 +109,7 @@ async def test_initialize_bootstrap_rollback_does_not_fire_listener(
     pins the **dangerous** case where the listener was registered.
     """
     sentinel = _sentinel_household()
-    household_service._household_cache = sentinel  # pyright: ignore[reportPrivateUsage]
+    set_household_cache_for_testing(sentinel)
 
     async with committed_sessionmaker() as session:
         listeners_before = len(session.sync_session.dispatch.after_commit)
@@ -127,7 +131,7 @@ async def test_initialize_bootstrap_rollback_does_not_fire_listener(
 
     # Listener was registered but never fired (rollback path) → cache
     # state from before the failed setup survives.
-    assert household_service._household_cache is sentinel  # pyright: ignore[reportPrivateUsage]
+    assert get_household_cache_for_testing() is sentinel
 
 
 async def test_post_setup_precheck_locked_does_not_invalidate_cache(
@@ -161,14 +165,14 @@ async def test_post_setup_precheck_locked_does_not_invalidate_cache(
 
     # Prime the cache with a sentinel; if invalidation fires it'll go to None.
     sentinel = _sentinel_household()
-    household_service._household_cache = sentinel  # pyright: ignore[reportPrivateUsage]
+    set_household_cache_for_testing(sentinel)
 
     resp = await committed_client.post("/setup", json=_setup_payload())
     assert resp.status_code == 404
 
     # Precheck rejected before the write → listener never registered →
     # nothing to fire → cache survives.
-    assert household_service._household_cache is sentinel  # pyright: ignore[reportPrivateUsage]
+    assert get_household_cache_for_testing() is sentinel
 
 
 async def test_get_household_post_setup_returns_initialized_row(
@@ -177,15 +181,28 @@ async def test_get_household_post_setup_returns_initialized_row(
 ) -> None:
     """End-to-end: post-`/setup`, a fresh `get_household()` sees the row.
 
-    Critical because the cached `_household_cache` is process-local
-    (cf. `accounts.service.household` docstring): if the listener
-    hadn't cleared it, this fresh session would see whatever the
-    sentinel was — None included.
+    Pre-seeding the cache with a `STALE` sentinel is what makes this test
+    non-tautological: an empty cache would also pass the post-POST read
+    by going straight to the DB. By forcing the cache to a wrong value
+    *before* the POST, we prove the `after_commit` listener actually
+    replaced it — `get_household()` must return the freshly-committed
+    "Foyer Dupont", not the stale sentinel still sitting in the slot.
     """
+    sentinel = _sentinel_household()
+    set_household_cache_for_testing(sentinel)
+    assert get_household_cache_for_testing() is sentinel
+
     resp = await committed_client.post("/setup", json=_setup_payload())
     assert resp.status_code == 200
+
+    # Cache slot was cleared by the `after_commit` listener; `get_household`
+    # repopulates it from the just-committed row.
+    assert get_household_cache_for_testing() is None
 
     async with committed_sessionmaker() as session:
         h = await get_household(session)
         assert h.name == "Foyer Dupont"
         assert h.initialized_at is not None
+        # If the listener had failed to clear the slot, this would be
+        # the `STALE` sentinel name instead of the real row.
+        assert h.name != "STALE"

@@ -31,6 +31,10 @@ from backend.config import Settings
 from backend.modules.accounts.models import HOUSEHOLD_SINGLETON_UUID, Household
 from backend.modules.accounts.service import household as household_service
 from backend.modules.accounts.service import setup as setup_service
+from backend.modules.accounts.service.household import (
+    get_household_cache_for_testing,
+    set_household_cache_for_testing,
+)
 from backend.modules.accounts.service.setup import bootstrap_initial_admin_from_env
 from backend.modules.auth.models import User, UserRole
 
@@ -136,17 +140,19 @@ async def test_happy_path_creates_admin_and_initialises_household(
 
     # Pre-poison the cache so we can assert the `after_commit` listener
     # cleared it — same pattern as test_setup_invalidation.
-    household_service._household_cache = Household(  # pyright: ignore[reportPrivateUsage]
-        name="STALE",
-        base_currency="EUR",
-        initialized_at=datetime.now(tz=UTC),
+    set_household_cache_for_testing(
+        Household(
+            name="STALE",
+            base_currency="EUR",
+            initialized_at=datetime.now(tz=UTC),
+        )
     )
 
     with caplog.at_level(logging.INFO, logger=setup_service.__name__):
         await bootstrap_initial_admin_from_env(committed_sessionmaker, settings)
 
     # Listener fired post-commit → cache invalidated.
-    assert household_service._household_cache is None  # pyright: ignore[reportPrivateUsage]
+    assert get_household_cache_for_testing() is None
 
     # One user, one household, with the right shape.
     async with committed_sessionmaker() as s:
@@ -403,9 +409,7 @@ async def test_transient_error_persistent_does_not_crash_startup(
         await bootstrap_initial_admin_from_env(committed_sessionmaker, settings)
 
     assert await _count_users(committed_sessionmaker) == 0
-    persistent = [
-        r for r in caplog.records if r.message == "initial_admin_db_error_persistent"
-    ]
+    persistent = [r for r in caplog.records if r.message == "initial_admin_db_error_persistent"]
     assert len(persistent) == 1
     assert persistent[0].levelname == "ERROR"
 

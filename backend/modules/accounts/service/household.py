@@ -75,3 +75,24 @@ def invalidate_household_cache() -> None:
     """Clear the process-local cache. Intra-module only (S03.2, tests)."""
     global _household_cache  # noqa: PLW0603  process-local singleton cache
     _household_cache = None
+
+
+# ---------------------------------------------------------------------------
+# Testing-only seams
+# ---------------------------------------------------------------------------
+# The `_for_testing` suffix marks these as a deliberate back-door for the
+# integration tests that need to prime / inspect the cache without
+# scattering `# pyright: ignore[reportPrivateUsage]` on direct
+# `_household_cache` accesses. Production code MUST go through
+# `get_household()` / `invalidate_household_cache()`.
+
+
+def set_household_cache_for_testing(value: Household | None) -> None:  # pyright: ignore[reportUnusedFunction]
+    """Override the cache slot. Tests only — production callers must not use."""
+    global _household_cache  # noqa: PLW0603  process-local singleton cache
+    _household_cache = value
+
+
+def get_household_cache_for_testing() -> Household | None:  # pyright: ignore[reportUnusedFunction]
+    """Read the raw cache slot without populating it. Tests only."""
+    return _household_cache

@@ -131,7 +131,12 @@ async def test_rotate_replay_branch_fires_when_loser_starts_after_commit(
                 await session.rollback()
                 return ("other", exc)
 
-    outcomes = await asyncio.gather(winner(), loser())
+    # `wait_for` is belt-and-braces against the `winner_committed.set()`
+    # in `winner`'s `finally` being skipped by a future refactor (e.g. a
+    # `BaseException` like `CancelledError` bypassing the try/except).
+    # The Event-based handoff already guards the happy path; the timeout
+    # guarantees the suite fails loudly instead of hanging on regression.
+    outcomes = await asyncio.wait_for(asyncio.gather(winner(), loser()), timeout=10.0)
     statuses = [o[0] for o in outcomes]
 
     # Order is deterministic by construction: winner first, loser second.
@@ -235,7 +240,10 @@ async def test_rotate_concurrent_race_with_barrier(
                 await session.rollback()
                 return ("other", type(exc).__name__)
 
-    outcomes = await asyncio.gather(attempt(), attempt())
+    # `Barrier(2)` deadlocks if one `attempt()` short-circuits before
+    # reaching `barrier.wait()` (e.g. the warm-up SELECT raising). The
+    # timeout fails the test loudly instead of hanging the suite.
+    outcomes = await asyncio.wait_for(asyncio.gather(attempt(), attempt()), timeout=10.0)
     statuses = sorted(o[0] for o in outcomes)
 
     # Strict outcome contract: one success, one revoked. No 500-class

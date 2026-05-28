@@ -78,8 +78,11 @@ _RACE_LOST_SQLSTATES = frozenset({"23505", "23514", "40001"})
 # which would point at a bug.
 _TRANSIENT_SQLSTATE_PREFIXES = ("08",)
 
-# Tunable retry policy. Cumulative wall-clock on persistent failure:
-# 0.5 + 1.0 + 2.0 = 3.5s before giving up. Tested via a monkeypatched
+# Tunable retry policy. The loop runs `_TRANSIENT_RETRIES` attempts;
+# the final attempt logs persistent and exits without sleeping, so only
+# the first two backoff slots are ever indexed — cumulative wall-clock
+# on persistent failure: 0.5 + 1.0 = 1.5s. The trailing 2.0 is reserved
+# for a future bump of `_TRANSIENT_RETRIES`. Tested via a monkeypatched
 # `asyncio.sleep` no-op so the test suite stays fast.
 _TRANSIENT_RETRIES = 3
 _TRANSIENT_BACKOFF_S: tuple[float, ...] = (0.5, 1.0, 2.0)

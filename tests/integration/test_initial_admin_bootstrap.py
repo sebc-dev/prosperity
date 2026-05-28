@@ -388,6 +388,67 @@ async def test_transient_error_retry_then_success(
     assert any(r.message == "initial_admin_created" for r in caplog.records)
 
 
+async def test_transient_error_two_retries_then_success(
+    committed_sessionmaker: async_sessionmaker[AsyncSession],
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """2 transients then success — pins `_TRANSIENT_BACKOFF_S[attempt]` indexing.
+
+    The simple-retry test above exercises attempt=0 only. The persistent
+    test exhausts the loop without observing the per-attempt sleep
+    sequence. Without this case, an off-by-one on `_TRANSIENT_BACKOFF_S`
+    indexing (e.g. `[attempt - 1]` or a shifted tuple) would pass both
+    existing tests silently.
+
+    Asserts on the exact `asyncio.sleep` argument sequence — overrides
+    the autouse `_noop_asyncio_sleep` fixture with a recorder for the
+    duration of this test.
+    """
+    settings = _build_settings(
+        email="admin@example.com",
+        password_hash=_HASHER.hash(_PLAINTEXT),
+    )
+
+    sleep_args: list[float] = []
+
+    async def _record_sleep(seconds: float) -> None:
+        sleep_args.append(seconds)
+
+    monkeypatch.setattr(setup_service.asyncio, "sleep", _record_sleep)
+
+    real_bootstrap = setup_service._bootstrap_from_hash  # pyright: ignore[reportPrivateUsage]
+    transient_sqlstates = ("08006", "08001")
+    call_count = {"n": 0}
+
+    async def _flaky(*args: Any, **kwargs: Any) -> Any:
+        n = call_count["n"]
+        call_count["n"] += 1
+        if n < len(transient_sqlstates):
+            raise OperationalError(
+                "transient",
+                params=None,
+                orig=_make_orig(transient_sqlstates[n]),  # type: ignore[arg-type]
+            )
+        return await real_bootstrap(*args, **kwargs)
+
+    monkeypatch.setattr(setup_service, "_bootstrap_from_hash", _flaky)
+
+    with caplog.at_level(logging.INFO, logger=setup_service.__name__):
+        await bootstrap_initial_admin_from_env(committed_sessionmaker, settings)
+
+    assert await _count_users(committed_sessionmaker) == 1
+    retries = [r for r in caplog.records if r.message == "initial_admin_db_error_retry"]
+    assert [r.__dict__["sqlstate"] for r in retries] == list(transient_sqlstates)
+    assert [r.__dict__["attempt"] for r in retries] == [0, 1]
+    assert any(r.message == "initial_admin_created" for r in caplog.records)
+    # Pins the index: `_TRANSIENT_BACKOFF_S[attempt]` → (0.5, 1.0) for
+    # attempt ∈ {0, 1}. A `[attempt - 1]` regression would yield
+    # (IndexError, 0.5); a `[attempt + 1]` regression would yield
+    # (1.0, 2.0). Either way this assertion fails.
+    assert sleep_args == [0.5, 1.0]
+
+
 async def test_transient_error_persistent_does_not_crash_startup(
     committed_sessionmaker: async_sessionmaker[AsyncSession],
     caplog: pytest.LogCaptureFixture,

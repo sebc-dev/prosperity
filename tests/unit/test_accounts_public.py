@@ -7,21 +7,25 @@ from backend.modules.accounts.models import HOUSEHOLD_SINGLETON_UUID
 from backend.modules.accounts.public import (
     HOUSEHOLD_ID,
     HouseholdNotInitializedError,
+    bootstrap_initial_admin_from_env,
     get_household,
 )
 from backend.modules.accounts.service import household as _household_service
+from backend.modules.accounts.service import setup as _setup_service
 
 
 def test_public_exports_exact_set() -> None:
     assert set(accounts_public.__all__) == {
         "HOUSEHOLD_ID",
         "HouseholdNotInitializedError",
+        "bootstrap_initial_admin_from_env",
         "get_household",
     }
 
 
 def test_public_symbols_are_callable_or_exceptions() -> None:
     assert callable(get_household)
+    assert callable(bootstrap_initial_admin_from_env)
     assert issubclass(HouseholdNotInitializedError, Exception)
 
 
@@ -38,6 +42,10 @@ def test_public_names_are_identical_objects_to_internals() -> None:
         is _household_service.HouseholdNotInitializedError
     )
     assert accounts_public.get_household is _household_service.get_household
+    assert (
+        accounts_public.bootstrap_initial_admin_from_env
+        is _setup_service.bootstrap_initial_admin_from_env
+    )
 
 
 def test_exception_is_a_plain_exception_subclass() -> None:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Final, Literal
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import EmailStr, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Dev/test convenience: matches the local Postgres image (postgres:17-alpine)
@@ -81,6 +81,51 @@ class Settings(BaseSettings):
         # their original deadline.
         default=30 * 24 * 3600,
         description="Refresh-token lifetime in seconds (30 days — see roadmap E02).",
+    )
+
+    # --- INITIAL_ADMIN_* env-var bootstrap (S03.3 — see roadmap E03) ---
+    # Optional escape hatch for automated restore / provisioning: if both
+    # `initial_admin_email` and `initial_admin_password_hash` are set at
+    # boot AND the DB is empty, the FastAPI lifespan creates the first
+    # admin before `/setup` becomes reachable. The XOR / partial / format
+    # validations live in the orchestrator (`accounts.service.setup.
+    # bootstrap_initial_admin_from_env`) so a bad env-var value logs a
+    # warning rather than crashing startup — the operator must always be
+    # able to `/setup` manually if env-var bootstrap fails.
+    initial_admin_email: EmailStr | None = Field(
+        default=None,
+        description=(
+            "Email of the auto-bootstrapped admin (S03.3). Must be paired with "
+            "INITIAL_ADMIN_PASSWORD_HASH; lone value triggers a warning + skip."
+        ),
+    )
+    # `SecretStr` keeps the hash out of `repr()` / logs / Sentry frames.
+    # An Argon2id hash is not equivalent to a plaintext password, but it
+    # is still a secret (an attacker who exfiltrates it can mount offline
+    # brute-force) — defense in depth.
+    initial_admin_password_hash: SecretStr | None = Field(
+        default=None,
+        description=(
+            "Pre-computed Argon2id hash (NEVER a plaintext password). Generate via "
+            "scripts/hash_password.py. Stored AS-IS in users.password_hash so "
+            "pwdlib.verify(plaintext, stored) matches at /auth/login."
+        ),
+    )
+    initial_admin_display_name: str = Field(
+        default="Admin",
+        max_length=120,
+        description=(
+            "Display name for the env-var-bootstrapped admin. Defaults to 'Admin' — "
+            "renameable post-bootstrap. Matches SetupRequest.display_name max_length."
+        ),
+    )
+    initial_household_name: str = Field(
+        default="Foyer",
+        max_length=120,
+        description=(
+            "Household name applied to the env-var-bootstrapped foyer. Defaults to "
+            "'Foyer'. Matches SetupRequest.household_name max_length."
+        ),
     )
 
     @model_validator(mode="after")

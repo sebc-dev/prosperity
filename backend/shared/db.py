@@ -38,10 +38,20 @@ def build_engine(settings: Settings) -> AsyncEngine:
     deliberate signal, since no other path currently exercises true
     concurrent UPDATEs on the same row.
     """
+    # `hide_parameters=True` keeps bound values out of `DBAPIError.__str__`
+    # (and therefore out of any `logger.warning("...", extra={"error": str(exc)})`
+    # call site) — defense in depth against accidentally leaking the
+    # hashed/plaintext password during `/setup`, refresh-token hashes
+    # during rotation, or the S03.3 `INITIAL_ADMIN_PASSWORD_HASH` during
+    # boot. We never log `str(exc)` ourselves, but Sentry / a future
+    # logging shim might, and `hide_parameters` is the belt to that
+    # braces. SQLAlchemy still emits the SQL statement with `?` markers,
+    # which is enough for debugging.
     return create_async_engine(
         settings.database_url,
         future=True,
         isolation_level="REPEATABLE READ",
+        hide_parameters=True,
     )
 
 

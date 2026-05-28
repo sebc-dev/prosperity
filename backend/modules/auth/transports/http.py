@@ -35,6 +35,7 @@ from backend.modules.auth.service.refresh_tokens import issue as issue_refresh
 from backend.modules.auth.service.refresh_tokens import revoke as revoke_refresh
 from backend.modules.auth.service.refresh_tokens import rotate as rotate_refresh
 from backend.shared.db import get_db
+from backend.shared.http import client_ip_for
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +90,7 @@ async def login(
         await session.execute(select(User).where(func.lower(User.email) == body.email.lower()))
     ).scalar_one_or_none()
     password = body.password.get_secret_value()
-    client_ip = request.client.host if request.client else None
+    client_ip = client_ip_for(request, settings)
 
     if user is None or user.disabled_at is not None:
         # Run verify() against the dummy hash so the disabled / unknown
@@ -145,7 +146,7 @@ async def refresh(
             "refresh_failed",
             extra={
                 "reason": type(exc).__name__,
-                "client_ip": request.client.host if request.client else None,
+                "client_ip": client_ip_for(request, settings),
             },
         )
         raise HTTPException(

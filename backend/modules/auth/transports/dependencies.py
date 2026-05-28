@@ -21,6 +21,7 @@ from backend.modules.auth.service.jwt import (
     verify_access_token,
 )
 from backend.shared.db import get_db
+from backend.shared.http import client_ip_for
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ async def get_current_user(
     disabled user). Server-side logs carry a symbolic `reason` to
     distinguish them for ops without leaking to the client.
     """
-    client_ip = request.client.host if request.client else None
+    client_ip = client_ip_for(request, settings)
 
     if credentials is None or credentials.scheme.lower() != "bearer":
         logger.warning(

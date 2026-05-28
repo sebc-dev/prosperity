@@ -38,6 +38,7 @@ from backend.modules.auth.public import (
     sanitize_device_label,
 )
 from backend.shared.db import get_db
+from backend.shared.http import client_ip_for
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +112,7 @@ async def setup_submit(
     no second round-trip to `/auth/login` required.
     """
     response.headers.update(_NO_STORE_HEADERS)
-    client_ip = request.client.host if request.client else None
+    client_ip = client_ip_for(request, settings)
 
     if not await is_setup_open(session):
         logger.warning(

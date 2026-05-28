@@ -138,6 +138,28 @@ Si après le boot vous voyez `/setup` retourner 200 (au lieu de 404 attendu) :
    - `initial_admin_db_error_persistent` → la DB n'était pas prête au moment du boot (cas Kubernetes sans `initContainer` qui attend Postgres). Redémarrer le pod après que la DB soit healthy, ou ajouter un readiness gate côté infra.
 3. Solution de repli : `/setup` manuellement via le navigateur (la fenêtre d'exposition est minimale si le service est en réseau privé).
 
+## Derrière un reverse-proxy : `TRUSTED_PROXY_IPS`
+
+Le bootstrap env-var et `/setup` loggent `client_ip` (cf. `setup_locked`, `setup_completed`, `login_failed`, `auth_rejected`, `refresh_failed`). Sans config, le champ contient l'IP de la couche transport — **utile en direct, inutilisable derrière un reverse-proxy** (toutes les requêtes apparaissent avec l'IP du proxy).
+
+Pour que les logs reflètent la vraie IP client :
+
+```bash
+# CSV de CIDR — les subnets dont on accepte le header X-Forwarded-For.
+export TRUSTED_PROXY_IPS="10.0.0.0/8,192.168.0.0/16"
+# IPv6 supporté : "fd00::/8" ; mixte v4+v6 : "10.0.0.0/8,fd00::/8".
+```
+
+Comportement :
+
+- **Vide** (défaut) → `X-Forwarded-For` est **ignoré**. C'est volontaire : sans whitelist, n'importe quel client direct pourrait forger le champ en mettant le header qu'il veut.
+- **IP source dans un CIDR trusté** → `X-Forwarded-For` est parcouru **de droite à gauche** ; la première entrée hors-trustée gagne (c'est le client en amont de votre chaîne de proxies). Si toute la chaîne est trustée, on retombe sur la plus à gauche (best-guess du client originel).
+- **IP source hors-trustée** → `X-Forwarded-For` ignoré (anti-spoofing : un attaquant qui atteint la box en direct ne doit pas pouvoir choisir l'IP qui finit dans l'audit).
+
+Une CIDR mal écrite (`TRUSTED_PROXY_IPS=10.0.0.0/8,not-a-network`) fait échouer le boot avec une `ValidationError` — c'est le but : la typo doit être bruyante.
+
+> Note : ce dispositif fournit un **audit trail forensic** correct, prérequis du futur rate-limit IP-based sur `/setup` (issue #69 partie 2, à coupler avec la stack S02.5). Sans rate-limit, `/setup` reste exposé sans coût attaquant tant que l'env-var bootstrap n'a pas tourné — la mitigation principale reste de set `INITIAL_ADMIN_*` avant l'exposition WAN.
+
 ## Notes V1
 
 - `base_currency` est figé à `"EUR"` (ADR 0008). Pas d'env var pour le changer en V1. Si vous avez besoin d'une autre devise, c'est un changement de code (E16+).

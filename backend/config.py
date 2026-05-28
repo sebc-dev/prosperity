@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Final, Literal
+from ipaddress import IPv4Network, IPv6Network
+from typing import Annotated, Any, Final, Literal
 
-from pydantic import EmailStr, Field, SecretStr, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import EmailStr, Field, SecretStr, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Dev/test convenience: matches the local Postgres image (postgres:17-alpine)
 # used by docker compose and testcontainers. Explicitly named so the
@@ -127,6 +128,39 @@ class Settings(BaseSettings):
             "'Foyer'. Matches SetupRequest.household_name max_length."
         ),
     )
+
+    # --- Trusted reverse-proxy CIDRs (follow-up to S03.3 — issue #69 part 1) ---
+    # CSV of CIDR networks whose `X-Forwarded-For` header
+    # `backend.shared.http.client_ip_for` will honour. Empty by default:
+    # XFF is ignored, `request.client.host` wins (any direct client can
+    # set XFF to anything, so consulting it unconditionally would let
+    # them forge the audit trail and any future IP-based rate limit).
+    # Set to the reverse-proxy subnets (e.g. `10.0.0.0/8,192.168.0.0/16`)
+    # before exposing the service WAN.
+    # `NoDecode` opts out of pydantic-settings' default complex-type
+    # JSON parsing — without it, `TRUSTED_PROXY_IPS=10.0.0.0/8,...`
+    # would be fed to `json.loads` and crash. We split the CSV
+    # ourselves in `_split_trusted_proxy_csv` and let pydantic coerce
+    # each item into an `IPv4Network | IPv6Network`.
+    trusted_proxy_ips: Annotated[
+        tuple[IPv4Network | IPv6Network, ...],
+        NoDecode,
+    ] = Field(
+        default=(),
+        description=(
+            "CSV of CIDR networks whose X-Forwarded-For is honoured. Empty → XFF "
+            "ignored (anti-spoofing default). Example: 10.0.0.0/8,192.168.0.0/16."
+        ),
+    )
+
+    @field_validator("trusted_proxy_ips", mode="before")
+    @classmethod
+    def _split_trusted_proxy_csv(cls, v: Any) -> Any:
+        # pydantic-settings (with NoDecode above) hands us the raw env
+        # string. CSV is the universal reverse-proxy convention.
+        if isinstance(v, str):
+            return [item.strip() for item in v.split(",") if item.strip()]
+        return v
 
     @model_validator(mode="after")
     def _forbid_dev_defaults_in_prod(self) -> Settings:

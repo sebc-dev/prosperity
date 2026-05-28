@@ -425,8 +425,10 @@ async def test_transient_error_two_retries_then_success(
         n = call_count["n"]
         call_count["n"] += 1
         if n < len(transient_sqlstates):
-            raise OperationalError(  # type: ignore[arg-type]
-                "transient", params=None, orig=_make_orig(transient_sqlstates[n])
+            raise OperationalError(
+                "transient",
+                params=None,
+                orig=_make_orig(transient_sqlstates[n]),  # type: ignore[arg-type]
             )
         return await real_bootstrap(*args, **kwargs)
 

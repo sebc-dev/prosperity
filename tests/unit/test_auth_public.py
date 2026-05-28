@@ -32,10 +32,12 @@ from backend.modules.auth.transports import dependencies as _deps
 
 
 def test_public_exports_exact_set() -> None:
-    # Pinning the exact set surfaces accidental additions/removals in
-    # review — any change here forces a deliberate discussion of
-    # cross-module surface expansion.
-    assert set(auth_public.__all__) == {
+    # Pinning the exact ordered list (not a set) surfaces accidental
+    # additions/removals AND silent duplicates in `__all__`. A
+    # `set(...)` comparison would silently accept `["X", "X", "Y"]`.
+    # `sorted()` keeps the diff deterministic if the canonical order
+    # ever evolves.
+    assert sorted(auth_public.__all__) == [
         "ExpiredTokenError",
         "InvalidTokenError",
         "TokenPair",
@@ -48,7 +50,13 @@ def test_public_exports_exact_set() -> None:
         "issue_refresh_token",
         "sanitize_device_label",
         "verify_access_token",
-    }
+    ]
+    # Also pin "no duplicates": sorted() collapses nothing, but if
+    # `__all__` were `["X", "X"]` then sorted would be `["X", "X"]`
+    # which would fail the equality above. The explicit length check
+    # belt-and-braces against a future regression where the expected
+    # list grows duplicates too.
+    assert len(auth_public.__all__) == len(set(auth_public.__all__))
 
 
 def test_public_symbols_are_callable_or_exceptions() -> None:

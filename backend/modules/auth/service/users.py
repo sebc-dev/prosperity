@@ -19,21 +19,11 @@ Internal to the auth module — cross-module callers must import via
 
 from __future__ import annotations
 
-from functools import cache
-
-from pwdlib import PasswordHash
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.auth.models import User, UserRole
-
-
-@cache
-def _password_hasher() -> PasswordHash:
-    # Mirror of `auth.transports.http._password_hasher` — both factories
-    # are `@cache`'d so multiple references resolve to one PasswordHash
-    # instance per process even though the import paths differ.
-    return PasswordHash.recommended()
+from backend.modules.auth.service._password import password_hasher
 
 
 async def create_user(
@@ -56,7 +46,7 @@ async def create_user(
         # `_normalize_email` validator on `User` lowercases + strips so the
         # functional index `uq_users_email_lower` can never disagree.
         email=email,
-        password_hash=_password_hasher().hash(password),
+        password_hash=password_hasher().hash(password),
         display_name=display_name,
         role=role,
     )

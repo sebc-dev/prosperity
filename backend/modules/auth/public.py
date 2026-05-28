@@ -14,9 +14,9 @@ The current consumers cross-module are:
 - generic FastAPI dependencies in any module — `get_current_user`,
   which itself returns `User`.
 
-`RefreshToken` and `_password_hasher` deliberately stay intra-auth:
-hashing is encapsulated by `create_user` and refresh-token row
-construction by `issue_refresh_token`.
+`RefreshToken` and the shared `password_hasher` factory deliberately
+stay intra-auth: hashing is encapsulated by `create_user` and
+refresh-token row construction by `issue_refresh_token`.
 """
 
 from __future__ import annotations

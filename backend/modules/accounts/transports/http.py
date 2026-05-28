@@ -22,7 +22,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import Settings, get_settings
@@ -47,9 +47,9 @@ logger = logging.getLogger(__name__)
 _NO_STORE_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 
 # Postgres SQLSTATEs that legitimately signal "another setup beat us".
-# Anything else under IntegrityError indicates an application-level bug
-# (NOT NULL miss, FK violation, serialization failure, etc.) and must
-# bubble up as 500 — never be masked as "setup locked".
+# Anything else under DBAPIError indicates an application-level bug
+# (NOT NULL miss, FK violation, etc.) and must bubble up as 500 — never
+# be masked as "setup locked".
 #
 # 23505 unique_violation: PK on `household.id` AND the functional UNIQUE
 # index `uq_users_email_lower` on `users.email` — Postgres emits the
@@ -58,7 +58,13 @@ _NO_STORE_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 # 23514 check_violation: defensive coverage of `ck_household_singleton`
 # (unreachable when callers use the ORM default, but flagged here so a
 # future raw-SQL path doesn't surface as 500).
-_RACE_LOST_SQLSTATES = frozenset({"23505", "23514"})
+#
+# 40001 serialization_failure: under REPEATABLE READ isolation (cf.
+# `backend.shared.db`), a true concurrent flush can abort the loser
+# with 40001 *before* the UNIQUE check fires. Postgres raises this as
+# `DBAPIError` (not `IntegrityError`), which is why the catch below is
+# on the parent class. Same race-lost semantics as 23505.
+_RACE_LOST_SQLSTATES = frozenset({"23505", "23514", "40001"})
 
 router = APIRouter(tags=["setup"])
 
@@ -97,9 +103,9 @@ async def setup_submit(
     Wrapped in a single `get_db` transaction — household INSERT, user
     INSERT, refresh-token INSERT all live or die together. The DB
     constraints (PK on `household.id`, UNIQUE on `lower(email)`)
-    backstop the precheck race window. Any `IntegrityError` with a
-    race-lost SQLSTATE (23505/23514) collapses to 404; anything else
-    re-raises so app-level bugs surface as 500.
+    backstop the precheck race window. Any `DBAPIError` with a
+    race-lost SQLSTATE (23505/23514/40001) collapses to 404; anything
+    else re-raises so app-level bugs surface as 500.
 
     Returns a `TokenPair` so the new admin is logged in immediately —
     no second round-trip to `/auth/login` required.
@@ -122,11 +128,14 @@ async def setup_submit(
             display_name=body.display_name,
             household_name=body.household_name,
         )
-    except IntegrityError as exc:
+    except DBAPIError as exc:
         # SQLSTATE-based discrimination: only race-lost violations
-        # collapse to 404. Anything else (NOT NULL, FK, serialization)
+        # collapse to 404. Anything else (NOT NULL, FK, unknown)
         # re-raises so an app-level bug surfaces as 500 instead of
-        # being masked as "setup locked".
+        # being masked as "setup locked". `DBAPIError` is the parent
+        # of `IntegrityError` (covers 23505/23514) and also catches
+        # 40001 serialization_failure raised directly under REPEATABLE
+        # READ before any UNIQUE check.
         sqlstate = getattr(exc.orig, "sqlstate", None)
         if sqlstate not in _RACE_LOST_SQLSTATES:
             logger.error(
@@ -145,11 +154,14 @@ async def setup_submit(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND) from exc
 
     # Auto-login: the refresh-token INSERT joins the same transaction
-    # as the household + user INSERTs. If it fails (UNIQUE on
-    # `token_hash` — astronomically improbable with 256-bit entropy),
-    # the whole `/setup` rolls back and the admin can retry against a
-    # vierge state. That's a desirable failure mode: a 500 here would
-    # never leave a half-initialised deployment behind.
+    # as the household + user INSERTs. A UNIQUE collision on
+    # `token_hash` (astronomically improbable with 256-bit entropy) is
+    # *not* in the race-lost branch above — it would bubble out of
+    # `issue_refresh_token` as `IntegrityError` and surface as 500.
+    # `get_db` rolls back the whole transaction on that path, so the
+    # deployment is left vierge for a clean retry rather than half-
+    # bootstrapped; 500 is the right signal for a true cryptographic
+    # accident, distinct from the race-lost 404.
     device_label = sanitize_device_label(request.headers.get("user-agent"))
     access_token = issue_access_token(admin_id, settings=settings)
     refresh_token = await issue_refresh_token(

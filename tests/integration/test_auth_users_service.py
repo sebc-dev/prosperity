@@ -55,6 +55,13 @@ async def test_create_user_lowercases_email_via_validator(
 async def test_create_user_duplicate_email_raises_integrity_error(
     auth_schema: AsyncSession,
 ) -> None:
+    """The duplicate must trip `uq_users_email_lower` specifically.
+
+    Asserting `IntegrityError` alone is too loose — any future UNIQUE/PK
+    regression would pass. Pinning the constraint name in `exc.orig`
+    confirms the **functional** index on `lower(email)` fired (and not,
+    e.g., a different UNIQUE added later by mistake).
+    """
     await create_user(
         auth_schema,
         email="admin@example.com",
@@ -62,7 +69,7 @@ async def test_create_user_duplicate_email_raises_integrity_error(
         display_name="Admin",
         role=UserRole.ADMIN,
     )
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError) as exc_info:
         await create_user(
             auth_schema,
             email="ADMIN@example.COM",  # same row under lower(email)
@@ -70,6 +77,7 @@ async def test_create_user_duplicate_email_raises_integrity_error(
             display_name="Admin Bis",
             role=UserRole.ADMIN,
         )
+    assert "uq_users_email_lower" in str(exc_info.value.orig)
 
 
 async def test_any_user_exists_false_on_empty_table(
@@ -92,23 +100,37 @@ async def test_any_user_exists_true_after_insert(
 
 
 async def test_create_user_does_not_commit(auth_schema: AsyncSession) -> None:
-    """Pin the contract that `create_user` flushes but never commits.
+    """Pin the contract: a SAVEPOINT rollback erases the row.
 
-    `auth_schema` runs inside a transaction that the per-test fixture
-    rolls back at teardown. If `create_user` accidentally committed,
-    the row would survive a subsequent rollback — the assertion below
-    proves it does not.
+    Post-flush visibility inside the *same* session does not distinguish
+    commit from no-commit (the row is visible either way). The real
+    discriminator is a SAVEPOINT rollback: if `create_user` had issued
+    an implicit `commit()`, the outer transaction would end and any
+    SAVEPOINT would be released, leaving the row persisted. We assert
+    the SAVEPOINT rollback successfully erases the row — proving no
+    commit happened inside `create_user`.
     """
-    await create_user(
-        auth_schema,
-        email="no-commit@example.com",
-        password="correct-horse-battery-staple",
-        display_name="No Commit",
-        role=UserRole.MEMBER,
+    savepoint = await auth_schema.begin_nested()
+    try:
+        await create_user(
+            auth_schema,
+            email="no-commit-sentinel@example.com",
+            password="correct-horse-battery-staple",
+            display_name="No Commit",
+            role=UserRole.MEMBER,
+        )
+        # Visible inside the SAVEPOINT post-flush.
+        inside = await auth_schema.execute(
+            select(User).where(User.email == "no-commit-sentinel@example.com")
+        )
+        assert inside.scalar_one_or_none() is not None
+    finally:
+        await savepoint.rollback()
+
+    # After SAVEPOINT rollback the row is gone — proves `create_user`
+    # did not call `commit()` (a commit would have released the
+    # SAVEPOINT, leaving the row persisted past this point).
+    after = await auth_schema.execute(
+        select(User).where(User.email == "no-commit-sentinel@example.com")
     )
-    # Visible inside the current transaction (post-flush).
-    result = await auth_schema.execute(select(User).where(User.email == "no-commit@example.com"))
-    assert result.scalar_one_or_none() is not None
-    # The teardown rollback in `db_session` would erase the row if no
-    # implicit commit happened — that's the rollback-isolation invariant
-    # this test depends on.
+    assert after.scalar_one_or_none() is None

@@ -13,7 +13,6 @@ from functools import cache
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pwdlib import PasswordHash
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +25,7 @@ from backend.modules.auth.schemas import (
     TokenPair,
     sanitize_device_label,
 )
+from backend.modules.auth.service._password import password_hasher
 from backend.modules.auth.service.jwt import issue_access_token
 from backend.modules.auth.service.refresh_tokens import (
     InvalidRefreshTokenError,
@@ -51,16 +51,6 @@ SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
 @cache
-def _password_hasher() -> PasswordHash:
-    """Lazy PasswordHash factory.
-
-    `PasswordHash.recommended()` instantiates Argon2id (50-200ms);
-    initialising at import time would slow every test boot.
-    """
-    return PasswordHash.recommended()
-
-
-@cache
 def _dummy_hash() -> str:
     """Pre-computed Argon2id hash used to equalise verify timing.
 
@@ -74,7 +64,7 @@ def _dummy_hash() -> str:
     this exact hash from a memory dump cannot fingerprint it as the
     "unknown user" sentinel — the value differs across processes.
     """
-    return _password_hasher().hash(secrets.token_urlsafe(32))
+    return password_hasher().hash(secrets.token_urlsafe(32))
 
 
 @router.post("/login", response_model=TokenPair, status_code=status.HTTP_200_OK)
@@ -105,14 +95,14 @@ async def login(
         # Run verify() against the dummy hash so the disabled / unknown
         # case takes the same Argon2id wall-clock time as the wrong-
         # password case.
-        _password_hasher().verify("dummy", _dummy_hash())
+        password_hasher().verify("dummy", _dummy_hash())
         logger.warning(
             "login_failed",
             extra={"reason": "user_unknown_or_disabled", "client_ip": client_ip},
         )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    if not _password_hasher().verify(password, user.password_hash):
+    if not password_hasher().verify(password, user.password_hash):
         logger.warning(
             "login_failed",
             extra={

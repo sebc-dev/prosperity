@@ -1,9 +1,16 @@
 """Pin the `after_commit` cache invalidation contract of POST /setup (S03.2).
 
-Three pinned invariants:
+Four pinned invariants:
 
 * Happy path → transaction commits → listener fires → cache cleared.
-* Lock-after-init path → 404 → no transaction write → cache untouched.
+* Race-lost rollback → listener registered but txn rolled back →
+  listener does NOT fire → cache untouched. **Load-bearing case** for
+  the `after_commit`-only invalidation design: a precheck-locked 404
+  would never register the listener in the first place, so the real
+  invariant is "listener exists but doesn't fire on rollback".
+* Precheck-locked 404 → no `initialize_bootstrap` call → no listener
+  registered → cache untouched (lighter-weight version of the contract,
+  documents the early-exit path).
 * End-to-end → after a successful POST, `get_household()` from an
   independent session sees the real row (not None and not a stale
   sentinel).
@@ -25,6 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from backend.modules.accounts.models import Household
 from backend.modules.accounts.public import get_household
 from backend.modules.accounts.service import household as household_service
+from backend.modules.accounts.service.setup import initialize_bootstrap
 from backend.modules.auth.models import User, UserRole
 
 # `_clean_committed_db` truncates the schema before & after each test
@@ -75,11 +83,63 @@ async def test_post_setup_invalidates_cache_after_commit(
     assert household_service._household_cache is None  # pyright: ignore[reportPrivateUsage]
 
 
-async def test_post_setup_does_not_invalidate_cache_on_rollback(
+async def test_initialize_bootstrap_rollback_does_not_fire_listener(
+    committed_sessionmaker: async_sessionmaker[AsyncSession],
+) -> None:
+    """Load-bearing race-lost contract: listener registered → rollback → cache survives.
+
+    Direct-call variant of the race-lost branch the route catches at
+    `http.py` `except DBAPIError`. We invoke `initialize_bootstrap`
+    (which registers the `after_commit` listener and persists the
+    pending writes), then roll back without committing — emulating the
+    `get_db` dependency rolling back on the 404 exception. The
+    invariant under test:
+
+      1. The listener IS registered (otherwise the test is vacuously
+         true). Asserted via the listener count on `dispatch.after_commit`.
+      2. The rollback does NOT fire the listener → cache state from
+         before the failed setup survives untouched.
+
+    The precheck-locked 404 test below covers a different (lighter)
+    path where `initialize_bootstrap` is never called at all; this test
+    pins the **dangerous** case where the listener was registered.
+    """
+    sentinel = _sentinel_household()
+    household_service._household_cache = sentinel  # pyright: ignore[reportPrivateUsage]
+
+    async with committed_sessionmaker() as session:
+        listeners_before = len(session.sync_session.dispatch.after_commit)
+        await initialize_bootstrap(
+            session,
+            email="admin@example.com",
+            password="correct-horse-battery-staple",
+            display_name="Admin",
+            household_name="Foyer Test",
+        )
+        listeners_after = len(session.sync_session.dispatch.after_commit)
+        # Without this guard, a regression that silently drops the
+        # listener registration would make the rollback assertion below
+        # trivially true.
+        assert listeners_after == listeners_before + 1, (
+            "initialize_bootstrap must register exactly one after_commit listener"
+        )
+        await session.rollback()
+
+    # Listener was registered but never fired (rollback path) → cache
+    # state from before the failed setup survives.
+    assert household_service._household_cache is sentinel  # pyright: ignore[reportPrivateUsage]
+
+
+async def test_post_setup_precheck_locked_does_not_invalidate_cache(
     committed_client: AsyncClient,
     committed_sessionmaker: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Pre-existing init → precheck 404 → no transaction → cache preserved."""
+    """Precheck-locked 404 → `initialize_bootstrap` never called → cache untouched.
+
+    Lighter-weight than the race-lost test above: the precheck rejects
+    before any DB write, so no listener is ever registered. Documents
+    that the early-exit path also leaves cache state intact.
+    """
     # Pre-init the household + a user so the precheck fails.
     async with committed_sessionmaker() as session:
         session.add(
@@ -106,8 +166,8 @@ async def test_post_setup_does_not_invalidate_cache_on_rollback(
     resp = await committed_client.post("/setup", json=_setup_payload())
     assert resp.status_code == 404
 
-    # Listener never registered (precheck rejected before the write) →
-    # nothing to fire on rollback → cache survives.
+    # Precheck rejected before the write → listener never registered →
+    # nothing to fire → cache survives.
     assert household_service._household_cache is sentinel  # pyright: ignore[reportPrivateUsage]
 
 

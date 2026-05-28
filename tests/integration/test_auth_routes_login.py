@@ -281,7 +281,7 @@ async def test_login_failure_branches_call_argon2_verify_exactly_once(
         await bound_user_factory(email="mona@example.com", password="real-password")
         payload = {"email": "mona@example.com", "password": "wrong"}
 
-    hasher = auth_http._password_hasher()  # pyright: ignore[reportPrivateUsage]
+    hasher = auth_http.password_hasher()
     with patch.object(hasher, "verify", wraps=hasher.verify) as spy:
         resp = await async_client.post("/auth/login", json=payload)
 

@@ -35,10 +35,12 @@ from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from backend.config import get_settings
 from backend.modules.accounts.models import Household
 from backend.modules.accounts.service import household as household_service
 from backend.modules.accounts.service import setup as setup_service
 from backend.modules.auth.models import User
+from backend.modules.auth.service.jwt import verify_access_token
 
 # Truncate Base.metadata tables before & after each test on the
 # module-scoped `committed_engine`. Without this the second test
@@ -86,14 +88,25 @@ async def test_two_concurrent_post_setup_one_wins_one_404(
         f"unexpected race outcome: {statuses}; bodies: {[r.text for r in responses]}"
     )
 
+    # Identify the winner and decode its access token. Catches an
+    # admin-identity-swap regression where the 200 responder's token
+    # would name a user different from the one actually persisted (e.g.
+    # if a future refactor flushed both rows then 500'd the loser late).
+    winner = next(r for r in responses if r.status_code == 200)
+    settings = get_settings()
+    token_sub = verify_access_token(winner.json()["access_token"], settings=settings)
+
     # Post-race DB state: exactly one household + one user (the winner).
     async with committed_sessionmaker() as session:
-        user_count = (await session.execute(select(func.count()).select_from(User))).scalar_one()
+        users = (await session.execute(select(User))).scalars().all()
         household_count = (
             await session.execute(select(func.count()).select_from(Household))
         ).scalar_one()
-    assert user_count == 1
+    assert len(users) == 1
     assert household_count == 1
+    # The surviving admin's id MUST match the 200 responder's token
+    # `sub` — same user from end to end.
+    assert users[0].id == token_sub
 
 
 async def test_concurrent_post_setup_with_barrier_hits_integrity_error_branch(

@@ -44,9 +44,7 @@ def _force_tty(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
 
 
-def _stub_getpass(
-    monkeypatch: pytest.MonkeyPatch, module: ModuleType, *answers: str
-) -> None:
+def _stub_getpass(monkeypatch: pytest.MonkeyPatch, module: ModuleType, *answers: str) -> None:
     """Replace `getpass.getpass` inside the script's namespace.
 
     Patching the script's own `getpass` import (not `getpass.getpass`

@@ -35,9 +35,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     manually once the DB recovers.
     """
     async with db_lifespan(app):
-        await bootstrap_initial_admin_from_env(
-            app.state.sessionmaker, get_settings()
-        )
+        await bootstrap_initial_admin_from_env(app.state.sessionmaker, get_settings())
         yield
 
 

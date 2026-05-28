@@ -44,10 +44,7 @@ async def test_build_engine_hides_parameters_in_dbapi_error_str(
     try:
         async with async_sessionmaker(engine)() as session:
             await session.execute(
-                text(
-                    "CREATE TEMP TABLE hide_param_marker "
-                    "(key text PRIMARY KEY, value text)"
-                )
+                text("CREATE TEMP TABLE hide_param_marker (key text PRIMARY KEY, value text)")
             )
             await session.execute(
                 text("INSERT INTO hide_param_marker (key, value) VALUES (:k, :v)"),

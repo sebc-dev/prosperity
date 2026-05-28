@@ -181,9 +181,7 @@ async def initialize_bootstrap(
     Does not commit. The route's `get_db` dependency commits at the
     end of the request (ADR 0015).
     """
-    await _insert_household_and_register_invalidation(
-        session, household_name=household_name
-    )
+    await _insert_household_and_register_invalidation(session, household_name=household_name)
     admin = await create_user(
         session,
         email=email,
@@ -213,9 +211,7 @@ async def _bootstrap_from_hash(
     `initialize_bootstrap`. Does not commit — the orchestrator owns
     the transaction and commits explicitly after a successful flush.
     """
-    await _insert_household_and_register_invalidation(
-        session, household_name=household_name
-    )
+    await _insert_household_and_register_invalidation(session, household_name=household_name)
     admin = await create_user_with_hash(
         session,
         email=email,

@@ -162,9 +162,7 @@ async def test_create_user_with_hash_persists_hash_byte_for_byte(
         display_name="Env Admin",
         role=UserRole.ADMIN,
     )
-    fresh = (
-        await auth_schema.execute(select(User).where(User.id == user.id))
-    ).scalar_one()
+    fresh = (await auth_schema.execute(select(User).where(User.id == user.id))).scalar_one()
     assert fresh.password_hash == precomputed
     # Round-trip: the persisted hash verifies the original plaintext.
     assert _HASHER.verify("correct-horse-battery-staple", fresh.password_hash)

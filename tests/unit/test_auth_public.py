@@ -17,6 +17,7 @@ from backend.modules.auth.public import (
     UserRole,
     any_user_exists,
     create_user,
+    create_user_with_hash,
     get_current_user,
     issue_access_token,
     issue_refresh_token,
@@ -45,6 +46,7 @@ def test_public_exports_exact_set() -> None:
         "UserRole",
         "any_user_exists",
         "create_user",
+        "create_user_with_hash",
         "get_current_user",
         "issue_access_token",
         "issue_refresh_token",
@@ -64,6 +66,7 @@ def test_public_symbols_are_callable_or_exceptions() -> None:
     assert callable(verify_access_token)
     assert callable(issue_refresh_token)
     assert callable(create_user)
+    assert callable(create_user_with_hash)
     assert callable(any_user_exists)
     assert callable(get_current_user)
     assert callable(sanitize_device_label)
@@ -83,6 +86,7 @@ def test_public_names_are_identical_objects_to_internals() -> None:
     assert auth_public.ExpiredTokenError is _jwt_service.ExpiredTokenError
     assert auth_public.issue_refresh_token is _refresh_service.issue
     assert auth_public.create_user is _users_service.create_user
+    assert auth_public.create_user_with_hash is _users_service.create_user_with_hash
     assert auth_public.any_user_exists is _users_service.any_user_exists
     assert auth_public.TokenPair is _schemas_token_pair
     assert auth_public.sanitize_device_label is _schemas_sanitize

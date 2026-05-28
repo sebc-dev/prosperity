@@ -15,7 +15,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.auth.models import User, UserRole
-from backend.modules.auth.service.users import any_user_exists, create_user
+from backend.modules.auth.service.users import (
+    any_user_exists,
+    create_user,
+    create_user_with_hash,
+)
 
 _HASHER = PasswordHash.recommended()
 
@@ -134,3 +138,71 @@ async def test_create_user_does_not_commit(auth_schema: AsyncSession) -> None:
         select(User).where(User.email == "no-commit-sentinel@example.com")
     )
     assert after.scalar_one_or_none() is None
+
+
+# ---------------------------------------------------------------------------
+# create_user_with_hash (S03.3 env-var seed)
+# ---------------------------------------------------------------------------
+
+
+async def test_create_user_with_hash_persists_hash_byte_for_byte(
+    auth_schema: AsyncSession,
+) -> None:
+    """The hash is stored AS-IS. Re-hashing would break the next /auth/login.
+
+    The S03.3 boot hook receives an Argon2id hash computed offline by
+    `scripts/hash_password.py`. Re-hashing in `create_user_with_hash`
+    would silently make every login attempt fail.
+    """
+    precomputed = _HASHER.hash("correct-horse-battery-staple")
+    user = await create_user_with_hash(
+        auth_schema,
+        email="env-admin@example.com",
+        password_hash=precomputed,
+        display_name="Env Admin",
+        role=UserRole.ADMIN,
+    )
+    fresh = (
+        await auth_schema.execute(select(User).where(User.id == user.id))
+    ).scalar_one()
+    assert fresh.password_hash == precomputed
+    # Round-trip: the persisted hash verifies the original plaintext.
+    assert _HASHER.verify("correct-horse-battery-staple", fresh.password_hash)
+
+
+async def test_create_user_with_hash_lowercases_email_via_validator(
+    auth_schema: AsyncSession,
+) -> None:
+    """The email validator must fire on this path too — pin parity with `create_user`."""
+    precomputed = _HASHER.hash("correct-horse-battery-staple")
+    user = await create_user_with_hash(
+        auth_schema,
+        email="Env@Example.COM",
+        password_hash=precomputed,
+        display_name="Env Admin",
+        role=UserRole.ADMIN,
+    )
+    assert user.email == "env@example.com"
+
+
+async def test_create_user_with_hash_duplicate_email_raises_integrity_error(
+    auth_schema: AsyncSession,
+) -> None:
+    """The functional UNIQUE index `uq_users_email_lower` fires on this path too."""
+    precomputed = _HASHER.hash("correct-horse-battery-staple")
+    await create_user_with_hash(
+        auth_schema,
+        email="env-admin@example.com",
+        password_hash=precomputed,
+        display_name="Env Admin",
+        role=UserRole.ADMIN,
+    )
+    with pytest.raises(IntegrityError) as exc_info:
+        await create_user_with_hash(
+            auth_schema,
+            email="ENV-ADMIN@example.COM",
+            password_hash=precomputed,
+            display_name="Dup",
+            role=UserRole.ADMIN,
+        )
+    assert "uq_users_email_lower" in str(exc_info.value.orig)

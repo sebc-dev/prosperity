@@ -24,9 +24,9 @@ Livrable agrégé : un admin peut inviter par email, l'invité reçoit un lien `
 
 | Phase | Description | Diff |
 |---|---|---|
-| **P04.1.1** | Enum `Role` dans `modules/auth/domain.py` (`admin`, `member`). Validations dans `User.role`. Tests | ~50 |
-| **P04.1.2** | Décorateurs/Depends FastAPI : `require_admin`, `require_member` dans `shared/permissions.py` (puisque transverse). Tests httpx : route protégée admin retourne 403 pour member, 200 pour admin | ~120 |
-| **P04.1.3** | `auth.public.promote_to_admin(user_id, by_admin_id)` : transition `member → admin` avec log audit. Refuse si user déjà admin. Tests | ~100 |
+| **P04.1.1** | Enum de rôle dans `modules/auth/domain.py` (`admin`, `member`, réutilise `UserRole`). Validations dans `User.role` + round-trip PG ENUM. Tests | ~60 |
+| **P04.1.2** | Depends FastAPI : `require_admin`, `require_member` dans `auth/transports/dependencies.py`, re-exposés via `auth.public`. (Pas `shared/` : le contrat import-linter #3 interdit `shared → modules.*`.) Tests httpx : route protégée admin retourne 403 pour member, 200 pour admin | ~120 |
+| **P04.1.3** | `auth.public.promote_to_admin(user_id, by_admin_id)` : transition `member → admin` **atomique** (UPDATE conditionnel) avec log audit. Refuse si user déjà admin et si l'acteur n'est pas un admin actif. Tests | ~120 |
 
 ---
 
@@ -81,23 +81,23 @@ Livrable agrégé : un admin peut inviter par email, l'invité reçoit un lien `
 
 | ID | Type | Diff | Cumul |
 |---|---|---|---|
-| S04.1 (3 phases) | RBAC enum + Depends | 270 | 270 |
-| S04.2 (2 phases) | Audit log | 160 | 430 |
-| S04.3 (3 phases) | Invitations table | 330 | 760 |
-| S04.4 (3 phases) | Routes admin | 320 | 1080 |
-| S04.5 (3 phases) | /accept-invite | 350 | 1430 |
-| **Total** | **5 stories / 14 phases** | **~1430 lignes** | |
+| S04.1 (3 phases) | RBAC enum + Depends | 300 | 300 |
+| S04.2 (2 phases) | Audit log | 160 | 460 |
+| S04.3 (3 phases) | Invitations table | 330 | 790 |
+| S04.4 (3 phases) | Routes admin | 320 | 1110 |
+| S04.5 (3 phases) | /accept-invite | 350 | 1460 |
+| **Total** | **5 stories / 14 phases** | **~1460 lignes** | |
 
 ---
 
 ## Critères d'acceptation
 
-- [ ] `require_admin`/`require_member` Depends fonctionnent et renvoient 403 sur mauvais rôle
+- [ ] `require_admin`/`require_member` Depends fonctionnent et renvoient 403 sur mauvais rôle (`require_member` fail-closed sur rôle inattendu)
 - [ ] Création d'une invitation génère un token aléatoire, hashé en DB
 - [ ] Régénérer une invitation invalide l'ancien token
 - [ ] Révoquer une invitation rend le lien inutilisable
 - [ ] `/accept-invite` avec token valide crée un user `member`, JAMAIS `admin`
-- [ ] Promotion `member → admin` est une action séparée (`auth.public.promote_to_admin`)
+- [ ] Promotion `member → admin` est une action séparée (`auth.public.promote_to_admin`), atomique et refusée si l'acteur n'est pas un admin actif (audit non-forgeable)
 - [ ] Tous les acts admin sont dans `admin_audit_logs` (server-only)
 - [ ] Coverage `modules/auth/service/invitations.py` ≥ 80%
 

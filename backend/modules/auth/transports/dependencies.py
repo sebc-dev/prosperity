@@ -14,6 +14,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import Settings, get_settings
+from backend.modules.auth.domain import UserRole
 from backend.modules.auth.models import User
 from backend.modules.auth.service.jwt import (
     ExpiredTokenError,
@@ -97,4 +98,71 @@ async def get_current_user(
             },
         )
         raise _unauthorized()
+    return user
+
+
+# Authorisation (RBAC) sits *above* authentication: by the time these
+# run, `get_current_user` has already collapsed every anonymous/invalid/
+# disabled case into a uniform 401. A 403 therefore means "you are a
+# known, live user, but your role is not enough" — a distinct, safe
+# signal (the caller already proved identity). The body is a constant
+# `"Forbidden"`: it never names the required role, so an authenticated
+# member cannot enumerate which endpoints are admin-gated by reading the
+# error text. The symbolic `reason` is server-side only.
+_FORBIDDEN_DETAIL = "Forbidden"
+
+
+def _forbidden() -> HTTPException:
+    return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_FORBIDDEN_DETAIL)
+
+
+async def require_admin(
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> User:
+    """Authenticated `User` whose role is `ADMIN`, else `HTTPException(403)`.
+
+    Anonymous / invalid-token / disabled-user cases never reach here —
+    `get_current_user` raised 401 first. The only failure mode left is
+    an authenticated non-admin, which is a 403. The rejection log carries
+    `user_id` + `client_ip` but **never** the email nor the required
+    role, mirroring the anti-enumeration discipline of the 401 path.
+    """
+    if user.role is not UserRole.ADMIN:
+        logger.warning(
+            "rbac_rejected",
+            extra={
+                "reason": "role_not_admin",
+                "user_id": str(user.id),
+                "client_ip": client_ip_for(request, settings),
+            },
+        )
+        raise _forbidden()
+    return user
+
+
+async def require_member(
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> User:
+    """Authenticated `User` whose role grants member-level access.
+
+    `ADMIN` and `MEMBER` both pass — admins are a superset of members.
+    The check is an explicit allow-list (`role in {ADMIN, MEMBER}`), not
+    `not get_current_user()`-and-shrug: should a third role ever be
+    added to the enum without a deliberate decision here, it is rejected
+    fail-closed (403) rather than silently inheriting member access.
+    """
+    if user.role not in (UserRole.ADMIN, UserRole.MEMBER):
+        logger.warning(
+            "rbac_rejected",
+            extra={
+                "reason": "role_not_member",
+                "user_id": str(user.id),
+                "client_ip": client_ip_for(request, settings),
+            },
+        )
+        raise _forbidden()
     return user

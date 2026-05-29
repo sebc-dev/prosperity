@@ -7,8 +7,8 @@ auto-login symbols re-exported for `accounts.transports.http`).
 from __future__ import annotations
 
 import backend.modules.auth.public as auth_public
+from backend.modules.auth.domain import UserRole as _user_role_enum
 from backend.modules.auth.models import User as _user_model
-from backend.modules.auth.models import UserRole as _user_role_enum
 from backend.modules.auth.public import (
     ExpiredTokenError,
     InvalidTokenError,
@@ -21,6 +21,8 @@ from backend.modules.auth.public import (
     get_current_user,
     issue_access_token,
     issue_refresh_token,
+    require_admin,
+    require_member,
     sanitize_device_label,
     verify_access_token,
 )
@@ -50,6 +52,8 @@ def test_public_exports_exact_set() -> None:
         "get_current_user",
         "issue_access_token",
         "issue_refresh_token",
+        "require_admin",
+        "require_member",
         "sanitize_device_label",
         "verify_access_token",
     ]
@@ -69,6 +73,8 @@ def test_public_symbols_are_callable_or_exceptions() -> None:
     assert callable(create_user_with_hash)
     assert callable(any_user_exists)
     assert callable(get_current_user)
+    assert callable(require_admin)
+    assert callable(require_member)
     assert callable(sanitize_device_label)
     assert issubclass(InvalidTokenError, Exception)
     assert issubclass(ExpiredTokenError, InvalidTokenError)
@@ -93,3 +99,5 @@ def test_public_names_are_identical_objects_to_internals() -> None:
     assert auth_public.User is _user_model
     assert auth_public.UserRole is _user_role_enum
     assert auth_public.get_current_user is _deps.get_current_user
+    assert auth_public.require_admin is _deps.require_admin
+    assert auth_public.require_member is _deps.require_member

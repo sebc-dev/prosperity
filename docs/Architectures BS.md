@@ -72,7 +72,6 @@ backend/
   shared/
     money.py              # Value object Pydantic (cf. ADR 0008)
     currency.py
-    permissions.py        # décorateurs FastAPI
     events.py             # mini-bus in-process synchrone (cf. ADR 0005)
   modules/
     auth/                 # users, sessions, JWT, refresh, PAT entity, 2FA TOTP (ADR 0013)
@@ -91,6 +90,8 @@ backend/
   alembic/
   tests/
 ```
+
+> **Note RBAC** : les Depends FastAPI cross-module `require_admin` / `require_member` ne vivent **pas** dans `shared/` mais dans `auth/transports/dependencies.py`, re-exposés via `auth.public` (comme `get_current_user`). Le contrat import-linter #3 interdit `shared → modules.*`, or ces Depends dépendent de `get_current_user` (module `auth`). Cf. E04 §S04.1.
 
 **Règle de modulation** :
 

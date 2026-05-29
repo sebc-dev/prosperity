@@ -5,12 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from backend.config import (
-    _DEV_JWT_SECRET,
-    _MIN_JWT_SECRET_BYTES,
-    DEV_DEFAULT_DATABASE_URL,
-    Settings,
-)
+from backend.config import DEV_DEFAULT_DATABASE_URL, Settings
 
 _REAL_DSN = "postgresql+asyncpg://app:secret@db.internal:5432/prosperity"
 _REAL_JWT_SECRET = "a-real-production-secret-32-chars!!"
@@ -85,10 +80,15 @@ def test_short_jwt_secret_allowed_outside_prod(monkeypatch: pytest.MonkeyPatch) 
     assert settings.jwt_secret.get_secret_value() == "too-short-secret"
 
 
-def test_dev_default_secret_meets_min_length() -> None:
-    # Invariant: the dev/test default must stay >= 32 bytes so it neither trips
-    # PyJWT's InsecureKeyLengthWarning nor the prod length guard above.
-    assert len(_DEV_JWT_SECRET.encode("utf-8")) >= _MIN_JWT_SECRET_BYTES
+def test_dev_default_secret_meets_min_length(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Invariant: the dev/test default must stay >= 32 bytes (the PyJWT
+    # InsecureKeyLengthWarning / RFC 7518 §3.2 threshold) so it neither trips
+    # that warning on every token op nor the prod length guard above. Asserted
+    # through the public `Settings` surface rather than the private constant.
+    monkeypatch.setenv("APP_ENV", "dev")
+    monkeypatch.delenv("JWT_SECRET", raising=False)
+    default_secret = Settings().jwt_secret.get_secret_value()
+    assert len(default_secret.encode("utf-8")) >= 32
 
 
 def test_jwt_secret_is_not_leaked_by_repr(monkeypatch: pytest.MonkeyPatch) -> None:

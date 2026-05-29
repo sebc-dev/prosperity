@@ -8,8 +8,8 @@ import secrets
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+import jwt as pyjwt
 import pytest
-from jose import jwt as jose_jwt
 from pydantic import SecretStr
 
 from backend.config import Settings
@@ -71,7 +71,7 @@ def _forge_token_with_claims(claims: dict[str, object], settings: Settings) -> s
         **claims,
     }
     enriched = {k: v for k, v in enriched.items() if v is not _OMIT}
-    return jose_jwt.encode(
+    return pyjwt.encode(
         enriched,
         settings.jwt_secret.get_secret_value(),
         algorithm=settings.jwt_algorithm,
@@ -96,7 +96,7 @@ def test_default_access_ttl_is_15_minutes() -> None:
     # P02.2.1 spec: access tokens expire after 15 minutes by default.
     settings = _settings()
     token = issue_access_token(uuid4(), settings=settings)
-    claims = jose_jwt.get_unverified_claims(token)
+    claims = pyjwt.decode(token, options={"verify_signature": False})
     assert claims["exp"] - claims["iat"] == 900
 
 
@@ -132,7 +132,9 @@ def test_token_expired_within_leeway_is_accepted() -> None:
 def test_token_with_future_iat_outside_leeway_is_rejected() -> None:
     # iat = now + 60s, well past the 30s leeway → backdated token (or attacker
     # with a forged clock). Must be rejected as Invalid (not Expired) because
-    # `exp` is also in the future — only `iat` is anomalous.
+    # `exp` is also in the future — only `iat` is anomalous. PyJWT raises
+    # `ImmatureSignatureError` for this, which `verify_access_token` maps to
+    # `InvalidTokenError` (the post-decode `iat` check is a residual backstop).
     settings = _settings()
     now_ts = int(datetime.now(tz=UTC).timestamp())
     token = _forge_token_with_claims(
@@ -223,10 +225,10 @@ def test_token_with_none_algorithm_is_rejected() -> None:
 # artefact signed under the same key would otherwise be accepted by
 # `verify_access_token`. The tests below pin the rejection contract:
 # a token must carry `aud=settings.jwt_audience` AND `iss=settings.jwt_issuer`
-# to be accepted. They also document the python-jose asymmetry: jose
-# rejects missing `iss` (via `claims.get("iss") not in (...)`) but
-# silently accepts missing `aud` — `verify_access_token` adds an explicit
-# `"aud" not in payload` check to close that gap.
+# to be accepted. PyJWT rejects a missing `aud`/`iss` natively (it raises
+# `MissingRequiredClaimError` when `audience=`/`issuer=` are passed);
+# `verify_access_token` keeps explicit `"aud"`/`"iss"` checks as
+# defense-in-depth should that validation ever loosen.
 
 
 def test_issued_token_carries_pinned_aud_and_iss() -> None:
@@ -234,15 +236,15 @@ def test_issued_token_carries_pinned_aud_and_iss() -> None:
     # ones `issue_access_token` actually writes.
     settings = _settings()
     token = issue_access_token(uuid4(), settings=settings)
-    claims = jose_jwt.get_unverified_claims(token)
+    claims = pyjwt.decode(token, options={"verify_signature": False})
     assert claims["aud"] == settings.jwt_audience
     assert claims["iss"] == settings.jwt_issuer
 
 
 def test_token_without_aud_claim_is_rejected() -> None:
-    # Pins the defense against the python-jose quirk: `jwt.decode(...,
-    # audience=...)` silently passes a token missing `aud`. The explicit
-    # `"aud" not in payload` check after decode catches it.
+    # A token missing `aud` is rejected: PyJWT raises
+    # `MissingRequiredClaimError("aud")` when `audience=` is passed, and the
+    # explicit `"aud" not in payload` check backs it up as defense-in-depth.
     settings = _settings()
     token = _forge_token_with_claims({"sub": str(uuid4()), "aud": _OMIT}, settings)
     with pytest.raises(InvalidTokenError):
@@ -259,12 +261,10 @@ def test_token_with_wrong_aud_is_rejected() -> None:
 
 
 def test_token_without_iss_claim_is_rejected() -> None:
-    # Two redundant rejections cover this: (1) jose's `_validate_iss`
-    # compares `claims.get("iss") not in (issuer,)`, so `None not in
-    # ("prosperity-auth",)` raises `JWTClaimsError`; (2) the explicit
-    # `"iss" not in payload` check after `decode` catches it again as
-    # defense-in-depth, mirroring the `aud` check (in case a future jose
-    # change loosens `_validate_iss` the way `_validate_aud` already is).
+    # Two redundant rejections cover this: (1) PyJWT raises
+    # `MissingRequiredClaimError("iss")` when `issuer=` is passed and the
+    # claim is absent; (2) the explicit `"iss" not in payload` check after
+    # `decode` catches it again as defense-in-depth, mirroring the `aud` check.
     settings = _settings()
     token = _forge_token_with_claims({"sub": str(uuid4()), "iss": _OMIT}, settings)
     with pytest.raises(InvalidTokenError):

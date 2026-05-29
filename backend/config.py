@@ -17,7 +17,15 @@ DEV_DEFAULT_DATABASE_URL = "postgresql+asyncpg://prosperity:prosperity@localhost
 # Sentinel for the well-known dev JWT signing key. The production guard refuses
 # this value when `APP_ENV=prod` so a missing `JWT_SECRET` in real deployments
 # fails fast instead of silently accepting tokens forged from a published value.
-_DEV_JWT_SECRET: Final = "dev-secret-change-me"
+# Kept ≥ `_MIN_JWT_SECRET_BYTES` so the dev/test default does not trip PyJWT's
+# `InsecureKeyLengthWarning` on every token operation.
+_DEV_JWT_SECRET: Final = "dev-secret-change-me-min-32-bytes-please"
+
+# RFC 7518 §3.2: an HS256 (HMAC-SHA256) key should be at least as long as the
+# hash output — 256 bits / 32 bytes. PyJWT emits `InsecureKeyLengthWarning`
+# below this; the production guard refuses it outright so a weak signing key
+# can never reach a real deployment.
+_MIN_JWT_SECRET_BYTES: Final = 32
 
 
 class Settings(BaseSettings):
@@ -52,7 +60,10 @@ class Settings(BaseSettings):
     # token in one shot — plan rotations as forced re-login events.
     jwt_secret: SecretStr = Field(
         default=SecretStr(_DEV_JWT_SECRET),
-        description="HS256 signing key — must be overridden in prod via JWT_SECRET.",
+        description=(
+            "HS256 signing key — must be overridden in prod via JWT_SECRET "
+            f"and be at least {_MIN_JWT_SECRET_BYTES} bytes (RFC 7518 §3.2)."
+        ),
     )
     jwt_algorithm: str = Field(
         default="HS256",
@@ -180,6 +191,14 @@ class Settings(BaseSettings):
             raise ValueError(
                 "JWT_SECRET must be set explicitly when APP_ENV=prod "
                 "(refusing the well-known dev default)."
+            )
+        # Weak-key guard: an HS256 secret shorter than the 256-bit hash output
+        # is brute-forceable. Checked after the dev-default guard so a forgotten
+        # override surfaces the clearer "must be set explicitly" message first.
+        if len(self.jwt_secret.get_secret_value().encode("utf-8")) < _MIN_JWT_SECRET_BYTES:
+            raise ValueError(
+                f"JWT_SECRET must be at least {_MIN_JWT_SECRET_BYTES} bytes when "
+                "APP_ENV=prod (HS256 HMAC key strength — RFC 7518 §3.2)."
             )
         return self
 

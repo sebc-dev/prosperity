@@ -111,9 +111,45 @@ async def get_current_user(
 # error text. The symbolic `reason` is server-side only.
 _FORBIDDEN_DETAIL = "Forbidden"
 
+# Both guards are explicit allow-lists, not deny-by-negation: a role
+# outside the set is rejected fail-closed (403), so adding a third role
+# to the enum never silently grants access without a deliberate decision
+# here.
+_ADMIN_ROLES = frozenset({UserRole.ADMIN})
+_MEMBER_ROLES = frozenset({UserRole.ADMIN, UserRole.MEMBER})
+
 
 def _forbidden() -> HTTPException:
     return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=_FORBIDDEN_DETAIL)
+
+
+def _require_role(
+    user: User,
+    request: Request,
+    settings: Settings,
+    allowed: frozenset[UserRole],
+    reason: str,
+) -> User:
+    """Return `user` if its role is in `allowed`, else raise 403.
+
+    The single home for the rejection shape so every guard stays
+    consistent: the same constant `"Forbidden"` body, and an
+    `rbac_rejected` log that carries `user_id` + `client_ip` but
+    **never** the email nor the required role (anti-enumeration —
+    mirroring the 401 path). `client_ip_for` is only computed on the
+    rejection branch.
+    """
+    if user.role not in allowed:
+        logger.warning(
+            "rbac_rejected",
+            extra={
+                "reason": reason,
+                "user_id": str(user.id),
+                "client_ip": client_ip_for(request, settings),
+            },
+        )
+        raise _forbidden()
+    return user
 
 
 async def require_admin(
@@ -125,21 +161,9 @@ async def require_admin(
 
     Anonymous / invalid-token / disabled-user cases never reach here —
     `get_current_user` raised 401 first. The only failure mode left is
-    an authenticated non-admin, which is a 403. The rejection log carries
-    `user_id` + `client_ip` but **never** the email nor the required
-    role, mirroring the anti-enumeration discipline of the 401 path.
+    an authenticated non-admin, which is a 403.
     """
-    if user.role is not UserRole.ADMIN:
-        logger.warning(
-            "rbac_rejected",
-            extra={
-                "reason": "role_not_admin",
-                "user_id": str(user.id),
-                "client_ip": client_ip_for(request, settings),
-            },
-        )
-        raise _forbidden()
-    return user
+    return _require_role(user, request, settings, _ADMIN_ROLES, "role_not_admin")
 
 
 async def require_member(
@@ -150,19 +174,5 @@ async def require_member(
     """Authenticated `User` whose role grants member-level access.
 
     `ADMIN` and `MEMBER` both pass — admins are a superset of members.
-    The check is an explicit allow-list (`role in {ADMIN, MEMBER}`), not
-    `not get_current_user()`-and-shrug: should a third role ever be
-    added to the enum without a deliberate decision here, it is rejected
-    fail-closed (403) rather than silently inheriting member access.
     """
-    if user.role not in (UserRole.ADMIN, UserRole.MEMBER):
-        logger.warning(
-            "rbac_rejected",
-            extra={
-                "reason": "role_not_member",
-                "user_id": str(user.id),
-                "client_ip": client_ip_for(request, settings),
-            },
-        )
-        raise _forbidden()
-    return user
+    return _require_role(user, request, settings, _MEMBER_ROLES, "role_not_member")

@@ -16,12 +16,14 @@ through the guard, confirming the layering.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Annotated
 from uuid import uuid4
 
+import pytest
 from fastapi import Depends, FastAPI
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -195,3 +197,39 @@ async def test_member_only_is_fail_closed_for_unexpected_role(
         app.dependency_overrides.pop(get_current_user, None)
 
     _assert_forbidden(resp)
+
+
+async def test_rbac_rejection_log_omits_email_and_required_role(
+    async_client: AsyncClient,
+    bound_user_factory: UserMaker,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The `rbac_rejected` log must not leak the email nor the required role.
+
+    The constant 403 body already hides the required role from the
+    client; this pins the *server-side* half of that discipline. Without
+    it, a regression adding `email` (or the required role) to the log
+    `extra` would pass every other test green — the leak only shows up
+    here.
+    """
+    member = await bound_user_factory(email="leaky@example.com", role=UserRole.MEMBER)
+
+    deps_logger = "backend.modules.auth.transports.dependencies"
+    with caplog.at_level(logging.WARNING, logger=deps_logger):
+        resp = await async_client.get("/test/admin-only", headers=_bearer(member.id))
+
+    _assert_forbidden(resp)
+
+    rejections = [
+        r for r in caplog.records if r.name == deps_logger and r.msg == "rbac_rejected"
+    ]
+    assert len(rejections) == 1
+    fields = rejections[0].__dict__  # `extra=` lands here as attributes
+    # Carries the safe, ops-only fields...
+    assert fields["reason"] == "role_not_admin"
+    assert fields["user_id"] == str(member.id)
+    assert "client_ip" in fields
+    # ...and never the email nor a field naming the required role.
+    assert "email" not in fields
+    assert "role" not in fields
+    assert "leaky@example.com" not in caplog.text

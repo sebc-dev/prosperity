@@ -13,7 +13,11 @@ The current consumers cross-module are:
   `issue_refresh_token`, `TokenPair`, `sanitize_device_label` for
   auto-login at the end of `/setup` (S03.2).
 - generic FastAPI dependencies in any module — `get_current_user`,
-  which itself returns `User`.
+  which itself returns `User`, plus the RBAC guards `require_admin` /
+  `require_member` (S04.1) layered on top of it. They live in
+  `transports.dependencies` (not `shared/`) because they `Depends`
+  on `get_current_user`, and re-export here keeps the cross-module
+  surface uniform.
 
 `RefreshToken` and the shared `password_hasher` factory deliberately
 stay intra-auth: hashing is encapsulated by `create_user` and
@@ -36,7 +40,11 @@ from backend.modules.auth.service.users import (
     create_user,
     create_user_with_hash,
 )
-from backend.modules.auth.transports.dependencies import get_current_user
+from backend.modules.auth.transports.dependencies import (
+    get_current_user,
+    require_admin,
+    require_member,
+)
 
 __all__ = [
     "ExpiredTokenError",
@@ -50,6 +58,8 @@ __all__ = [
     "get_current_user",
     "issue_access_token",
     "issue_refresh_token",
+    "require_admin",
+    "require_member",
     "sanitize_device_label",
     "verify_access_token",
 ]

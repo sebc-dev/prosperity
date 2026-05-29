@@ -12,7 +12,6 @@ reconciliation). Cross-module model imports remain forbidden by contract 2.
 
 from __future__ import annotations
 
-import enum
 import uuid
 from datetime import datetime
 
@@ -29,20 +28,10 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
+# Canonical home of `UserRole` is `domain.py` (SQLAlchemy-free). Re-imported
+# here so `User.role` maps it and `auth.public` resolves it via `models`.
+from backend.modules.auth.domain import UserRole  # noqa: F401
 from backend.shared.models import Base
-
-
-class UserRole(enum.StrEnum):
-    """Roles authorised to authenticate against the API.
-
-    Mirrored by the Postgres `user_role` ENUM (Alembic 0002). Adding a
-    value requires a migration that ALTERs that type. Subclassing
-    `enum.StrEnum` gives runtime enforcement on assignment plus a single
-    source of truth for the Pydantic transports landing in S02.4.
-    """
-
-    ADMIN = "admin"
-    MEMBER = "member"
 
 
 def _user_role_values(enum_cls: type[UserRole]) -> list[str]:

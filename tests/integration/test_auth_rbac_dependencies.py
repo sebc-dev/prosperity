@@ -220,9 +220,7 @@ async def test_rbac_rejection_log_omits_email_and_required_role(
 
     _assert_forbidden(resp)
 
-    rejections = [
-        r for r in caplog.records if r.name == deps_logger and r.msg == "rbac_rejected"
-    ]
+    rejections = [r for r in caplog.records if r.name == deps_logger and r.msg == "rbac_rejected"]
     assert len(rejections) == 1
     fields = rejections[0].__dict__  # `extra=` lands here as attributes
     # Carries the safe, ops-only fields...

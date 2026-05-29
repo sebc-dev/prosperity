@@ -225,7 +225,9 @@ forbidden_modules =
 # without weakening the direct-import protection (a hypothetical
 # `accounts.service.X → auth.models` would still be flagged).
 ignore_imports =
+    backend.modules.auth.public -> backend.modules.auth.domain
     backend.modules.auth.public -> backend.modules.auth.models
+    backend.modules.auth.public -> backend.modules.auth.service.audit
     backend.modules.auth.public -> backend.modules.auth.service.jwt
     backend.modules.auth.public -> backend.modules.auth.service.refresh_tokens
     backend.modules.auth.public -> backend.modules.auth.service.users

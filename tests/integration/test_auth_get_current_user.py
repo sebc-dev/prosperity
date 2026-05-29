@@ -12,9 +12,9 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import uuid4
 
+import jwt as pyjwt
 from fastapi import Depends, FastAPI
 from httpx import AsyncClient
-from jose import jwt as jose_jwt
 from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -135,12 +135,12 @@ async def test_whoami_rejects_token_signed_with_other_key(
 ) -> None:
     """Distinct from the expired-TTL case: same payload shape, wrong signature.
 
-    Encoded directly via `jose.jwt.encode` so we test the signature
+    Encoded directly via `jwt.encode` (PyJWT) so we test the signature
     rejection branch (not the TTL one).
     """
     user = await bound_user_factory(email="dave@example.com")
     now_ts = int(datetime.now(tz=UTC).timestamp())
-    forged = jose_jwt.encode(
+    forged = pyjwt.encode(
         {"sub": str(user.id), "iat": now_ts, "exp": now_ts + 900},
         "different-secret-not-the-real-one",
         algorithm="HS256",
@@ -197,7 +197,7 @@ async def test_whoami_401_branches_return_strictly_identical_response(
     )
     expired_token = issue_access_token(user.id, settings=expired_settings)
     now_ts = int(datetime.now(tz=UTC).timestamp())
-    forged_token = jose_jwt.encode(
+    forged_token = pyjwt.encode(
         {"sub": str(user.id), "iat": now_ts, "exp": now_ts + 900},
         "different-secret",
         algorithm="HS256",

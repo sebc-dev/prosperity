@@ -199,7 +199,7 @@ async def test_whoami_401_branches_return_strictly_identical_response(
     now_ts = int(datetime.now(tz=UTC).timestamp())
     forged_token = pyjwt.encode(
         {"sub": str(user.id), "iat": now_ts, "exp": now_ts + 900},
-        "different-secret",
+        "different-secret-not-the-real-one",
         algorithm="HS256",
     )
     ghost_token = issue_access_token(uuid4(), settings=_settings)

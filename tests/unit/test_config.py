@@ -18,7 +18,7 @@ def test_dev_defaults_accepted_in_dev_env(monkeypatch: pytest.MonkeyPatch) -> No
     settings = Settings()
     assert settings.app_env == "dev"
     assert settings.database_url == DEV_DEFAULT_DATABASE_URL
-    assert settings.jwt_secret.get_secret_value() == "dev-secret-change-me"
+    assert settings.jwt_secret.get_secret_value() == "dev-secret-change-me-min-32-bytes-please"
 
 
 def test_dev_defaults_accepted_in_test_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -56,6 +56,39 @@ def test_explicit_secrets_accepted_in_prod(monkeypatch: pytest.MonkeyPatch) -> N
     settings = Settings()
     assert settings.database_url == _REAL_DSN
     assert settings.jwt_secret.get_secret_value() == _REAL_JWT_SECRET
+
+
+def test_short_jwt_secret_rejected_in_prod(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A non-dev but <32-byte secret is a weak HS256 key (RFC 7518 §3.2). DSN is
+    # set so we reach the JWT length guard rather than the DSN guard first.
+    monkeypatch.setenv("APP_ENV", "prod")
+    monkeypatch.setenv("DATABASE_URL", _REAL_DSN)
+    monkeypatch.setenv("JWT_SECRET", "too-short-secret")  # 16 bytes
+    # `match` pins the length guard specifically (not the dev-default guard,
+    # which shares the "JWT_SECRET" prefix).
+    with pytest.raises(ValidationError, match="at least 32 bytes"):
+        Settings()
+
+
+def test_short_jwt_secret_allowed_outside_prod(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The length guard is prod-only: dev/test stay permissive so fixtures can
+    # use short throwaway secrets without ceremony.
+    monkeypatch.setenv("APP_ENV", "dev")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("JWT_SECRET", "too-short-secret")  # 16 bytes
+    settings = Settings()
+    assert settings.jwt_secret.get_secret_value() == "too-short-secret"
+
+
+def test_dev_default_secret_meets_min_length(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Invariant: the dev/test default must stay >= 32 bytes (the PyJWT
+    # InsecureKeyLengthWarning / RFC 7518 §3.2 threshold) so it neither trips
+    # that warning on every token op nor the prod length guard above. Asserted
+    # through the public `Settings` surface rather than the private constant.
+    monkeypatch.setenv("APP_ENV", "dev")
+    monkeypatch.delenv("JWT_SECRET", raising=False)
+    default_secret = Settings().jwt_secret.get_secret_value()
+    assert len(default_secret.encode("utf-8")) >= 32
 
 
 def test_jwt_secret_is_not_leaked_by_repr(monkeypatch: pytest.MonkeyPatch) -> None:

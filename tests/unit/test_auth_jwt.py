@@ -132,7 +132,9 @@ def test_token_expired_within_leeway_is_accepted() -> None:
 def test_token_with_future_iat_outside_leeway_is_rejected() -> None:
     # iat = now + 60s, well past the 30s leeway → backdated token (or attacker
     # with a forged clock). Must be rejected as Invalid (not Expired) because
-    # `exp` is also in the future — only `iat` is anomalous.
+    # `exp` is also in the future — only `iat` is anomalous. PyJWT raises
+    # `ImmatureSignatureError` for this, which `verify_access_token` maps to
+    # `InvalidTokenError` (the post-decode `iat` check is a residual backstop).
     settings = _settings()
     now_ts = int(datetime.now(tz=UTC).timestamp())
     token = _forge_token_with_claims(

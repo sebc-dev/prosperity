@@ -13,6 +13,7 @@ from uuid import UUID
 import jwt
 from jwt import ExpiredSignatureError, PyJWTError
 from jwt.exceptions import (
+    ImmatureSignatureError,
     InvalidAudienceError,
     InvalidIssuedAtError,
     InvalidIssuerError,
@@ -82,9 +83,10 @@ def verify_access_token(token: str, *, settings: Settings) -> UUID:
     try:
         # Algorithm whitelist is hardcoded (not read from settings) so a misconfigured
         # `JWT_ALGORITHM` cannot open HS256/RS256 key-confusion or `alg=none` attacks.
-        # `leeway` widens the `exp` window symmetrically to tolerate NTP skew. PyJWT's
-        # iat handling only type-checks the claim — it does NOT reject future-iat
-        # tokens — so the explicit check below provides that defense-in-depth.
+        # `leeway` widens the `exp` window symmetrically to tolerate NTP skew, and it
+        # also bounds PyJWT's `iat` check: a token whose `iat` is more than `leeway`
+        # in the future is rejected as `ImmatureSignatureError` (caught below). The
+        # explicit post-decode `iat` check is kept only as a residual guard.
         # `audience=` + `issuer=` enforce ADR 0016. With both passed, PyJWT rejects a
         # token that is *missing* `aud` or `iss` (raising `MissingRequiredClaimError`),
         # closing the asymmetric gap that older python-jose left on `aud`. The explicit
@@ -104,12 +106,13 @@ def verify_access_token(token: str, *, settings: Settings) -> UUID:
         InvalidAudienceError,
         InvalidIssuerError,
         InvalidIssuedAtError,
+        ImmatureSignatureError,
         MissingRequiredClaimError,
     ) as exc:
         # Dedicated branch for claim-shape failures (`aud`/`iss` mismatch or
-        # missing, `iat` non-int). The catch-all `PyJWTError` below covers the
-        # structural / signature failures — keep them distinct so a future
-        # caller can refine.
+        # missing, `iat` non-int or further in the future than the leeway). The
+        # catch-all `PyJWTError` below covers the structural / signature failures
+        # — keep them distinct so a future caller can refine.
         raise InvalidTokenError("Access token has invalid claims") from exc
     except PyJWTError as exc:
         raise InvalidTokenError("Access token is invalid") from exc
@@ -119,6 +122,11 @@ def verify_access_token(token: str, *, settings: Settings) -> UUID:
     if "iss" not in payload:
         raise InvalidTokenError("Access token has no 'iss' claim")
 
+    # Residual defense-in-depth: PyJWT already rejects an integer `iat` beyond
+    # the leeway (`ImmatureSignatureError`, caught above). This re-check covers
+    # the sliver PyJWT's integer comparison can miss — a sub-second float `iat`
+    # straddling the `now + leeway` boundary — and survives a future PyJWT
+    # change that loosened `iat` validation.
     iat = payload.get("iat")
     if isinstance(iat, int | float):
         now_ts = int(datetime.now(tz=UTC).timestamp())

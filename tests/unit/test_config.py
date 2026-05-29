@@ -69,7 +69,9 @@ def test_short_jwt_secret_rejected_in_prod(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setenv("APP_ENV", "prod")
     monkeypatch.setenv("DATABASE_URL", _REAL_DSN)
     monkeypatch.setenv("JWT_SECRET", "too-short-secret")  # 16 bytes
-    with pytest.raises(ValidationError, match="JWT_SECRET"):
+    # `match` pins the length guard specifically (not the dev-default guard,
+    # which shares the "JWT_SECRET" prefix).
+    with pytest.raises(ValidationError, match="at least 32 bytes"):
         Settings()
 
 

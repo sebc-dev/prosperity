@@ -53,7 +53,8 @@ class Settings(BaseSettings):
 
     # --- JWT (auth module — see story S02.2 / docs/roadmap/E02-auth-foundations.md) ---
     # `SecretStr` keeps the value out of `repr()`/logs. The dev default is only
-    # accepted when `app_env != "prod"` (see `_forbid_dev_defaults_in_prod`).
+    # accepted when `app_env != "prod"`, and a prod secret must be at least
+    # `_MIN_JWT_SECRET_BYTES` bytes (both enforced in `_forbid_dev_defaults_in_prod`).
     # Doubles as the HMAC pepper for `refresh_tokens.token_hash` (see
     # `backend.modules.auth.service.refresh_tokens.hash_refresh_token`).
     # Rotating this secret therefore invalidates every persisted refresh

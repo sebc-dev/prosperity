@@ -28,7 +28,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from httpx import AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -450,3 +450,336 @@ async def test_list_writes_no_audit(
     await async_client.get("/invitations", headers=_bearer(admin.id))
 
     assert await _audit_rows(auth_schema) == []
+
+
+# ---------------------------------------------------------------------------
+# POST /invitations/{id}/regenerate
+# ---------------------------------------------------------------------------
+
+
+async def test_regenerate_returns_new_token(
+    async_client: AsyncClient,
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+    headers = _bearer(admin.id)
+    created = (
+        await async_client.post(
+            "/invitations", json={"email": "invite@example.com"}, headers=headers
+        )
+    ).json()
+    invitation_id = UUID(created["id"])
+    old_hash = (await _fetch_invitation(auth_schema, invitation_id)).token_hash
+    original_invited_at = (await _fetch_invitation(auth_schema, invitation_id)).invited_at
+    # Age the expiry so the reset is unambiguous (not a same-instant tie).
+    await auth_schema.execute(
+        update(Invitation)
+        .where(Invitation.id == invitation_id)
+        .values(expires_at=datetime.now(tz=UTC) - timedelta(days=1))
+    )
+    await auth_schema.flush()
+
+    resp = await async_client.post(f"/invitations/{invitation_id}/regenerate", headers=headers)
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["token"] != created["token"]
+    inv = await _fetch_invitation(auth_schema, invitation_id)
+    assert inv.token_hash == hash_invitation_token(body["token"])
+    assert inv.token_hash != old_hash
+    assert inv.expires_at > datetime.now(tz=UTC)  # reset to now + TTL
+    assert inv.invited_at == original_invited_at  # immutable
+
+
+async def test_regenerate_sets_no_store_headers(
+    async_client: AsyncClient,
+    bound_user_factory: UserMaker,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+    headers = _bearer(admin.id)
+    created = (
+        await async_client.post(
+            "/invitations", json={"email": "invite@example.com"}, headers=headers
+        )
+    ).json()
+
+    resp = await async_client.post(f"/invitations/{created['id']}/regenerate", headers=headers)
+
+    assert resp.headers["cache-control"] == "no-store"
+    assert resp.headers["pragma"] == "no-cache"
+
+
+async def test_regenerate_unknown_id_404(
+    async_client: AsyncClient,
+    bound_user_factory: UserMaker,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+
+    resp = await async_client.post(f"/invitations/{uuid4()}/regenerate", headers=_bearer(admin.id))
+
+    assert resp.status_code == 404
+
+
+async def test_regenerate_on_accepted_returns_409(
+    async_client: AsyncClient,
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+    inv = await _seed_invitation(
+        auth_schema, invited_by=admin.id, email="accepted@example.com", state="accepted"
+    )
+
+    resp = await async_client.post(f"/invitations/{inv.id}/regenerate", headers=_bearer(admin.id))
+
+    assert resp.status_code == 409
+
+
+async def test_regenerate_on_revoked_returns_409(
+    async_client: AsyncClient,
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+    inv = await _seed_invitation(
+        auth_schema, invited_by=admin.id, email="revoked@example.com", state="revoked"
+    )
+
+    resp = await async_client.post(f"/invitations/{inv.id}/regenerate", headers=_bearer(admin.id))
+
+    # D6: terminal states are 409, not 410 (410 is reserved for S04.5).
+    assert resp.status_code == 409
+
+
+async def test_regenerate_forbidden_for_member(
+    async_client: AsyncClient,
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+    member = await bound_user_factory(email="member@example.com", role=UserRole.MEMBER)
+    inv = await _seed_invitation(auth_schema, invited_by=admin.id, email="pending@example.com")
+    old_hash = inv.token_hash
+
+    resp = await async_client.post(f"/invitations/{inv.id}/regenerate", headers=_bearer(member.id))
+
+    assert resp.status_code == 403
+    assert (await _fetch_invitation(auth_schema, inv.id)).token_hash == old_hash
+    assert await _audit_rows(auth_schema) == []
+
+
+async def test_regenerate_unauthenticated_401(
+    async_client: AsyncClient,
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+    inv = await _seed_invitation(auth_schema, invited_by=admin.id, email="pending@example.com")
+    old_hash = inv.token_hash
+
+    resp = await async_client.post(f"/invitations/{inv.id}/regenerate")
+
+    assert resp.status_code == 401
+    assert (await _fetch_invitation(auth_schema, inv.id)).token_hash == old_hash
+    assert await _audit_rows(auth_schema) == []
+
+
+async def test_regenerate_writes_audit_invite_regenerated(
+    async_client: AsyncClient,
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+    headers = _bearer(admin.id)
+    created = (
+        await async_client.post(
+            "/invitations", json={"email": "invite@example.com"}, headers=headers
+        )
+    ).json()
+
+    await async_client.post(f"/invitations/{created['id']}/regenerate", headers=headers)
+
+    rows = await _audit_rows(auth_schema)
+    regenerated = [r for r in rows if r.action == "invite_regenerated"]
+    assert len(regenerated) == 1
+    assert regenerated[0].actor_user_id == admin.id
+    assert regenerated[0].event_metadata == {
+        "invitation_id": created["id"],
+        "email": "invite@example.com",
+    }
+
+
+async def test_regenerate_audit_omits_raw_token(
+    async_client: AsyncClient,
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+    headers = _bearer(admin.id)
+    created = (
+        await async_client.post(
+            "/invitations", json={"email": "invite@example.com"}, headers=headers
+        )
+    ).json()
+
+    resp = await async_client.post(f"/invitations/{created['id']}/regenerate", headers=headers)
+    raw = resp.json()["token"]
+
+    for row in await _audit_rows(auth_schema):
+        assert raw not in str(row.event_metadata)
+
+
+# ---------------------------------------------------------------------------
+# DELETE /invitations/{id}
+# ---------------------------------------------------------------------------
+
+
+async def test_revoke_sets_revoked_at_204(
+    async_client: AsyncClient,
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+    headers = _bearer(admin.id)
+    created = (
+        await async_client.post(
+            "/invitations", json={"email": "invite@example.com"}, headers=headers
+        )
+    ).json()
+
+    resp = await async_client.delete(f"/invitations/{created['id']}", headers=headers)
+
+    assert resp.status_code == 204
+    inv = await _fetch_invitation(auth_schema, UUID(created["id"]))
+    assert inv.revoked_at is not None
+    # Gone from the pending list.
+    listed = (await async_client.get("/invitations", headers=headers)).json()
+    assert created["id"] not in [item["id"] for item in listed]
+
+
+async def test_revoke_unknown_id_404(
+    async_client: AsyncClient,
+    bound_user_factory: UserMaker,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+
+    resp = await async_client.delete(f"/invitations/{uuid4()}", headers=_bearer(admin.id))
+
+    assert resp.status_code == 404
+
+
+async def test_revoke_on_accepted_returns_409(
+    async_client: AsyncClient,
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+    inv = await _seed_invitation(
+        auth_schema, invited_by=admin.id, email="accepted@example.com", state="accepted"
+    )
+
+    resp = await async_client.delete(f"/invitations/{inv.id}", headers=_bearer(admin.id))
+
+    assert resp.status_code == 409
+
+
+async def test_revoke_idempotent_on_already_revoked_204(
+    async_client: AsyncClient,
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+    headers = _bearer(admin.id)
+    created = (
+        await async_client.post(
+            "/invitations", json={"email": "invite@example.com"}, headers=headers
+        )
+    ).json()
+
+    first = await async_client.delete(f"/invitations/{created['id']}", headers=headers)
+    assert first.status_code == 204
+    revoked_at = (await _fetch_invitation(auth_schema, UUID(created["id"]))).revoked_at
+
+    second = await async_client.delete(f"/invitations/{created['id']}", headers=headers)
+
+    assert second.status_code == 204
+    # The timestamp is unchanged — the re-revoke is a no-op on the row.
+    assert (await _fetch_invitation(auth_schema, UUID(created["id"]))).revoked_at == revoked_at
+
+
+async def test_revoke_forbidden_for_member(
+    async_client: AsyncClient,
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+    member = await bound_user_factory(email="member@example.com", role=UserRole.MEMBER)
+    inv = await _seed_invitation(auth_schema, invited_by=admin.id, email="pending@example.com")
+
+    resp = await async_client.delete(f"/invitations/{inv.id}", headers=_bearer(member.id))
+
+    assert resp.status_code == 403
+    assert (await _fetch_invitation(auth_schema, inv.id)).revoked_at is None
+    assert await _audit_rows(auth_schema) == []
+
+
+async def test_revoke_unauthenticated_401(
+    async_client: AsyncClient,
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+    inv = await _seed_invitation(auth_schema, invited_by=admin.id, email="pending@example.com")
+
+    resp = await async_client.delete(f"/invitations/{inv.id}")
+
+    assert resp.status_code == 401
+    assert (await _fetch_invitation(auth_schema, inv.id)).revoked_at is None
+    assert await _audit_rows(auth_schema) == []
+
+
+async def test_revoke_writes_audit_invite_revoked(
+    async_client: AsyncClient,
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+    headers = _bearer(admin.id)
+    created = (
+        await async_client.post(
+            "/invitations", json={"email": "invite@example.com"}, headers=headers
+        )
+    ).json()
+
+    await async_client.delete(f"/invitations/{created['id']}", headers=headers)
+
+    revoked = [r for r in await _audit_rows(auth_schema) if r.action == "invite_revoked"]
+    assert len(revoked) == 1
+    assert revoked[0].actor_user_id == admin.id
+    assert revoked[0].event_metadata == {
+        "invitation_id": created["id"],
+        "email": "invite@example.com",
+    }
+
+
+async def test_double_revoke_writes_second_audit(
+    async_client: AsyncClient,
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+    headers = _bearer(admin.id)
+    created = (
+        await async_client.post(
+            "/invitations", json={"email": "invite@example.com"}, headers=headers
+        )
+    ).json()
+
+    await async_client.delete(f"/invitations/{created['id']}", headers=headers)
+    await async_client.delete(f"/invitations/{created['id']}", headers=headers)
+
+    # D9: every successful HTTP DELETE audits, including the idempotent
+    # re-revoke — two identical INVITE_REVOKED rows.
+    revoked = [r for r in await _audit_rows(auth_schema) if r.action == "invite_revoked"]
+    assert len(revoked) == 2

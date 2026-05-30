@@ -11,6 +11,7 @@ import logging
 import secrets
 from functools import cache
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import func, select
@@ -35,6 +36,8 @@ from backend.modules.auth.service._password import password_hasher
 from backend.modules.auth.service.audit import log_admin_action
 from backend.modules.auth.service.invitations import (
     DuplicatePendingInvitationError,
+    InvitationNotFoundError,
+    InvitationNotPendingError,
     hash_invitation_token,
 )
 from backend.modules.auth.service.jwt import issue_access_token
@@ -210,14 +213,17 @@ AdminDep = Annotated[User, Depends(require_admin)]
 # Shared 409 body for "a pending invitation already exists" — emitted both
 # by the service pre-check and the concurrent-race IntegrityError fallback.
 _DUPLICATE_INVITATION_DETAIL = "A pending invitation already exists for this email."
+# Shared 409 body for regenerate/revoke against a terminal (accepted /
+# revoked) invitation.
+_NOT_PENDING_DETAIL = "Invitation is no longer pending."
 
 
 def _accept_invite_url(raw_token: str, settings: Settings) -> str:
     """Build the accept link handed to the invitee (consumed by S04.5).
 
     Base host is configurable via `APP_BASE_URL` (not a secret). The raw
-    token only ever travels in the create response body — it is never
-    persisted or audited.
+    token only ever travels in the create/regenerate response body — it is
+    never persisted or audited.
     """
     return f"{settings.app_base_url}/accept-invite?token={raw_token}"
 
@@ -303,3 +309,78 @@ async def list_pending_invitations(
         .all()
     )
     return list(rows)
+
+
+@invitations_router.post(
+    "/{invitation_id}/regenerate",
+    response_model=InvitationCreatedResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def regenerate_invitation(
+    invitation_id: UUID,
+    admin: AdminDep,
+    response: Response,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> InvitationCreatedResponse:
+    """Rotate a pending invitation's token; return the new raw token once.
+
+    Admin-only. The old `/accept-invite?token=...` link stops working the
+    moment this commits. Unknown id → 404; an accepted or revoked invitation
+    → 409 (the 410 is reserved for the token-consumption endpoint in S04.5).
+    """
+    response.headers.update(_NO_STORE_HEADERS)  # ASVS V8.3.4 — raw token
+    try:
+        raw = await invitation_service.regenerate(session, invitation_id)
+    except InvitationNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Invitation not found.") from exc
+    except InvitationNotPendingError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=_NOT_PENDING_DETAIL) from exc
+
+    inv = await session.get(Invitation, invitation_id)
+    assert inv is not None  # regenerate succeeded → the row is present and pending
+    await log_admin_action(
+        session,
+        action=AdminAction.INVITE_REGENERATED,
+        by=admin.id,
+        metadata={"invitation_id": str(invitation_id), "email": inv.email},
+    )
+    accept_url = _accept_invite_url(raw, settings)
+    return InvitationCreatedResponse(
+        id=inv.id,
+        email=inv.email,
+        expires_at=inv.expires_at,
+        token=raw,
+        accept_url=accept_url,
+    )
+
+
+@invitations_router.delete("/{invitation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def revoke_invitation(
+    invitation_id: UUID,
+    admin: AdminDep,
+    session: SessionDep,
+) -> Response:
+    """Revoke a pending invitation (`revoked_at = now`); 204, admin-only.
+
+    The row stays in the DB (audit). Idempotent on an already-revoked
+    invitation (the service is a silent no-op → still 204, and still audited
+    — every successful HTTP action writes one row). Unknown id → 404; an
+    accepted invitation → 409.
+    """
+    try:
+        await invitation_service.revoke(session, invitation_id)
+    except InvitationNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Invitation not found.") from exc
+    except InvitationNotPendingError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=_NOT_PENDING_DETAIL) from exc
+
+    inv = await session.get(Invitation, invitation_id)
+    assert inv is not None  # revoke resolved the id (no NotFound) → row present
+    await log_admin_action(
+        session,
+        action=AdminAction.INVITE_REVOKED,
+        by=admin.id,
+        metadata={"invitation_id": str(invitation_id), "email": inv.email},
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

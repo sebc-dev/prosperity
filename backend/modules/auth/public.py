@@ -25,6 +25,10 @@ The current consumers cross-module are:
   `ForbiddenAuditMetadataError`). The `AdminAuditLog` model stays
   intra-auth: the audit row is only ever written through the helper,
   never constructed by peers.
+- admin role-transition callers (E04 promotion route) — `promote_to_admin`
+  lifts a member to admin and audits it atomically, plus the errors it
+  raises at the call site (`RoleError` and its `AlreadyAdminError`,
+  `UserNotFoundError`, `NotAuthorizedError` subclasses).
 
 `RefreshToken` and the shared `password_hasher` factory deliberately
 stay intra-auth: hashing is encapsulated by `create_user` and
@@ -48,6 +52,13 @@ from backend.modules.auth.service.jwt import (
     verify_access_token,
 )
 from backend.modules.auth.service.refresh_tokens import issue as issue_refresh_token
+from backend.modules.auth.service.roles import (
+    AlreadyAdminError,
+    NotAuthorizedError,
+    RoleError,
+    UserNotFoundError,
+    promote_to_admin,
+)
 from backend.modules.auth.service.users import (
     any_user_exists,
     create_user,
@@ -61,12 +72,16 @@ from backend.modules.auth.transports.dependencies import (
 
 __all__ = [
     "AdminAction",
+    "AlreadyAdminError",
     "ExpiredTokenError",
     "ForbiddenAuditMetadataError",
     "InvalidTokenError",
+    "NotAuthorizedError",
+    "RoleError",
     "TokenPair",
     "UnknownAuditUserError",
     "User",
+    "UserNotFoundError",
     "UserRole",
     "any_user_exists",
     "create_user",
@@ -75,6 +90,7 @@ __all__ = [
     "issue_access_token",
     "issue_refresh_token",
     "log_admin_action",
+    "promote_to_admin",
     "require_admin",
     "require_member",
     "sanitize_device_label",

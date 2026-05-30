@@ -12,12 +12,16 @@ from backend.modules.auth.domain import UserRole as _user_role_enum
 from backend.modules.auth.models import User as _user_model
 from backend.modules.auth.public import (
     AdminAction,
+    AlreadyAdminError,
     ExpiredTokenError,
     ForbiddenAuditMetadataError,
     InvalidTokenError,
+    NotAuthorizedError,
+    RoleError,
     TokenPair,
     UnknownAuditUserError,
     User,
+    UserNotFoundError,
     UserRole,
     any_user_exists,
     create_user,
@@ -26,6 +30,7 @@ from backend.modules.auth.public import (
     issue_access_token,
     issue_refresh_token,
     log_admin_action,
+    promote_to_admin,
     require_admin,
     require_member,
     sanitize_device_label,
@@ -36,6 +41,7 @@ from backend.modules.auth.schemas import sanitize_device_label as _schemas_sanit
 from backend.modules.auth.service import audit as _audit_service
 from backend.modules.auth.service import jwt as _jwt_service
 from backend.modules.auth.service import refresh_tokens as _refresh_service
+from backend.modules.auth.service import roles as _roles_service
 from backend.modules.auth.service import users as _users_service
 from backend.modules.auth.transports import dependencies as _deps
 
@@ -48,12 +54,16 @@ def test_public_exports_exact_set() -> None:
     # ever evolves.
     assert sorted(auth_public.__all__) == [
         "AdminAction",
+        "AlreadyAdminError",
         "ExpiredTokenError",
         "ForbiddenAuditMetadataError",
         "InvalidTokenError",
+        "NotAuthorizedError",
+        "RoleError",
         "TokenPair",
         "UnknownAuditUserError",
         "User",
+        "UserNotFoundError",
         "UserRole",
         "any_user_exists",
         "create_user",
@@ -62,6 +72,7 @@ def test_public_exports_exact_set() -> None:
         "issue_access_token",
         "issue_refresh_token",
         "log_admin_action",
+        "promote_to_admin",
         "require_admin",
         "require_member",
         "sanitize_device_label",
@@ -87,10 +98,15 @@ def test_public_symbols_are_callable_or_exceptions() -> None:
     assert callable(require_member)
     assert callable(sanitize_device_label)
     assert callable(log_admin_action)
+    assert callable(promote_to_admin)
     assert issubclass(InvalidTokenError, Exception)
     assert issubclass(ExpiredTokenError, InvalidTokenError)
     assert issubclass(UnknownAuditUserError, Exception)
     assert issubclass(ForbiddenAuditMetadataError, Exception)
+    assert issubclass(RoleError, Exception)
+    assert issubclass(AlreadyAdminError, RoleError)
+    assert issubclass(UserNotFoundError, RoleError)
+    assert issubclass(NotAuthorizedError, RoleError)
     assert isinstance(User, type)
     assert isinstance(UserRole, type)
     assert isinstance(AdminAction, type)
@@ -116,6 +132,11 @@ def test_public_names_are_identical_objects_to_internals() -> None:
     assert auth_public.log_admin_action is _audit_service.log_admin_action
     assert auth_public.UnknownAuditUserError is _audit_service.UnknownAuditUserError
     assert auth_public.ForbiddenAuditMetadataError is _audit_service.ForbiddenAuditMetadataError
+    assert auth_public.promote_to_admin is _roles_service.promote_to_admin
+    assert auth_public.RoleError is _roles_service.RoleError
+    assert auth_public.AlreadyAdminError is _roles_service.AlreadyAdminError
+    assert auth_public.UserNotFoundError is _roles_service.UserNotFoundError
+    assert auth_public.NotAuthorizedError is _roles_service.NotAuthorizedError
     assert auth_public.get_current_user is _deps.get_current_user
     assert auth_public.require_admin is _deps.require_admin
     assert auth_public.require_member is _deps.require_member

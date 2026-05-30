@@ -230,6 +230,7 @@ ignore_imports =
     backend.modules.auth.public -> backend.modules.auth.service.audit
     backend.modules.auth.public -> backend.modules.auth.service.jwt
     backend.modules.auth.public -> backend.modules.auth.service.refresh_tokens
+    backend.modules.auth.public -> backend.modules.auth.service.roles
     backend.modules.auth.public -> backend.modules.auth.service.users
     backend.modules.auth.public -> backend.modules.auth.transports.dependencies
 unmatched_ignore_imports_alerting = error

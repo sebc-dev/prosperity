@@ -262,6 +262,12 @@ async def accept(
     backstop (mirror of `/setup`) maps it to the **same** uniform 410. No
     transactional manipulation happens inside this helper (ADR 0015: the
     transaction boundary stays with `get_db`).
+
+    Unlike `regenerate`/`revoke` (which `RETURNING Invitation.id`, a single
+    column), this returns the **full entity** (`.returning(Invitation)` +
+    `populate_existing`) on purpose: the caller needs `inv.email` and
+    `inv.id` to create the `member` user and write the audit row without a
+    second round-trip.
     """
     now = now or datetime.now(tz=UTC)
     row = (

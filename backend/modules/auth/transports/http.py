@@ -527,7 +527,11 @@ async def accept_invitation(
             action=AdminAction.INVITE_ACCEPTED,
             by=None,  # self-service: no admin actor (D1)
             target=user.id,
-            metadata={"invitation_id": str(inv.id), "email": inv.email},
+            # No `email` here: it is redundant with the `target_email` column
+            # that `log_admin_action(target=user.id)` already snapshots, and
+            # storing it twice in an append-only trail would survive the
+            # `ON DELETE SET NULL` erasure of `target_email` (PII minimisation).
+            metadata={"invitation_id": str(inv.id)},
         )
     except DBAPIError as exc:
         # Race backstop (D5/D11), mirror of `/setup`: 40001 (loser of a true
@@ -535,10 +539,17 @@ async def accept_invitation(
         # enrolled) ⇒ uniform 410. Any other SQLSTATE is an app bug →
         # re-raise (500). `get_db` rolls back → `accepted_at` undone.
         sqlstate = getattr(exc.orig, "sqlstate", None)
+        client_ip = client_ip_for(request, settings)
         if sqlstate not in _ACCEPT_RACE_LOST_SQLSTATES:
-            logger.error("accept_invite_unexpected_integrity", extra={"sqlstate": sqlstate})
+            logger.error(
+                "accept_invite_unexpected_integrity",
+                extra={"sqlstate": sqlstate, "client_ip": client_ip},
+            )
             raise
-        logger.warning("accept_invite_race_lost", extra={"sqlstate": sqlstate})
+        logger.warning(
+            "accept_invite_race_lost",
+            extra={"sqlstate": sqlstate, "client_ip": client_ip},
+        )
         raise HTTPException(status.HTTP_410_GONE, detail=_GONE_DETAIL) from exc
 
     device_label = sanitize_device_label(request.headers.get("user-agent"))

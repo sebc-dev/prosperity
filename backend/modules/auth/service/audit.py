@@ -93,6 +93,24 @@ def _reject_secret_metadata_keys(metadata: dict[str, Any] | None) -> None:
             stack.extend(cast("list[Any]", current))
 
 
+async def _resolve_audit_user(
+    session: AsyncSession, user_id: uuid.UUID | None, *, kind: str
+) -> User | None:
+    """Load the `User` for an audit `actor`/`target`, or None when unset.
+
+    A `None` id means "no such party" (e.g. a self-service `actor`) and
+    resolves to None. A non-None id that does not exist is a caller bug and
+    raises `UnknownAuditUserError` before the flush, so it never surfaces as
+    an opaque `IntegrityError` from the FK.
+    """
+    if user_id is None:
+        return None
+    user = await session.get(User, user_id)
+    if user is None:
+        raise UnknownAuditUserError(f"audit {kind} {user_id} does not exist")
+    return user
+
+
 async def log_admin_action(
     session: AsyncSession,
     *,
@@ -146,12 +164,8 @@ async def log_admin_action(
     action = AdminAction(action)
     _reject_secret_metadata_keys(metadata)
 
-    actor = await session.get(User, by) if by is not None else None
-    if by is not None and actor is None:
-        raise UnknownAuditUserError(f"audit actor {by} does not exist")
-    target_user = await session.get(User, target) if target is not None else None
-    if target is not None and target_user is None:
-        raise UnknownAuditUserError(f"audit target {target} does not exist")
+    actor = await _resolve_audit_user(session, by, kind="actor")
+    target_user = await _resolve_audit_user(session, target, kind="target")
 
     record = AdminAuditLog(
         action=action,

@@ -334,7 +334,11 @@ async def test_post_audit_invite_accepted_actorless(
     log = logs[0]
     assert log.actor_user_id is None
     assert log.target_user_id == user.id
-    assert log.event_metadata == {"invitation_id": str(inv.id), "email": inv.email}
+    # `email` is intentionally NOT in metadata (PII minimisation): it is
+    # snapshotted once in the `target_email` column and would otherwise
+    # survive its `ON DELETE SET NULL` erasure in the append-only trail.
+    assert log.event_metadata == {"invitation_id": str(inv.id)}
+    assert log.target_email == inv.email
 
 
 async def test_post_audit_metadata_omits_raw_token(

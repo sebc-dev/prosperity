@@ -1,5 +1,19 @@
 enum user_role: admin, member
 
+table admin_audit_logs
+  col action: VARCHAR NOT NULL
+  col actor_email: VARCHAR(254) NULL
+  col actor_label: VARCHAR(255) NULL
+  col actor_user_id: UUID NULL
+  col created_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col id: UUID NOT NULL
+  col metadata: JSONB NULL
+  col target_email: VARCHAR(254) NULL
+  col target_user_id: UUID NULL
+  pk pk_admin_audit_logs(id)
+  idx ix_admin_audit_logs_actor_user_id_created_at INDEX: actor_user_id, created_at
+  idx ix_admin_audit_logs_target_user_id INDEX: target_user_id
+
 table alembic_version
   col version_num: VARCHAR(32) NOT NULL
   pk alembic_version_pkc(version_num)

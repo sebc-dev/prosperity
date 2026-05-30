@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
+    DDL,
     UUID,
     DateTime,
     Enum,
@@ -23,9 +25,11 @@ from sqlalchemy import (
     Index,
     String,
     UniqueConstraint,
+    event,
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, validates
 
 # Canonical home of `UserRole` is `domain.py` (SQLAlchemy-free). Re-imported
@@ -194,3 +198,148 @@ class RefreshToken(Base):
         # replay detection — index now so the migration is final.
         Index("ix_refresh_tokens_family_id", "family_id"),
     )
+
+
+class AdminAuditLog(Base):
+    """An append-only, server-only record of one privileged admin action.
+
+    **Server-only.** This table is *never* replicated to clients via
+    PowerSync — it carries no sync key and must stay absent from the sync
+    rules manifest (ADR 0003 materialises the generic `audit_logs` of that
+    ADR under this physical name `admin_audit_logs`; the E13 sync-rules
+    guard targets this exact name). Nothing in the schema enforces this —
+    it is a discipline upheld by the PowerSync configuration, which simply
+    never references the table.
+
+    **Append-only.** `log_admin_action` is the only write path, and it
+    only ever INSERTs. A `BEFORE UPDATE OR DELETE` trigger (migration
+    0005) raises so a compromised application account cannot rewrite or
+    erase the trail. Revoking UPDATE/DELETE at the SQL-role level is
+    deferred to infra (E13).
+
+    **Identity survives account deletion.** The FKs to `users.id` use
+    `ON DELETE SET NULL` so a log outlives the actor/target it references
+    (a `CASCADE` would destroy the very evidence the audit exists to
+    keep). But `SET NULL` alone would anonymise the trail — an admin who
+    abuses privileges then deletes their account would blank every
+    `actor_user_id`. To preserve non-repudiation we snapshot an immutable
+    copy of the actor (`actor_email`, `actor_label`) — and optionally the
+    target (`target_email`) — at log time; the FK remains only for join
+    convenience.
+
+    `metadata` is free-form JSONB so each caller stores its own context
+    (`{"invitation_id": ...}`, `{"old_role": ..., "new_role": ...}`); see
+    `log_admin_action`'s docstring for the never-log blacklist (no
+    passwords/hashes, invitation tokens, TOTP secrets, JWT/refresh
+    tokens). The Python attribute is `event_metadata` because `metadata`
+    is reserved by SQLAlchemy's Declarative API; the column is still named
+    `metadata` on disk.
+    """
+
+    __tablename__ = "admin_audit_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    # Plain String, not a PG ENUM: see `AdminAction` in `domain.py` for why
+    # the catalogue lives in Python only. `log_admin_action` validates the
+    # value against `AdminAction` before insert.
+    action: Mapped[str] = mapped_column(String, nullable=False)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            ondelete="SET NULL",
+            name="fk_admin_audit_logs_actor_user_id_users",
+        ),
+        nullable=True,
+    )
+    # Immutable actor snapshot — preserves non-repudiation even after the
+    # FK is nulled by an account deletion (see class docstring).
+    actor_email: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    actor_label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    target_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            ondelete="SET NULL",
+            name="fk_admin_audit_logs_target_user_id_users",
+        ),
+        nullable=True,
+    )
+    target_email: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    # `metadata` is reserved by Declarative; map the Python attribute
+    # `event_metadata` onto the literal `metadata` column.
+    event_metadata: Mapped[dict[str, Any] | None] = mapped_column(
+        "metadata",
+        JSONB,
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        # Audit queries filter by actor and order by time ("what did this
+        # admin do, latest first"); a composite beats an `action`-only
+        # index (cardinality 7, poorly selective).
+        Index("ix_admin_audit_logs_actor_user_id_created_at", "actor_user_id", "created_at"),
+        # `target_user_id` is an unindexed FK otherwise: Postgres seq-scans
+        # this ever-growing table on every `users` delete to apply
+        # `ON DELETE SET NULL` (and takes a wider lock). The index also
+        # serves the symmetric query "what happened *to* this user".
+        Index("ix_admin_audit_logs_target_user_id", "target_user_id"),
+    )
+
+
+# Append-only guard. Two triggers share one raising function so a
+# compromised application account cannot rewrite or erase the trail:
+#
+# - `BEFORE DELETE` rejects every row delete.
+# - `BEFORE UPDATE OF <content columns>` rejects any update that touches
+#   the immutable content (`action`, the identity snapshot, `metadata`,
+#   `created_at`, `id`). It deliberately omits `actor_user_id` /
+#   `target_user_id`: the `ON DELETE SET NULL` referential action nulls
+#   those columns when an account is deleted, and that internal UPDATE
+#   must be allowed for the "log survives deletion" guarantee. The FK is
+#   only join convenience — the snapshot is the real evidence — so
+#   leaving the id columns mutable does not weaken non-repudiation.
+#
+# DROP TABLE / TRUNCATE are DDL/statement-level and do not fire row
+# triggers, so the downgrade drop and test cleanup still work.
+# `CREATE OR REPLACE` keeps every statement idempotent under the repeated
+# `create_all` of the per-test transactional fixture.
+#
+# Declared here (DDL events on the table) so `Base.metadata.create_all`
+# in the test schema installs the same guard the migration installs in
+# prod — the create_all/Alembic parity the FK-naming convention also
+# protects. Migration 0005 re-issues identical SQL via `op.execute`.
+_APPEND_ONLY_FUNCTION_DDL = DDL(
+    "CREATE OR REPLACE FUNCTION admin_audit_logs_reject_mutation() "
+    "RETURNS trigger LANGUAGE plpgsql AS $$ "
+    "BEGIN "
+    # `%%` escapes the SQLAlchemy `DDL` `%`-expansion so plpgsql receives a
+    # single `%` for its `format`-style `RAISE` placeholder. The migration
+    # uses the raw single-`%` form via `op.execute` (no expansion there).
+    "RAISE EXCEPTION 'admin_audit_logs is append-only; %% is rejected', TG_OP "
+    "USING ERRCODE = 'restrict_violation'; "
+    "END; $$"
+)
+_REJECT_DELETE_TRIGGER_DDL = DDL(
+    "CREATE OR REPLACE TRIGGER trg_admin_audit_logs_no_delete "
+    "BEFORE DELETE ON admin_audit_logs "
+    "FOR EACH ROW EXECUTE FUNCTION admin_audit_logs_reject_mutation()"
+)
+_REJECT_CONTENT_UPDATE_TRIGGER_DDL = DDL(
+    "CREATE OR REPLACE TRIGGER trg_admin_audit_logs_no_content_update "
+    "BEFORE UPDATE OF id, action, actor_email, actor_label, target_email, metadata, created_at "
+    "ON admin_audit_logs "
+    "FOR EACH ROW EXECUTE FUNCTION admin_audit_logs_reject_mutation()"
+)
+event.listen(AdminAuditLog.__table__, "after_create", _APPEND_ONLY_FUNCTION_DDL)
+event.listen(AdminAuditLog.__table__, "after_create", _REJECT_DELETE_TRIGGER_DDL)
+event.listen(AdminAuditLog.__table__, "after_create", _REJECT_CONTENT_UPDATE_TRIGGER_DDL)

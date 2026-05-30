@@ -7,12 +7,16 @@ auto-login symbols re-exported for `accounts.transports.http`).
 from __future__ import annotations
 
 import backend.modules.auth.public as auth_public
+from backend.modules.auth.domain import AdminAction as _admin_action_enum
 from backend.modules.auth.domain import UserRole as _user_role_enum
 from backend.modules.auth.models import User as _user_model
 from backend.modules.auth.public import (
+    AdminAction,
     ExpiredTokenError,
+    ForbiddenAuditMetadataError,
     InvalidTokenError,
     TokenPair,
+    UnknownAuditUserError,
     User,
     UserRole,
     any_user_exists,
@@ -21,6 +25,7 @@ from backend.modules.auth.public import (
     get_current_user,
     issue_access_token,
     issue_refresh_token,
+    log_admin_action,
     require_admin,
     require_member,
     sanitize_device_label,
@@ -28,6 +33,7 @@ from backend.modules.auth.public import (
 )
 from backend.modules.auth.schemas import TokenPair as _schemas_token_pair
 from backend.modules.auth.schemas import sanitize_device_label as _schemas_sanitize
+from backend.modules.auth.service import audit as _audit_service
 from backend.modules.auth.service import jwt as _jwt_service
 from backend.modules.auth.service import refresh_tokens as _refresh_service
 from backend.modules.auth.service import users as _users_service
@@ -41,9 +47,12 @@ def test_public_exports_exact_set() -> None:
     # `sorted()` keeps the diff deterministic if the canonical order
     # ever evolves.
     assert sorted(auth_public.__all__) == [
+        "AdminAction",
         "ExpiredTokenError",
+        "ForbiddenAuditMetadataError",
         "InvalidTokenError",
         "TokenPair",
+        "UnknownAuditUserError",
         "User",
         "UserRole",
         "any_user_exists",
@@ -52,6 +61,7 @@ def test_public_exports_exact_set() -> None:
         "get_current_user",
         "issue_access_token",
         "issue_refresh_token",
+        "log_admin_action",
         "require_admin",
         "require_member",
         "sanitize_device_label",
@@ -76,10 +86,14 @@ def test_public_symbols_are_callable_or_exceptions() -> None:
     assert callable(require_admin)
     assert callable(require_member)
     assert callable(sanitize_device_label)
+    assert callable(log_admin_action)
     assert issubclass(InvalidTokenError, Exception)
     assert issubclass(ExpiredTokenError, InvalidTokenError)
+    assert issubclass(UnknownAuditUserError, Exception)
+    assert issubclass(ForbiddenAuditMetadataError, Exception)
     assert isinstance(User, type)
     assert isinstance(UserRole, type)
+    assert isinstance(AdminAction, type)
     assert isinstance(TokenPair, type)
 
 
@@ -98,6 +112,10 @@ def test_public_names_are_identical_objects_to_internals() -> None:
     assert auth_public.sanitize_device_label is _schemas_sanitize
     assert auth_public.User is _user_model
     assert auth_public.UserRole is _user_role_enum
+    assert auth_public.AdminAction is _admin_action_enum
+    assert auth_public.log_admin_action is _audit_service.log_admin_action
+    assert auth_public.UnknownAuditUserError is _audit_service.UnknownAuditUserError
+    assert auth_public.ForbiddenAuditMetadataError is _audit_service.ForbiddenAuditMetadataError
     assert auth_public.get_current_user is _deps.get_current_user
     assert auth_public.require_admin is _deps.require_admin
     assert auth_public.require_member is _deps.require_member

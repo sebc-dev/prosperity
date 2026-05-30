@@ -222,10 +222,27 @@ def _accept_invite_url(raw_token: str, settings: Settings) -> str:
     """Build the accept link handed to the invitee (consumed by S04.5).
 
     Base host is configurable via `APP_BASE_URL` (not a secret). The raw
-    token only ever travels in the create/regenerate response body — it is
-    never persisted or audited.
+    token only ever travels in the create/regenerate response body and the
+    transmission warning log (P04.4.3) — it is never persisted or audited.
     """
     return f"{settings.app_base_url}/accept-invite?token={raw_token}"
+
+
+def _log_invitation_link(email: str, accept_url: str) -> None:
+    # TODO(notifications): replace this log with an email send via the
+    # `notifications` module (V1). ASSUMED self-hosted MVP exception: the
+    # raw token is logged in clear because there is NO automatic delivery
+    # channel yet — the admin re-reads the backend logs to recover the link
+    # to transmit out-of-band. This deliberately bypasses the general
+    # "never log a raw token" rule (and the `log_admin_action` blacklist);
+    # scope is strictly self-hosted V1, the primary channel remains the
+    # single-use HTTP response (`_NO_STORE_HEADERS`). The risk (a single-use
+    # secret exposed in logs) is documented in `runbooks/invitations.md`.
+    # REMOVE this as soon as `notifications` exists.
+    logger.warning(
+        "invitation_link_issued",
+        extra={"email": email, "accept_url": accept_url},
+    )
 
 
 @invitations_router.post(
@@ -242,7 +259,8 @@ async def create_invitation(
 ) -> InvitationCreatedResponse:
     """Create a pending invitation; return the raw token + accept link once.
 
-    Admin-only. The raw token is returned **once** in the body; only its
+    Admin-only. The raw token is returned **once** in the body (and logged
+    once for manual transmission — see `_log_invitation_link`); only its
     sha256 digest is persisted. A pre-existing pending invitation for the
     same email is a 409 (both on the sequential pre-check and on the
     concurrent partial-index race), never a 500.
@@ -277,6 +295,7 @@ async def create_invitation(
         metadata={"invitation_id": str(inv.id), "email": inv.email},
     )
     accept_url = _accept_invite_url(raw, settings)
+    _log_invitation_link(inv.email, accept_url)
     return InvitationCreatedResponse(
         id=inv.id,
         email=inv.email,
@@ -346,6 +365,7 @@ async def regenerate_invitation(
         metadata={"invitation_id": str(invitation_id), "email": inv.email},
     )
     accept_url = _accept_invite_url(raw, settings)
+    _log_invitation_link(inv.email, accept_url)
     return InvitationCreatedResponse(
         id=inv.id,
         email=inv.email,

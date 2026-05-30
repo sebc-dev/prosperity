@@ -22,6 +22,7 @@ the per-test rollback reverts everything.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -783,3 +784,87 @@ async def test_double_revoke_writes_second_audit(
     # re-revoke — two identical INVITE_REVOKED rows.
     revoked = [r for r in await _audit_rows(auth_schema) if r.action == "invite_revoked"]
     assert len(revoked) == 2
+
+
+# ---------------------------------------------------------------------------
+# P04.4.3 — MVP transmission warning (raw token in logs, documented exception)
+# ---------------------------------------------------------------------------
+
+_HTTP_LOGGER = "backend.modules.auth.transports.http"
+
+
+async def test_create_logs_invitation_link_warning(
+    async_client: AsyncClient,
+    bound_user_factory: UserMaker,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+
+    with caplog.at_level(logging.WARNING, logger=_HTTP_LOGGER):
+        resp = await async_client.post(
+            "/invitations", json={"email": "invite@example.com"}, headers=_bearer(admin.id)
+        )
+
+    body = resp.json()
+    records = [
+        r for r in caplog.records if r.name == _HTTP_LOGGER and r.msg == "invitation_link_issued"
+    ]
+    assert len(records) == 1
+    fields = records[0].__dict__
+    assert fields["email"] == "invite@example.com"
+    # The MVP exception: the link (hence the raw token) is logged in clear.
+    assert fields["accept_url"] == body["accept_url"]
+    assert body["token"] in fields["accept_url"]
+
+
+async def test_regenerate_logs_invitation_link_warning(
+    async_client: AsyncClient,
+    bound_user_factory: UserMaker,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+    headers = _bearer(admin.id)
+    created = (
+        await async_client.post(
+            "/invitations", json={"email": "invite@example.com"}, headers=headers
+        )
+    ).json()
+
+    # Drop the create's warning so only the regenerate's record remains.
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger=_HTTP_LOGGER):
+        resp = await async_client.post(f"/invitations/{created['id']}/regenerate", headers=headers)
+
+    body = resp.json()
+    records = [
+        r for r in caplog.records if r.name == _HTTP_LOGGER and r.msg == "invitation_link_issued"
+    ]
+    assert len(records) == 1
+    # The warning carries the *new* token.
+    assert body["token"] in records[0].__dict__["accept_url"]
+    assert created["token"] not in records[0].__dict__["accept_url"]
+
+
+async def test_invitation_link_respects_base_url_override(
+    async_client: AsyncClient,
+    bound_user_factory: UserMaker,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
+    # Patch the live cached instance the route resolves via `Depends(get_settings)`
+    # — not the module-level `_settings`, which another test may have orphaned
+    # by calling `get_settings.cache_clear()`.
+    monkeypatch.setattr(get_settings(), "app_base_url", "https://prosperity.example")
+
+    with caplog.at_level(logging.WARNING, logger=_HTTP_LOGGER):
+        resp = await async_client.post(
+            "/invitations", json={"email": "invite@example.com"}, headers=_bearer(admin.id)
+        )
+
+    body = resp.json()
+    assert body["accept_url"].startswith("https://prosperity.example/accept-invite?token=")
+    record = next(
+        r for r in caplog.records if r.name == _HTTP_LOGGER and r.msg == "invitation_link_issued"
+    )
+    assert record.__dict__["accept_url"] == body["accept_url"]

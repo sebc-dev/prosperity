@@ -38,9 +38,7 @@ async def test_promote_propagates_non_serialization_dbapi_error() -> None:
     session.get = AsyncMock(return_value=actor)
     # ...then the conditional UPDATE raises a non-40001 DBAPIError, which the
     # 40001-only recovery path must re-raise rather than swallow.
-    session.execute = AsyncMock(
-        side_effect=DBAPIError("UPDATE users ...", {}, _Orig("boom"))
-    )
+    session.execute = AsyncMock(side_effect=DBAPIError("UPDATE users ...", {}, _Orig("boom")))
 
     with pytest.raises(DBAPIError):
         await promote_to_admin(session, user_id=uuid4(), by_admin_id=actor.id)

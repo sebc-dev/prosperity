@@ -27,6 +27,20 @@ table household
   pk pk_household(id)
   ck ck_household_singleton: (id = '00000000-0000-0000-0000-000000000001'::uuid)
 
+table invitations
+  col accepted_at: TIMESTAMP WITH TIME ZONE NULL
+  col email: VARCHAR(254) NOT NULL
+  col expires_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col id: UUID NOT NULL
+  col invited_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col invited_by: UUID NOT NULL
+  col revoked_at: TIMESTAMP WITH TIME ZONE NULL
+  col token_hash: VARCHAR(64) NOT NULL
+  pk pk_invitations(id)
+  idx ix_invitations_invited_by INDEX: invited_by
+  idx uq_invitations_pending_email UNIQUE: lower((email)::text)) WHERE ((accepted_at IS NULL) AND (revoked_at IS NULL)
+  idx uq_invitations_token_hash UNIQUE: token_hash
+
 table refresh_tokens
   col device_label: VARCHAR(120) NULL
   col expires_at: TIMESTAMP WITH TIME ZONE NOT NULL

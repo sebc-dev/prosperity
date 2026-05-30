@@ -29,6 +29,13 @@ The current consumers cross-module are:
   lifts a member to admin and audits it atomically, plus the errors it
   raises at the call site (`RoleError` and its `AlreadyAdminError`,
   `UserNotFoundError`, `NotAuthorizedError` subclasses).
+- admin invitation callers (E04 invitation routes, S04.4) —
+  `create_invitation` / `regenerate_invitation` / `revoke_invitation`
+  manage the server-only `invitations` table, plus the errors they raise
+  (`InvitationError` and its `InvitationNotFoundError`,
+  `DuplicatePendingInvitationError`, `InvitationNotPendingError`
+  subclasses). The `Invitation` model stays intra-auth: the row is only
+  ever written through these helpers, never constructed by peers.
 
 `RefreshToken` and the shared `password_hasher` factory deliberately
 stay intra-auth: hashing is encapsulated by `create_user` and
@@ -44,6 +51,21 @@ from backend.modules.auth.service.audit import (
     ForbiddenAuditMetadataError,
     UnknownAuditUserError,
     log_admin_action,
+)
+from backend.modules.auth.service.invitations import (
+    DuplicatePendingInvitationError,
+    InvitationError,
+    InvitationNotFoundError,
+    InvitationNotPendingError,
+)
+from backend.modules.auth.service.invitations import (
+    create as create_invitation,
+)
+from backend.modules.auth.service.invitations import (
+    regenerate as regenerate_invitation,
+)
+from backend.modules.auth.service.invitations import (
+    revoke as revoke_invitation,
 )
 from backend.modules.auth.service.jwt import (
     ExpiredTokenError,
@@ -73,9 +95,13 @@ from backend.modules.auth.transports.dependencies import (
 __all__ = [
     "AdminAction",
     "AlreadyAdminError",
+    "DuplicatePendingInvitationError",
     "ExpiredTokenError",
     "ForbiddenAuditMetadataError",
     "InvalidTokenError",
+    "InvitationError",
+    "InvitationNotFoundError",
+    "InvitationNotPendingError",
     "NotAuthorizedError",
     "RoleError",
     "TokenPair",
@@ -84,6 +110,7 @@ __all__ = [
     "UserNotFoundError",
     "UserRole",
     "any_user_exists",
+    "create_invitation",
     "create_user",
     "create_user_with_hash",
     "get_current_user",
@@ -91,8 +118,10 @@ __all__ = [
     "issue_refresh_token",
     "log_admin_action",
     "promote_to_admin",
+    "regenerate_invitation",
     "require_admin",
     "require_member",
+    "revoke_invitation",
     "sanitize_device_label",
     "verify_access_token",
 ]

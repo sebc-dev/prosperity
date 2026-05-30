@@ -228,6 +228,7 @@ ignore_imports =
     backend.modules.auth.public -> backend.modules.auth.domain
     backend.modules.auth.public -> backend.modules.auth.models
     backend.modules.auth.public -> backend.modules.auth.service.audit
+    backend.modules.auth.public -> backend.modules.auth.service.invitations
     backend.modules.auth.public -> backend.modules.auth.service.jwt
     backend.modules.auth.public -> backend.modules.auth.service.refresh_tokens
     backend.modules.auth.public -> backend.modules.auth.service.roles

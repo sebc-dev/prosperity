@@ -13,9 +13,13 @@ from backend.modules.auth.models import User as _user_model
 from backend.modules.auth.public import (
     AdminAction,
     AlreadyAdminError,
+    DuplicatePendingInvitationError,
     ExpiredTokenError,
     ForbiddenAuditMetadataError,
     InvalidTokenError,
+    InvitationError,
+    InvitationNotFoundError,
+    InvitationNotPendingError,
     NotAuthorizedError,
     RoleError,
     TokenPair,
@@ -24,6 +28,7 @@ from backend.modules.auth.public import (
     UserNotFoundError,
     UserRole,
     any_user_exists,
+    create_invitation,
     create_user,
     create_user_with_hash,
     get_current_user,
@@ -31,14 +36,17 @@ from backend.modules.auth.public import (
     issue_refresh_token,
     log_admin_action,
     promote_to_admin,
+    regenerate_invitation,
     require_admin,
     require_member,
+    revoke_invitation,
     sanitize_device_label,
     verify_access_token,
 )
 from backend.modules.auth.schemas import TokenPair as _schemas_token_pair
 from backend.modules.auth.schemas import sanitize_device_label as _schemas_sanitize
 from backend.modules.auth.service import audit as _audit_service
+from backend.modules.auth.service import invitations as _invitations_service
 from backend.modules.auth.service import jwt as _jwt_service
 from backend.modules.auth.service import refresh_tokens as _refresh_service
 from backend.modules.auth.service import roles as _roles_service
@@ -55,9 +63,13 @@ def test_public_exports_exact_set() -> None:
     assert sorted(auth_public.__all__) == [
         "AdminAction",
         "AlreadyAdminError",
+        "DuplicatePendingInvitationError",
         "ExpiredTokenError",
         "ForbiddenAuditMetadataError",
         "InvalidTokenError",
+        "InvitationError",
+        "InvitationNotFoundError",
+        "InvitationNotPendingError",
         "NotAuthorizedError",
         "RoleError",
         "TokenPair",
@@ -66,6 +78,7 @@ def test_public_exports_exact_set() -> None:
         "UserNotFoundError",
         "UserRole",
         "any_user_exists",
+        "create_invitation",
         "create_user",
         "create_user_with_hash",
         "get_current_user",
@@ -73,8 +86,10 @@ def test_public_exports_exact_set() -> None:
         "issue_refresh_token",
         "log_admin_action",
         "promote_to_admin",
+        "regenerate_invitation",
         "require_admin",
         "require_member",
+        "revoke_invitation",
         "sanitize_device_label",
         "verify_access_token",
     ]
@@ -99,6 +114,9 @@ def test_public_symbols_are_callable_or_exceptions() -> None:
     assert callable(sanitize_device_label)
     assert callable(log_admin_action)
     assert callable(promote_to_admin)
+    assert callable(create_invitation)
+    assert callable(regenerate_invitation)
+    assert callable(revoke_invitation)
     assert issubclass(InvalidTokenError, Exception)
     assert issubclass(ExpiredTokenError, InvalidTokenError)
     assert issubclass(UnknownAuditUserError, Exception)
@@ -107,6 +125,10 @@ def test_public_symbols_are_callable_or_exceptions() -> None:
     assert issubclass(AlreadyAdminError, RoleError)
     assert issubclass(UserNotFoundError, RoleError)
     assert issubclass(NotAuthorizedError, RoleError)
+    assert issubclass(InvitationError, Exception)
+    assert issubclass(InvitationNotFoundError, InvitationError)
+    assert issubclass(DuplicatePendingInvitationError, InvitationError)
+    assert issubclass(InvitationNotPendingError, InvitationError)
     assert isinstance(User, type)
     assert isinstance(UserRole, type)
     assert isinstance(AdminAction, type)
@@ -137,6 +159,16 @@ def test_public_names_are_identical_objects_to_internals() -> None:
     assert auth_public.AlreadyAdminError is _roles_service.AlreadyAdminError
     assert auth_public.UserNotFoundError is _roles_service.UserNotFoundError
     assert auth_public.NotAuthorizedError is _roles_service.NotAuthorizedError
+    assert auth_public.create_invitation is _invitations_service.create
+    assert auth_public.regenerate_invitation is _invitations_service.regenerate
+    assert auth_public.revoke_invitation is _invitations_service.revoke
+    assert auth_public.InvitationError is _invitations_service.InvitationError
+    assert auth_public.InvitationNotFoundError is _invitations_service.InvitationNotFoundError
+    assert (
+        auth_public.DuplicatePendingInvitationError
+        is _invitations_service.DuplicatePendingInvitationError
+    )
+    assert auth_public.InvitationNotPendingError is _invitations_service.InvitationNotPendingError
     assert auth_public.get_current_user is _deps.get_current_user
     assert auth_public.require_admin is _deps.require_admin
     assert auth_public.require_member is _deps.require_member

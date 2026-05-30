@@ -22,7 +22,9 @@ The current consumers cross-module are:
   lifecycle) — `log_admin_action` writes the server-only audit trail and
   `AdminAction` is its action catalogue (S04.2), plus the errors it can
   raise at the call site (`UnknownAuditUserError`,
-  `ForbiddenAuditMetadataError`). The `AdminAuditLog` model stays
+  `ForbiddenAuditMetadataError`). Callers pass `by=None` for a
+  self-service action with no admin actor (e.g. `INVITE_ACCEPTED`, S04.5),
+  which leaves the actor snapshot NULL. The `AdminAuditLog` model stays
   intra-auth: the audit row is only ever written through the helper,
   never constructed by peers.
 - admin role-transition callers (E04 promotion route) — `promote_to_admin`

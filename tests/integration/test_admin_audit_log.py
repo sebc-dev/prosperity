@@ -95,6 +95,65 @@ async def test_log_admin_action_snapshots_actor_and_target_identity(
     assert log.target_email == "victim@example.com"
 
 
+async def test_log_actorless_sets_null_actor(
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    # `by=None` records a self-service action (the invitee accepting their
+    # own invitation, S04.5): no admin actor to snapshot, but the target
+    # (the freshly created user) is still resolved and snapshotted.
+    target = await bound_user_factory(email="invitee@example.com")
+    target_id = target.id
+
+    log = await log_admin_action(
+        auth_schema,
+        action=AdminAction.INVITE_ACCEPTED,
+        by=None,
+        target=target_id,
+        metadata={"invitation_id": "abc-123"},
+    )
+
+    assert log.actor_user_id is None
+    assert log.actor_email is None
+    assert log.actor_label is None
+    assert log.target_user_id == target_id
+    assert log.target_email == "invitee@example.com"
+    assert log.event_metadata == {"invitation_id": "abc-123"}
+
+
+async def test_log_actorless_validates_target(
+    auth_schema: AsyncSession,
+) -> None:
+    # With no actor, an unresolved `target` is still rejected before the
+    # flush — the self-service path does not weaken target validation.
+    with pytest.raises(UnknownAuditUserError):
+        await log_admin_action(
+            auth_schema,
+            action=AdminAction.INVITE_ACCEPTED,
+            by=None,
+            target=UUID(int=0),
+        )
+    assert (await auth_schema.execute(select(AdminAuditLog))).all() == []
+
+
+async def test_log_actorless_rejects_secret_metadata(
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    # The metadata secret guard runs independently of `by`, so a
+    # self-service action gets the same defence-in-depth screening.
+    target = await bound_user_factory(email="invitee@example.com")
+    with pytest.raises(ForbiddenAuditMetadataError):
+        await log_admin_action(
+            auth_schema,
+            action=AdminAction.INVITE_ACCEPTED,
+            by=None,
+            target=target.id,
+            metadata={"invitation_token": "raw-secret"},
+        )
+    assert (await auth_schema.execute(select(AdminAuditLog))).all() == []
+
+
 async def test_log_admin_action_persists_under_metadata_column_name(
     auth_schema: AsyncSession,
     bound_user_factory: UserMaker,

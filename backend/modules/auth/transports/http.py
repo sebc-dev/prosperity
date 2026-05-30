@@ -13,15 +13,17 @@ from functools import cache
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import Settings, get_settings
-from backend.modules.auth.domain import AdminAction
+from backend.modules.auth.domain import AdminAction, UserRole
 from backend.modules.auth.models import Invitation, User
 from backend.modules.auth.schemas import (
+    AcceptInvitePreviewResponse,
+    AcceptInviteRequest,
     InvitationCreatedResponse,
     InvitationCreateRequest,
     InvitationResponse,
@@ -48,6 +50,7 @@ from backend.modules.auth.service.refresh_tokens import (
 from backend.modules.auth.service.refresh_tokens import issue as issue_refresh
 from backend.modules.auth.service.refresh_tokens import revoke as revoke_refresh
 from backend.modules.auth.service.refresh_tokens import rotate as rotate_refresh
+from backend.modules.auth.service.users import create_user
 from backend.modules.auth.transports.dependencies import require_admin
 from backend.shared.db import get_db
 from backend.shared.http import client_ip_for
@@ -432,3 +435,115 @@ async def revoke_invitation(
         metadata={"invitation_id": str(invitation_id), "email": inv.email},
     )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# Accept-invite flow (S04.5) — ANONYMOUS routes (the invitee is not logged in)
+# ---------------------------------------------------------------------------
+#
+# Top-level `/accept-invite` router. Co-located here because both handlers
+# consume only auth internals (`service.invitations`, `service.users`,
+# `service.audit`, `service.jwt`, `domain`) — all intra-module imports, so
+# no new import-linter exception is needed. Unlike `/setup` (placed in
+# `accounts` because it touches `Household`), `/accept-invite` never reaches
+# an `accounts` aggregate.
+
+accept_invite_router = APIRouter(prefix="/accept-invite", tags=["accept-invite"])
+
+# Uniform 410 body for **every** invalid case (unknown/expired/accepted/
+# revoked) AND the race backstop (40001/23505). Never differentiated —
+# "expired" vs "unknown", or a third status code, would be an enumeration
+# oracle (anti-enumeration, ADR 0010). Defined once at module scope.
+_GONE_DETAIL = "This invitation link is no longer valid."
+
+# SQLSTATEs that mean "this token can no longer be claimed", mapped to the
+# uniform 410 on POST (mirror of `accounts.transports.http._RACE_LOST_SQLSTATES`):
+#   40001 serialization_failure — loser of a true concurrent claim under
+#         REPEATABLE READ (raised as `DBAPIError`, not `IntegrityError`).
+#   23505 unique_violation — the invitee's email is already a user
+#         (`uq_users_email_lower`); "already a member" ⇒ "link no longer
+#         valid" is semantically a 410, and collapsing it here (rather than
+#         a distinct 409) removes an account-enumeration oracle on an
+#         anonymous, un-rate-limited route (D11).
+# Anything else under `DBAPIError` is an application bug → re-raise → 500.
+_ACCEPT_RACE_LOST_SQLSTATES = frozenset({"40001", "23505"})
+
+
+@accept_invite_router.get("", response_model=AcceptInvitePreviewResponse)
+async def preview_invitation(
+    response: Response,
+    session: SessionDep,
+    token: Annotated[str, Query(min_length=1, max_length=128)],
+) -> AcceptInvitePreviewResponse:
+    """Pre-check an invitation token; 200 + {email, expires_at}, else 410.
+
+    Anonymous, read-only — does not consume the token. Every invalid case
+    (unknown/expired/accepted/revoked) collapses to one uniform 410 so the
+    response can never be used to enumerate which tokens exist (ADR 0010).
+    """
+    response.headers.update(_NO_STORE_HEADERS)
+    inv = await invitation_service.resolve_pending(session, token)
+    if inv is None:
+        raise HTTPException(status.HTTP_410_GONE, detail=_GONE_DETAIL)
+    return AcceptInvitePreviewResponse(email=inv.email, expires_at=inv.expires_at)
+
+
+@accept_invite_router.post("", response_model=TokenPair, status_code=status.HTTP_200_OK)
+async def accept_invitation(
+    body: AcceptInviteRequest,
+    request: Request,
+    response: Response,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> TokenPair:
+    """Accept an invitation: create the `member` invitee, auto-login a `TokenPair`.
+
+    Anonymous. One transaction (D2): atomically claim the invitation →
+    create the `member` user → audit `invite_accepted` (actor-less) → mint
+    tokens. An invalid token (unknown/expired/accepted/revoked) ⇒ uniform
+    410. A lost race (40001) or an email already enrolled (23505) ⇒ the
+    **same** 410 via the `DBAPIError` backstop (mirror of `/setup`) — no
+    third status code, no oracle (D5/D11). `get_db` rolls back the whole
+    transaction on any exception (so a partial `accepted_at` is undone and
+    the invitation reverts to pending). A body carrying `role`/`email` is
+    ignored (anti-poisoning): the role is ALWAYS `member`, the email is
+    ALWAYS the invitation's, and the `id` is generated server-side.
+    """
+    response.headers.update(_NO_STORE_HEADERS)  # ASVS V8.3.4 — tokens
+
+    try:
+        inv = await invitation_service.accept(session, body.token)
+        if inv is None:
+            raise HTTPException(status.HTTP_410_GONE, detail=_GONE_DETAIL)
+        user = await create_user(
+            session,
+            email=inv.email,  # never from the body (anti-poisoning)
+            password=body.password.get_secret_value(),
+            display_name=body.display_name,
+            role=UserRole.MEMBER,  # hardcoded — NEVER admin, never from the body
+        )
+        await log_admin_action(
+            session,
+            action=AdminAction.INVITE_ACCEPTED,
+            by=None,  # self-service: no admin actor (D1)
+            target=user.id,
+            metadata={"invitation_id": str(inv.id), "email": inv.email},
+        )
+    except DBAPIError as exc:
+        # Race backstop (D5/D11), mirror of `/setup`: 40001 (loser of a true
+        # claim race) or 23505 (`uq_users_email_lower`, email already
+        # enrolled) ⇒ uniform 410. Any other SQLSTATE is an app bug →
+        # re-raise (500). `get_db` rolls back → `accepted_at` undone.
+        sqlstate = getattr(exc.orig, "sqlstate", None)
+        if sqlstate not in _ACCEPT_RACE_LOST_SQLSTATES:
+            logger.error("accept_invite_unexpected_integrity", extra={"sqlstate": sqlstate})
+            raise
+        logger.warning("accept_invite_race_lost", extra={"sqlstate": sqlstate})
+        raise HTTPException(status.HTTP_410_GONE, detail=_GONE_DETAIL) from exc
+
+    device_label = sanitize_device_label(request.headers.get("user-agent"))
+    access_token = issue_access_token(user.id, settings=settings)
+    refresh_token = await issue_refresh(
+        session, user.id, settings=settings, device_label=device_label
+    )
+    return TokenPair(access_token=access_token, refresh_token=refresh_token)

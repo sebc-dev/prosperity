@@ -343,3 +343,83 @@ _REJECT_CONTENT_UPDATE_TRIGGER_DDL = DDL(
 event.listen(AdminAuditLog.__table__, "after_create", _APPEND_ONLY_FUNCTION_DDL)
 event.listen(AdminAuditLog.__table__, "after_create", _REJECT_DELETE_TRIGGER_DDL)
 event.listen(AdminAuditLog.__table__, "after_create", _REJECT_CONTENT_UPDATE_TRIGGER_DDL)
+
+
+class Invitation(Base):
+    """A pending, pre-addressed invitation to join the household (ADR 0010).
+
+    **Server-only.** Never replicated to clients via PowerSync — it must
+    stay absent from the sync rules manifest (re-checked in E13). Read and
+    mutated only through the admin API (S04.4) and `service.invitations`.
+
+    The raw token is returned **once** by `service.invitations.create` /
+    `regenerate`; only its sha256 hex digest (`token_hash`, 64 chars) is
+    stored — the raw value is never derivable from the DB. sha256 (not the
+    HMAC `refresh_tokens` uses) is deliberate: the token carries 256 bits of
+    entropy, so an offline pre-image is infeasible and the keyed pepper buys
+    little here. The glossary (CONTEXT.md) and the S04.3 acceptance criteria
+    pin sha256; see `service.invitations._hash_invitation_token`.
+
+    Email is normalised lowercase (`@validates`), and the partial unique
+    index `uq_invitations_pending_email` over `lower(email)` WHERE the row is
+    still pending (`accepted_at IS NULL AND revoked_at IS NULL`) guarantees
+    **at most one pending invitation per email** — even against a raw-SQL
+    insert that bypasses the validator (same defence as `uq_users_email_lower`).
+    An accepted/revoked row no longer participates in the index, so
+    re-inviting after revocation or acceptance is allowed.
+
+    `invited_by` is NOT NULL with `ON DELETE RESTRICT`: a pending grant of
+    access must always name a real issuer. Unlike `AdminAuditLog` (which
+    snapshots identity and uses `SET NULL` because it is *evidence* that must
+    outlive accounts), an invitation is *operational state* — a dangling
+    issuer would be a smell, and `RESTRICT` forces E05+ account deletion to
+    deal with in-flight invitations explicitly. The audit evidence for an
+    invitation lives in `admin_audit_logs`, not here.
+    """
+
+    __tablename__ = "invitations"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    email: Mapped[str] = mapped_column(String(254), nullable=False)
+    invited_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="RESTRICT", name="fk_invitations_invited_by_users"),
+        nullable=False,
+    )
+    # Set in Python (single clock) so `expires_at = invited_at + TTL` is
+    # exact — mirrors `refresh_tokens.issue`; no `server_default`.
+    invited_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    __table_args__ = (
+        # Partial unique index (PostgreSQL-specific): at most one *pending*
+        # invitation per email. `lower(email)` is functional (defends raw
+        # inserts); the WHERE clause excludes accepted/revoked rows so they
+        # never block a re-invite. The model DDL and migration 0006 must emit
+        # an identical expression for create_all/Alembic parity.
+        Index(
+            "uq_invitations_pending_email",
+            text("lower(email)"),
+            unique=True,
+            postgresql_where=text("accepted_at IS NULL AND revoked_at IS NULL"),
+        ),
+        # `/accept-invite` (S04.5) resolves `WHERE token_hash = ?` and must
+        # match at most one row; also guards the (negligible) collision.
+        UniqueConstraint("token_hash", name="uq_invitations_token_hash"),
+        # Index the FK: without it Postgres seq-scans this table on every
+        # `users` delete to enforce `ON DELETE RESTRICT`.
+        Index("ix_invitations_invited_by", "invited_by"),
+    )
+
+    @validates("email")
+    def _normalize_email(self, _key: str, value: str) -> str:
+        # Lowercase + strip so the functional `lower(email)` partial index
+        # can never disagree with the stored column value (gabarit `User`).
+        return value.strip().lower()

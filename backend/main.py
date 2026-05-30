@@ -10,7 +10,12 @@ from fastapi import FastAPI
 from backend.config import get_settings
 from backend.modules.accounts.public import bootstrap_initial_admin_from_env
 from backend.modules.accounts.transports.http import router as accounts_router
-from backend.modules.auth.transports.http import router as auth_router
+from backend.modules.auth.transports.http import (
+    invitations_router,
+)
+from backend.modules.auth.transports.http import (
+    router as auth_router,
+)
 from backend.shared.db import lifespan as db_lifespan
 
 
@@ -41,6 +46,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 
 app = FastAPI(title="Prosperity", lifespan=lifespan)
 app.include_router(auth_router)
+app.include_router(invitations_router)
 app.include_router(accounts_router)
 
 

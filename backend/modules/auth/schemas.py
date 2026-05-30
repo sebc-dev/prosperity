@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import uuid
+from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, EmailStr, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, SecretStr
 
 DEVICE_LABEL_MAX = 120
 
@@ -49,6 +51,38 @@ class TokenPair(BaseModel):
     access_token: str
     refresh_token: str
     token_type: Literal["bearer"] = "bearer"
+
+
+class InvitationCreateRequest(BaseModel):
+    # `EmailStr` mirrors `LoginRequest` / `SetupRequest`; the service
+    # re-normalises (strip + lower) inside `create()`, so the stored row
+    # and the audit/response email always agree regardless of input casing.
+    email: EmailStr
+
+
+class InvitationResponse(BaseModel):
+    # Admin view of a pending invitation. `token_hash` is deliberately
+    # **not** a field: the omission is structural, so FastAPI filters it
+    # out even when the whole ORM row is returned from `GET /invitations`
+    # (acceptance criterion — never expose a token hash).
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    email: str
+    invited_at: datetime
+    expires_at: datetime
+    invited_by: uuid.UUID
+
+
+class InvitationCreatedResponse(BaseModel):
+    # Create / regenerate response: carries the raw token **once** plus a
+    # ready-to-transmit accept link. Built explicitly from the service's
+    # return value (not the ORM row), so `token_hash` can never leak here.
+    id: uuid.UUID
+    email: str
+    expires_at: datetime
+    token: str
+    accept_url: str
 
 
 class RefreshRequest(BaseModel):

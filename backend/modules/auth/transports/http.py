@@ -14,18 +14,29 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import Settings, get_settings
-from backend.modules.auth.models import User
+from backend.modules.auth.domain import AdminAction
+from backend.modules.auth.models import Invitation, User
 from backend.modules.auth.schemas import (
+    InvitationCreatedResponse,
+    InvitationCreateRequest,
+    InvitationResponse,
     LoginRequest,
     LogoutRequest,
     RefreshRequest,
     TokenPair,
     sanitize_device_label,
 )
+from backend.modules.auth.service import invitations as invitation_service
 from backend.modules.auth.service._password import password_hasher
+from backend.modules.auth.service.audit import log_admin_action
+from backend.modules.auth.service.invitations import (
+    DuplicatePendingInvitationError,
+    hash_invitation_token,
+)
 from backend.modules.auth.service.jwt import issue_access_token
 from backend.modules.auth.service.refresh_tokens import (
     InvalidRefreshTokenError,
@@ -34,6 +45,7 @@ from backend.modules.auth.service.refresh_tokens import (
 from backend.modules.auth.service.refresh_tokens import issue as issue_refresh
 from backend.modules.auth.service.refresh_tokens import revoke as revoke_refresh
 from backend.modules.auth.service.refresh_tokens import rotate as rotate_refresh
+from backend.modules.auth.transports.dependencies import require_admin
 from backend.shared.db import get_db
 from backend.shared.http import client_ip_for
 
@@ -174,3 +186,120 @@ async def logout(
     token_hash = hash_refresh_token(body.refresh_token, settings=settings)
     await revoke_refresh(session, token_hash)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- Invitation admin routes (S04.4) ----------------------------------------
+#
+# A dedicated top-level `/invitations` router (the roadmap lists
+# `POST /invitations`, `GET /invitations`, … — not `/auth/invitations`).
+# Co-located here in the auth transport because the handlers consume auth
+# internals directly (`service.invitations`, `service.audit`, `models`,
+# `domain`, `dependencies.require_admin`) — all intra-module imports, so no
+# new import-linter exception is needed.
+#
+# Every handler is admin-only via `require_admin`: anonymous → 401 and
+# member → 403 are already enforced upstream (S04.1) before the body runs.
+# Each successful mutation writes an `admin_audit_logs` row through
+# `log_admin_action` in the **same** transaction as the mutation (committed
+# together by `get_db`), so a failed audit rolls back the mutation too.
+
+invitations_router = APIRouter(prefix="/invitations", tags=["invitations"])
+
+AdminDep = Annotated[User, Depends(require_admin)]
+
+# Shared 409 body for "a pending invitation already exists" — emitted both
+# by the service pre-check and the concurrent-race IntegrityError fallback.
+_DUPLICATE_INVITATION_DETAIL = "A pending invitation already exists for this email."
+
+
+def _accept_invite_url(raw_token: str, settings: Settings) -> str:
+    """Build the accept link handed to the invitee (consumed by S04.5).
+
+    Base host is configurable via `APP_BASE_URL` (not a secret). The raw
+    token only ever travels in the create response body — it is never
+    persisted or audited.
+    """
+    return f"{settings.app_base_url}/accept-invite?token={raw_token}"
+
+
+@invitations_router.post(
+    "",
+    response_model=InvitationCreatedResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_invitation(
+    body: InvitationCreateRequest,
+    admin: AdminDep,
+    response: Response,
+    session: SessionDep,
+    settings: SettingsDep,
+) -> InvitationCreatedResponse:
+    """Create a pending invitation; return the raw token + accept link once.
+
+    Admin-only. The raw token is returned **once** in the body; only its
+    sha256 digest is persisted. A pre-existing pending invitation for the
+    same email is a 409 (both on the sequential pre-check and on the
+    concurrent partial-index race), never a 500.
+    """
+    response.headers.update(_NO_STORE_HEADERS)  # ASVS V8.3.4 — raw token
+    try:
+        raw = await invitation_service.create(session, email=body.email, by_admin_id=admin.id)
+    except DuplicatePendingInvitationError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=_DUPLICATE_INVITATION_DETAIL) from exc
+    except IntegrityError as exc:
+        # Defence under the exact concurrent double-create: the partial
+        # unique index rejects the loser with SQLSTATE 23505. Map it to the
+        # same 409 as the pre-check; anything else is a real bug → re-raise.
+        if getattr(exc.orig, "sqlstate", None) == "23505":
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, detail=_DUPLICATE_INVITATION_DETAIL
+            ) from exc
+        raise
+
+    # `create` returns only the raw token (frozen S04.3 contract). Re-resolve
+    # the freshly-flushed row by its unique `token_hash` for the audit
+    # metadata and the response `id`/`expires_at`.
+    inv = (
+        await session.execute(
+            select(Invitation).where(Invitation.token_hash == hash_invitation_token(raw))
+        )
+    ).scalar_one()
+    await log_admin_action(
+        session,
+        action=AdminAction.INVITE_SENT,
+        by=admin.id,
+        metadata={"invitation_id": str(inv.id), "email": inv.email},
+    )
+    accept_url = _accept_invite_url(raw, settings)
+    return InvitationCreatedResponse(
+        id=inv.id,
+        email=inv.email,
+        expires_at=inv.expires_at,
+        token=raw,
+        accept_url=accept_url,
+    )
+
+
+@invitations_router.get("", response_model=list[InvitationResponse])
+async def list_pending_invitations(
+    admin: AdminDep,
+    session: SessionDep,
+) -> list[Invitation]:
+    """List pending invitations (`accepted_at IS NULL AND revoked_at IS NULL`).
+
+    Admin-only, newest first. Not audited (a read). `response_model`
+    structurally excludes `token_hash` even though the ORM rows are returned
+    whole.
+    """
+    rows = (
+        (
+            await session.execute(
+                select(Invitation)
+                .where(Invitation.accepted_at.is_(None), Invitation.revoked_at.is_(None))
+                .order_by(Invitation.invited_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return list(rows)

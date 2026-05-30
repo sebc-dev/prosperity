@@ -55,6 +55,21 @@ jobs:
       # the dedicated backend-migrations job, so it's excluded here.
       - run: uv run pytest tests/integration/ --ignore=tests/integration/test_migrations_schema.py
 
+  backend-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen
+      # Black-box HTTP user-journey tier (issue #90). Needs Docker (provided
+      # by the runner); the postgres_container fixture skips cleanly when the
+      # daemon is absent, so this stays green locally without Docker.
+      - run: uv run pytest tests/e2e/
+
   backend-sync:
     runs-on: ubuntu-latest
     timeout-minutes: 2

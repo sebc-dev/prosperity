@@ -339,6 +339,21 @@ Playwright est utilisé exclusivement pour valider des **chaînes de valeur busi
 - Vérification : les 3 transactions sont présentes
 - Tentative d'édition d'un champ gelé sur transaction `confirmed` → `WriteResult.error: immutable_field_violation` visible, mutation purgée
 
+### 6.3 Tier E2E API (anticipation HTTP)
+
+Tant que le frontend n'existe pas (E14/E15 non démarrés), les chaînes de valeur backend sont validées au niveau **HTTP boîte-noire** dans `tests/e2e/` : la fixture `committed_client` pilote l'application FastAPI réelle sur un Postgres réel (testcontainers), du point de vue d'un client qui ne connaît que l'API publique. C'est l'**anticipation, au niveau API, du Parcours #1 « Onboarding multi-user »** (§6.2) ; les 5 parcours Playwright restent la cible finale et ce tier sera complété/remplacé par le navigateur quand l'UI existera.
+
+Deux parcours sont livrés (issue #90, epics E02–E04) :
+
+- **Onboarding multi-user** (`test_onboarding_multi_user.py`) : `setup → lock-after-init → login admin → invitation → preview → accept → 410 au rejeu → RBAC member → login member`, avec assertion de l'anti-poisoning et de l'audit trail *actor-less*.
+- **Cycle de vie d'une invitation** (`test_invitation_lifecycle.py`) : `create → 409 duplicate → regenerate → revoke → liste`, avec assertion de l'audit trail.
+
+Garde-fous :
+
+- **Anti-duplication (§12)** : ces parcours assertent des **transitions d'état** et la propagation inter-modules, jamais les contrats d'endpoint déjà couverts en intégration.
+- **Audit par side-channel** : faute d'endpoint de lecture de `admin_audit_logs`, la traçabilité est vérifiée par requête DB directe (`committed_sessionmaker`) — à remplacer par un appel HTTP quand l'endpoint existera.
+- **CI** : job dédié `backend-e2e` (`uv run pytest tests/e2e/`) sur chaque push ; Docker fourni par le runner, skip propre en local sans daemon (fixture `postgres_container`).
+
 ---
 
 ## 7. Stratégie PowerSync transversale

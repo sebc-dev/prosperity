@@ -218,6 +218,23 @@ _DUPLICATE_INVITATION_DETAIL = "A pending invitation already exists for this ema
 _NOT_PENDING_DETAIL = "Invitation is no longer pending."
 
 
+def _require_resolved(inv: Invitation | None) -> Invitation:
+    """Narrow the post-mutation re-fetch to a non-None row.
+
+    `regenerate`/`revoke` only return without raising `InvitationNotFoundError`
+    when the row exists, so the immediate `session.get` in the same
+    transaction must resolve it. An explicit guard (rather than `assert`,
+    which `python -O` strips) keeps this invariant enforced in every build:
+    a `None` here is a genuine server-side invariant breach → 500.
+    """
+    if inv is None:  # pragma: no cover - impossible after a successful mutation
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Invitation vanished after a successful mutation.",
+        )
+    return inv
+
+
 def _accept_invite_url(raw_token: str, settings: Settings) -> str:
     """Build the accept link handed to the invitee (consumed by S04.5).
 
@@ -238,6 +255,14 @@ def _log_invitation_link(email: str, accept_url: str) -> None:
     # scope is strictly self-hosted V1, the primary channel remains the
     # single-use HTTP response (`_NO_STORE_HEADERS`). The risk (a single-use
     # secret exposed in logs) is documented in `runbooks/invitations.md`.
+    #
+    # WARNING level is deliberate: the operator must *notice* this line among
+    # nominal INFO traffic to recover the link by hand (there is no other
+    # channel). The flip side — WARNING typically fans out to alerting /
+    # external aggregators — is a real exposure widening. While this log
+    # exists, it MUST NOT be shipped to any external log aggregator: the raw
+    # token is a single-use secret. This constraint is spelled out in
+    # `runbooks/invitations.md` (§"Ne pas exporter ce log").
     # REMOVE this as soon as `notifications` exists.
     logger.warning(
         "invitation_link_issued",
@@ -274,10 +299,15 @@ async def create_invitation(
         # Defence under the exact concurrent double-create: the partial
         # unique index rejects the loser with SQLSTATE 23505. Map it to the
         # same 409 as the pre-check; anything else is a real bug → re-raise.
-        if getattr(exc.orig, "sqlstate", None) == "23505":
+        sqlstate = getattr(exc.orig, "sqlstate", None)
+        if sqlstate == "23505":
             raise HTTPException(
                 status.HTTP_409_CONFLICT, detail=_DUPLICATE_INVITATION_DETAIL
             ) from exc
+        # Mirror `accounts.transports.http`: surface the offending SQLSTATE
+        # before re-raising so an unexpected integrity error (→ 500) is
+        # diagnosable instead of an opaque stack trace.
+        logger.error("invitation_unexpected_integrity", extra={"sqlstate": sqlstate})
         raise
 
     # `create` returns only the raw token (frozen S04.3 contract). Re-resolve
@@ -356,8 +386,7 @@ async def regenerate_invitation(
     except InvitationNotPendingError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=_NOT_PENDING_DETAIL) from exc
 
-    inv = await session.get(Invitation, invitation_id)
-    assert inv is not None  # regenerate succeeded → the row is present and pending
+    inv = _require_resolved(await session.get(Invitation, invitation_id))
     await log_admin_action(
         session,
         action=AdminAction.INVITE_REGENERATED,
@@ -395,8 +424,7 @@ async def revoke_invitation(
     except InvitationNotPendingError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, detail=_NOT_PENDING_DETAIL) from exc
 
-    inv = await session.get(Invitation, invitation_id)
-    assert inv is not None  # revoke resolved the id (no NotFound) → row present
+    inv = _require_resolved(await session.get(Invitation, invitation_id))
     await log_admin_action(
         session,
         action=AdminAction.INVITE_REVOKED,

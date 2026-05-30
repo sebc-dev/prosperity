@@ -35,6 +35,25 @@ en clair**. C'est une **exception explicite et délibérée** à la règle gén�
 Ce log **doit être retiré** dès que `notifications` existe (cf.
 `# TODO(notifications)` dans `backend/modules/auth/transports/http.py`).
 
+### Ne pas exporter ce log
+
+Le record est émis au niveau **WARNING** — délibérément, pour que l'opérateur
+le **remarque** parmi le trafic INFO nominal (c'est le seul moyen de récupérer
+le lien à la main). Conséquence : un niveau WARNING est typiquement routé vers
+l'alerting et les agrégateurs de logs externes.
+
+**Tant que ce log existe, il NE DOIT PAS être expédié vers un agrégateur de
+logs externe** (Sentry, Loki/Grafana, ELK, Datadog, etc.) : `accept_url`
+contient un secret à usage unique. Concrètement :
+
+- garder les logs backend **locaux à la machine** (même périmètre de confiance
+  que l'accès SQL — ADR 0013) ;
+- si un shipper de logs est en place, **exclure** le record
+  `invitation_link_issued` (filtre sur le message) ou le champ `accept_url`
+  avant expédition ;
+- cette contrainte disparaît avec le `# TODO(notifications)` : une fois l'envoi
+  email réel en place, le log et donc ce risque sont supprimés.
+
 ## Procédure — créer et transmettre une invitation
 
 ### 1. Créer l'invitation (admin authentifié)

@@ -34,6 +34,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import get_settings
+from backend.main import app
 from backend.modules.auth.domain import UserRole
 from backend.modules.auth.models import AdminAuditLog, Invitation, User
 from backend.modules.auth.service import invitations as invitation_service
@@ -261,7 +262,13 @@ async def test_create_sets_no_store_headers(
 
 
 class _FakeUniqueViolation(Exception):
-    """Stand-in for asyncpg's unique-violation, exposing `.sqlstate`."""
+    """Stand-in for asyncpg's unique-violation, exposing `.sqlstate`.
+
+    `.sqlstate` (not `.pgcode`) is the attribute asyncpg actually exposes on
+    `exc.orig`, and the same one the handler reads — matching the prod pattern
+    already exercised against a real Postgres in
+    `accounts.transports.http.setup_submit` (SQLSTATE-based race discrimination).
+    """
 
     sqlstate = "23505"
 
@@ -602,6 +609,9 @@ async def test_regenerate_writes_audit_invite_regenerated(
     await async_client.post(f"/invitations/{created['id']}/regenerate", headers=headers)
 
     rows = await _audit_rows(auth_schema)
+    # Exactly two rows total — the create's `invite_sent` plus this
+    # regenerate's `invite_regenerated` — no parasitic extra audit.
+    assert sorted(r.action for r in rows) == ["invite_regenerated", "invite_sent"]
     regenerated = [r for r in rows if r.action == "invite_regenerated"]
     assert len(regenerated) == 1
     assert regenerated[0].actor_user_id == admin.id
@@ -849,18 +859,22 @@ async def test_invitation_link_respects_base_url_override(
     async_client: AsyncClient,
     bound_user_factory: UserMaker,
     caplog: pytest.LogCaptureFixture,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     admin = await bound_user_factory(email="admin@example.com", role=UserRole.ADMIN)
-    # Patch the live cached instance the route resolves via `Depends(get_settings)`
-    # — not the module-level `_settings`, which another test may have orphaned
-    # by calling `get_settings.cache_clear()`.
-    monkeypatch.setattr(get_settings(), "app_base_url", "https://prosperity.example")
-
-    with caplog.at_level(logging.WARNING, logger=_HTTP_LOGGER):
-        resp = await async_client.post(
-            "/invitations", json={"email": "invite@example.com"}, headers=_bearer(admin.id)
-        )
+    # Override `get_settings` at the FastAPI dependency layer with a *copy*
+    # carrying the new base URL — rather than mutating the shared cached
+    # singleton (which would leak across tests and depends on lru_cache
+    # state). `model_copy` keeps every other field (JWT secret, etc.) so the
+    # auth chain still resolves.
+    overridden = get_settings().model_copy(update={"app_base_url": "https://prosperity.example"})
+    app.dependency_overrides[get_settings] = lambda: overridden
+    try:
+        with caplog.at_level(logging.WARNING, logger=_HTTP_LOGGER):
+            resp = await async_client.post(
+                "/invitations", json={"email": "invite@example.com"}, headers=_bearer(admin.id)
+            )
+    finally:
+        app.dependency_overrides.pop(get_settings, None)
 
     body = resp.json()
     assert body["accept_url"].startswith("https://prosperity.example/accept-invite?token=")

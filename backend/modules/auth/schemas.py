@@ -85,6 +85,34 @@ class InvitationCreatedResponse(BaseModel):
     accept_url: str
 
 
+class AcceptInvitePreviewResponse(BaseModel):
+    # `GET /accept-invite` — pre-fills the acceptance form. `expires_at`
+    # lets the UI show "expires in N days". No token echo, no `id`
+    # (server-only). The acceptance criterion bounds this body to
+    # {email, expires_at}.
+    email: str
+    expires_at: datetime
+
+
+class AcceptInviteRequest(BaseModel):
+    # `POST /accept-invite`. `extra="ignore"` (the Pydantic default, pinned
+    # here on purpose): a body carrying `role` or `email` is silently
+    # dropped — the role is hardcoded `member` server-side and the email
+    # comes from the invitation (anti-poisoning, ADR 0010). A 422 on
+    # `role: admin` (which `extra="forbid"` would give) would itself tell an
+    # attacker the field is inspected; `ignore` leaks no such signal.
+    # Validation mirrors `SetupRequest` (S03.2).
+    model_config = ConfigDict(extra="ignore")
+
+    # Bounded like the GET query param: the real token is 43 chars
+    # (`token_urlsafe(32)`); anything longer just fails the lookup → 410.
+    token: str = Field(min_length=1, max_length=128)
+    display_name: str = Field(min_length=1, max_length=120)
+    # `SecretStr` keeps the password out of `repr()`; 12-128 matches
+    # `SetupRequest` / OWASP ASVS V2.1.* and caps Argon2id verify CPU.
+    password: SecretStr = Field(min_length=12, max_length=128)
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str = Field(min_length=1, max_length=512)
 

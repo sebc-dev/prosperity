@@ -93,11 +93,29 @@ def _reject_secret_metadata_keys(metadata: dict[str, Any] | None) -> None:
             stack.extend(cast("list[Any]", current))
 
 
+async def _resolve_audit_user(
+    session: AsyncSession, user_id: uuid.UUID | None, *, kind: str
+) -> User | None:
+    """Load the `User` for an audit `actor`/`target`, or None when unset.
+
+    A `None` id means "no such party" (e.g. a self-service `actor`) and
+    resolves to None. A non-None id that does not exist is a caller bug and
+    raises `UnknownAuditUserError` before the flush, so it never surfaces as
+    an opaque `IntegrityError` from the FK.
+    """
+    if user_id is None:
+        return None
+    user = await session.get(User, user_id)
+    if user is None:
+        raise UnknownAuditUserError(f"audit {kind} {user_id} does not exist")
+    return user
+
+
 async def log_admin_action(
     session: AsyncSession,
     *,
     action: AdminAction,
-    by: uuid.UUID,
+    by: uuid.UUID | None = None,
     target: uuid.UUID | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> AdminAuditLog:
@@ -125,6 +143,13 @@ async def log_admin_action(
     `UnknownAuditUserError` *before* the flush, so a log can never be born
     against an unknown identity (defence in depth above the FK).
 
+    `by=None` records a **self-service action with no admin actor** — e.g.
+    `INVITE_ACCEPTED`, where the invitee accepts on their own behalf (ADR
+    0010, S04.5). In that case `actor_user_id`/`actor_email`/`actor_label`
+    stay NULL (there is no identity to snapshot), while `target` (the new
+    user) is still resolved, snapshotted, and validated. The metadata
+    secret guard and the `target` resolution check apply unchanged.
+
     **Never log secrets in `metadata`.** The column is free-form JSONB by
     design, but callers MUST NOT store passwords or hashes, invitation
     tokens, TOTP/recovery secrets, or JWT/refresh tokens. Prefer
@@ -139,21 +164,18 @@ async def log_admin_action(
     action = AdminAction(action)
     _reject_secret_metadata_keys(metadata)
 
-    actor = await session.get(User, by)
-    if actor is None:
-        raise UnknownAuditUserError(f"audit actor {by} does not exist")
-    target_user = await session.get(User, target) if target is not None else None
-    if target is not None and target_user is None:
-        raise UnknownAuditUserError(f"audit target {target} does not exist")
+    actor = await _resolve_audit_user(session, by, kind="actor")
+    target_user = await _resolve_audit_user(session, target, kind="target")
 
     record = AdminAuditLog(
         action=action,
         actor_user_id=by,
-        actor_email=actor.email,
+        actor_email=actor.email if actor is not None else None,
         # `UserRole` is a `StrEnum`, so it formats to its bare value
         # ("admin"/"member") here whether the attribute holds the enum
         # member or the equivalent raw string the ORM has not yet coerced.
-        actor_label=f"{actor.email} ({actor.role})",
+        # A self-service action (`by=None`) leaves the label NULL too.
+        actor_label=f"{actor.email} ({actor.role})" if actor is not None else None,
         target_user_id=target,
         target_email=target_user.email if target_user is not None else None,
         event_metadata=metadata,

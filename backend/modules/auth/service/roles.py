@@ -11,7 +11,7 @@ Internal to the auth module — cross-module callers must import via
 `backend.modules.auth.public`.
 
 Transport contract (the future admin route, E04): `promote_to_admin`
-**does not commit** (D8) — the promotion and its audit row share one
+**does not commit** (D6) — the promotion and its audit row share one
 transaction whose commit the caller owns. The route MUST
 `session.commit()` immediately after a successful call, with no
 intervening logic that could raise: if anything between this service and
@@ -23,11 +23,10 @@ follow the call directly.
 
 from __future__ import annotations
 
-from typing import NoReturn, cast
+from typing import NoReturn
 from uuid import UUID
 
 from sqlalchemy import select, update
-from sqlalchemy.engine.cursor import CursorResult
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -79,7 +78,7 @@ async def promote_to_admin(
 
     Returns the promoted `User` (with `role == ADMIN`). The promotion and
     its `user_promoted` audit row are written in the **same** transaction;
-    this helper does **not** commit (D8) — see the module docstring for
+    this helper does **not** commit (D6) — see the module docstring for
     the transport's commit responsibility.
 
     Raises:
@@ -111,7 +110,7 @@ async def promote_to_admin(
     the role; whether a disabled account should be actionable is the
     route's policy, not this primitive's.
     """
-    # 1 — Actor guard (D11). Load the actor and require an *active admin*.
+    # 1 — Actor guard (D2). Load the actor and require an *active admin*.
     # `log_admin_action` only checks that `by` exists, not its role/state,
     # so this guard is what keeps the audit trail non-forgeable. It runs
     # before any mutation or audit write.
@@ -121,20 +120,18 @@ async def promote_to_admin(
     if actor is None or actor.role != UserRole.ADMIN or actor.disabled_at is not None:
         raise NotAuthorizedError(f"actor {by_admin_id} is not an active admin")
 
-    # 2 — Conditional atomic UPDATE (D12), modelled on `refresh_tokens.rotate()`.
+    # 2 — Conditional atomic UPDATE (D3), modelled on `refresh_tokens.rotate()`.
     # `WHERE role='member'` means a matched row was provably a member, so
-    # `old_role='member'` is exact without a separate read (D13).
+    # `old_role='member'` is exact without a separate read (D3).
     try:
-        update_result = cast(
-            "CursorResult[tuple[UUID]]",
+        row = (
             await session.execute(
                 update(User)
                 .where(User.id == user_id, User.role == UserRole.MEMBER)
                 .values(role=UserRole.ADMIN)
                 .returning(User.id)
-            ),
-        )
-        row = update_result.one_or_none()
+            )
+        ).one_or_none()
     except DBAPIError as exc:
         # SQLSTATE 40001 = serialization_failure: we lost a true concurrent
         # promotion. Postgres aborted this transaction — clear it and
@@ -162,16 +159,19 @@ async def promote_to_admin(
         metadata={"old_role": UserRole.MEMBER.value, "new_role": UserRole.ADMIN.value},
     )
 
-    # 4 — Return the promoted user (D8: no commit). `session.get` may hit a
+    # 4 — Return the promoted user (D8); no commit (D6). `session.get` may hit a
     # stale identity-map snapshot if the caller pre-loaded this row in the
     # same session (the Core UPDATE bypasses the ORM): `refresh` reloads it
     # so `role == ADMIN` reflects the in-transaction UPDATE, not the prior
     # member snapshot.
     promoted = await session.get(User, user_id)
-    if promoted is None:
+    if promoted is None:  # pragma: no cover — unreachable defensive invariant
         # The UPDATE matched this id moments ago in the same transaction;
         # a vanished row is a broken invariant, not a domain outcome. Not
         # an `assert` — `python -O` would strip it from a security path.
+        # Unreachable in practice (REPEATABLE READ isolates us from a
+        # concurrent delete), so it cannot be exercised deterministically;
+        # mocking it would only assert that `raise` raises. Hence the pragma.
         raise RuntimeError(f"invariant violated: user {user_id} vanished after a matched UPDATE")
     await session.refresh(promoted)
     return promoted

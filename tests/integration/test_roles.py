@@ -4,8 +4,13 @@ Drives the role-transition service against a real Postgres so the parts
 that only exist at the DB level actually fire: the conditional
 `UPDATE … RETURNING` atomicity, the same-transaction audit write, the
 actor-snapshot survival across deletion, and — on `committed_engine` —
-the no-commit contract and the concurrent-promotion race (SQLSTATE
-40001 recovery), mirroring `test_refresh_tokens_race.py`.
+the no-commit contract and the two concurrent-promotion race shapes,
+mirroring `test_refresh_tokens_race.py`:
+
+- an `asyncio.Event` pins the deterministic `rowcount=0` path (the loser
+  opens its snapshot after the winner has committed `role='admin'`);
+- an `asyncio.Barrier` pins the true-contention path that surfaces a
+  `SerializationFailure` (SQLSTATE 40001) recovery.
 
 The `auth_schema` / `db_session` tests use per-test rollback isolation;
 the `committed_engine` tests use real commits + independent sessions and
@@ -253,12 +258,16 @@ async def test_promote_does_not_commit(committed_engine: AsyncEngine) -> None:
 
 
 @pytest.mark.usefixtures("_clean_committed_db")
-async def test_promote_concurrent_race_yields_one_success_one_audit(
+async def test_promote_concurrent_race_with_barrier_yields_one_success_one_audit(
     committed_engine: AsyncEngine,
 ) -> None:
-    # Two concurrent promotions of the same member must converge to exactly
-    # one success and one `AlreadyAdminError`, leaving exactly one audit row
-    # (the SQLSTATE 40001 / rowcount=0 recovery in `promote_to_admin`).
+    # True-contention shape: an `asyncio.Barrier` forces both transactions to
+    # open their REPEATABLE READ snapshot first, then issue the UPDATE row
+    # lock simultaneously. Postgres aborts the loser with SerializationFailure
+    # (SQLSTATE 40001), which `promote_to_admin` recovers into
+    # `AlreadyAdminError`. Converges to exactly one success / one
+    # `AlreadyAdminError` / one audit row. The `rowcount=0` sequential path is
+    # pinned separately below via `asyncio.Event`.
     sm = async_sessionmaker(committed_engine, expire_on_commit=False)
     actor_id = await _seed_user(sm, email="admin@example.com", role=UserRole.ADMIN)
     target_id = await _seed_user(sm, email="member@example.com", role=UserRole.MEMBER)
@@ -282,12 +291,73 @@ async def test_promote_concurrent_race_yields_one_success_one_audit(
                 await session.rollback()
                 return f"other:{type(exc).__name__}"
 
-    statuses = sorted(
-        await asyncio.wait_for(asyncio.gather(attempt(), attempt()), timeout=10.0)
-    )
+    statuses = sorted(await asyncio.wait_for(asyncio.gather(attempt(), attempt()), timeout=10.0))
     assert statuses == ["already_admin", "success"], f"unexpected race outcome: {statuses}"
 
     # Final state from an independent session: promoted, with one audit row.
+    async with sm() as session:
+        db_role = (
+            await session.execute(select(User.role).where(User.id == target_id))
+        ).scalar_one()
+        assert db_role == UserRole.ADMIN
+        audit_count = (
+            await session.execute(select(func.count()).select_from(AdminAuditLog))
+        ).scalar_one()
+        assert audit_count == 1
+
+
+@pytest.mark.usefixtures("_clean_committed_db")
+async def test_promote_loser_after_commit_yields_already_admin_one_audit(
+    committed_engine: AsyncEngine,
+) -> None:
+    # Sequential shape: an `asyncio.Event` makes the loser open its REPEATABLE
+    # READ snapshot strictly AFTER the winner has committed `role='admin'`, so
+    # its conditional `UPDATE … WHERE role='member'` matches zero rows and
+    # `_raise_for_unpromotable` re-resolves to `AlreadyAdminError` — the
+    # deterministic `rowcount=0` path, with no SerializationFailure involved
+    # (the barrier test above pins the 40001 contention path). Together the
+    # two tests cover both concurrent-loser branches of `promote_to_admin`.
+    sm = async_sessionmaker(committed_engine, expire_on_commit=False)
+    actor_id = await _seed_user(sm, email="admin@example.com", role=UserRole.ADMIN)
+    target_id = await _seed_user(sm, email="member@example.com", role=UserRole.MEMBER)
+
+    winner_committed = asyncio.Event()
+
+    async def winner() -> str:
+        async with sm() as session:
+            try:
+                await promote_to_admin(session, user_id=target_id, by_admin_id=actor_id)
+                await session.commit()
+                return "success"
+            except Exception as exc:  # noqa: BLE001 — surface, never hang
+                await session.rollback()
+                return f"winner-failed:{type(exc).__name__}"
+            finally:
+                # Unblock the loser even on failure so `gather()` cannot hang.
+                winner_committed.set()
+
+    async def loser() -> str:
+        await winner_committed.wait()
+        async with sm() as session:
+            # First statement opens the snapshot — after the winner's commit,
+            # so the row already reads `role='admin'` and the UPDATE no-ops.
+            try:
+                await promote_to_admin(session, user_id=target_id, by_admin_id=actor_id)
+                await session.commit()
+                return "success"
+            except AlreadyAdminError:
+                await session.rollback()
+                return "already_admin"
+            except Exception as exc:  # noqa: BLE001 — surface unexpected outcomes loudly
+                await session.rollback()
+                return f"other:{type(exc).__name__}"
+
+    statuses = await asyncio.wait_for(asyncio.gather(winner(), loser()), timeout=10.0)
+    # Order is deterministic by construction: winner first, loser second.
+    assert statuses == ["success", "already_admin"], f"unexpected race outcome: {statuses}"
+
+    # Final state from an independent session: promoted, with one audit row
+    # (the loser's no-op wrote nothing).
     async with sm() as session:
         db_role = (
             await session.execute(select(User.role).where(User.id == target_id))

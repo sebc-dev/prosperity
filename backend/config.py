@@ -84,6 +84,19 @@ class Settings(BaseSettings):
         description="Refresh-token lifetime in seconds (30 days — see roadmap E02).",
     )
 
+    # --- Public base URL (S04.4 — invitation accept links) ---
+    # Used to compose the `/accept-invite?token=...` link handed to an
+    # invitee (S04.4). NOT a secret: it is a deployment hostname, so —
+    # unlike JWT_SECRET / DATABASE_URL — there is no prod guard. The dev
+    # default keeps local runs working; override via APP_BASE_URL in prod
+    # so the links the admin transmits actually resolve.
+    app_base_url: str = Field(
+        default="http://localhost:8000",
+        description=(
+            "Public base URL used to build invitation accept links. Override via APP_BASE_URL."
+        ),
+    )
+
     # --- INITIAL_ADMIN_* env-var bootstrap (S03.3 — see roadmap E03) ---
     # Optional escape hatch for automated restore / provisioning: if both
     # `initial_admin_email` and `initial_admin_password_hash` are set at

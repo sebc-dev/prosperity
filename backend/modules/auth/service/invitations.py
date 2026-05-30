@@ -213,6 +213,81 @@ async def revoke(session: AsyncSession, invitation_id: UUID) -> None:
     await session.flush()
 
 
+async def resolve_pending(
+    session: AsyncSession, raw_token: str, *, now: datetime | None = None
+) -> Invitation | None:
+    """Return the *pending* invitation matching `raw_token`, else None.
+
+    Read-only path for `GET /accept-invite`. "Pending" means not accepted,
+    not revoked, and not expired. Returns None for **every** invalid case —
+    unknown, expired, accepted, or revoked — so the route can collapse them
+    all to one uniform 410 (anti-enumeration, ADR 0010: never "expired" vs
+    "unknown"). Lookup is an indexed equality on the sha256 digest
+    (`uq_invitations_token_hash`): the raw token is never compared in clear,
+    so no timing oracle can recover it (256 bits of pre-image make a digest
+    leak useless anyway — the "constant-time" note in the issue is moot
+    here). Does **not** consume the token (no write).
+    """
+    now = now or datetime.now(tz=UTC)
+    return (
+        await session.execute(
+            select(Invitation).where(
+                Invitation.token_hash == hash_invitation_token(raw_token),
+                Invitation.accepted_at.is_(None),
+                Invitation.revoked_at.is_(None),
+                Invitation.expires_at > now,
+            )
+        )
+    ).scalar_one_or_none()
+
+
+async def accept(
+    session: AsyncSession, raw_token: str, *, now: datetime | None = None
+) -> Invitation | None:
+    """Atomically claim a *pending* invitation; return the row or None.
+
+    Write path for `POST /accept-invite`. A single conditional
+    `UPDATE … WHERE <pending> RETURNING` (gabarit `regenerate`/`revoke`)
+    sets `accepted_at = now` iff the row is still pending and unexpired;
+    0 rows matched (unknown/expired/accepted/revoked) ⇒ None ⇒ the route
+    maps to the uniform 410. Does **not** commit nor rollback (D2/D6): the
+    caller creates the `member` user and the audit row in the same
+    transaction, so the claim, the user, and the log live or die together.
+
+    Concurrency: two simultaneous claims serialise on this single row. The
+    *sequential* loser sees the row already accepted → 0 rows → None. The
+    loser of a *true* race is aborted with `SerializationFailure` (SQLSTATE
+    40001) under REPEATABLE READ; like `regenerate`/`revoke`, `accept` lets
+    it **bubble** rather than catching it — the route's `DBAPIError`
+    backstop (mirror of `/setup`) maps it to the **same** uniform 410. No
+    transactional manipulation happens inside this helper (ADR 0015: the
+    transaction boundary stays with `get_db`).
+    """
+    now = now or datetime.now(tz=UTC)
+    row = (
+        (
+            await session.execute(
+                update(Invitation)
+                .where(
+                    Invitation.token_hash == hash_invitation_token(raw_token),
+                    Invitation.accepted_at.is_(None),
+                    Invitation.revoked_at.is_(None),
+                    Invitation.expires_at > now,
+                )
+                .values(accepted_at=now)
+                .returning(Invitation)
+                .execution_options(populate_existing=True)
+            )
+        )
+        .scalars()
+        .one_or_none()
+    )
+    if row is None:
+        return None
+    await session.flush()
+    return row
+
+
 async def _raise_for_non_pending(
     session: AsyncSession, invitation_id: UUID, *, revoke_idempotent: bool = False
 ) -> None:

@@ -58,8 +58,7 @@ _FORBIDDEN_METADATA_KEY_SUBSTRINGS = (
     "secret",
     "token",
     "hash",
-    "totp",
-    "otp",
+    "otp",  # also covers `totp`
     "recovery",
     "jwt",
     "bearer",
@@ -80,7 +79,10 @@ def _reject_secret_metadata_keys(metadata: dict[str, Any] | None) -> None:
         current = stack.pop()
         if isinstance(current, dict):
             for key, value in current.items():
-                lowered = key.lower()
+                # `str(...)` guards against non-string keys (JSONB requires
+                # string keys, but a caller dict may not) — a clear rejection
+                # beats an opaque AttributeError on `.lower()`.
+                lowered = str(key).lower()
                 if any(needle in lowered for needle in _FORBIDDEN_METADATA_KEY_SUBSTRINGS):
                     raise ForbiddenAuditMetadataError(
                         f"metadata key {key!r} looks like a secret and must not be "
@@ -101,11 +103,12 @@ async def log_admin_action(
 ) -> AdminAuditLog:
     """Append one `AdminAuditLog` row and return it (with its `id`).
 
-    Does **not** commit. `session.flush()` is called so the FK on `by`
-    (and any NOT NULL violation) surfaces as `IntegrityError` here rather
-    than at the outer commit, and so the generated `id` is available on
-    return. The caller owns the transaction: the admin action and its
-    audit row must commit together.
+    Does **not** commit. `session.flush()` is called so the generated
+    `id` is available on return; the caller owns the transaction so the
+    admin action and its audit row commit together. The FKs on `by` and
+    `target` remain as a final backstop, but an unresolved identity is
+    already rejected before the flush (see below), so it never surfaces
+    here as an opaque `IntegrityError`.
 
     `action` is coerced through `AdminAction(action)` so a string outside
     the catalogue is rejected at runtime (the type hint alone is not

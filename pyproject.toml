@@ -45,6 +45,9 @@ asyncio_mode = "auto"
 # loop" errors from asyncpg resources created on the fixture's session loop.
 asyncio_default_test_loop_scope = "session"
 asyncio_default_fixture_loop_scope = "session"
+markers = [
+    "e2e: black-box HTTP user-journey tests (committed_client + real Postgres)",
+]
 
 [tool.coverage.run]
 source = ["backend"]

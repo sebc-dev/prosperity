@@ -288,6 +288,11 @@ class AdminAuditLog(Base):
         # admin do, latest first"); a composite beats an `action`-only
         # index (cardinality 7, poorly selective).
         Index("ix_admin_audit_logs_actor_user_id_created_at", "actor_user_id", "created_at"),
+        # `target_user_id` is an unindexed FK otherwise: Postgres seq-scans
+        # this ever-growing table on every `users` delete to apply
+        # `ON DELETE SET NULL` (and takes a wider lock). The index also
+        # serves the symmetric query "what happened *to* this user".
+        Index("ix_admin_audit_logs_target_user_id", "target_user_id"),
     )
 
 

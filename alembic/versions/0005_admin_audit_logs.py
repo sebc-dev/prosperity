@@ -116,6 +116,15 @@ def upgrade() -> None:
         ["actor_user_id", "created_at"],
         unique=False,
     )
+    # Index the second FK too: without it Postgres seq-scans this
+    # append-only table on every `users` delete to apply `ON DELETE SET
+    # NULL`, and the scan worsens as the trail grows.
+    op.create_index(
+        op.f("ix_admin_audit_logs_target_user_id"),
+        "admin_audit_logs",
+        ["target_user_id"],
+        unique=False,
+    )
     op.execute(_REJECT_MUTATION_FUNCTION)
     op.execute(_REJECT_DELETE_TRIGGER)
     op.execute(_REJECT_CONTENT_UPDATE_TRIGGER)
@@ -124,6 +133,10 @@ def upgrade() -> None:
 def downgrade() -> None:
     # Dropping the table drops its trigger; the standalone function must
     # go explicitly.
+    op.drop_index(
+        op.f("ix_admin_audit_logs_target_user_id"),
+        table_name="admin_audit_logs",
+    )
     op.drop_index(
         op.f("ix_admin_audit_logs_actor_user_id_created_at"),
         table_name="admin_audit_logs",

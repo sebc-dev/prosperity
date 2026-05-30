@@ -12,6 +12,7 @@ table admin_audit_logs
   col target_user_id: UUID NULL
   pk pk_admin_audit_logs(id)
   idx ix_admin_audit_logs_actor_user_id_created_at INDEX: actor_user_id, created_at
+  idx ix_admin_audit_logs_target_user_id INDEX: target_user_id
 
 table alembic_version
   col version_num: VARCHAR(32) NOT NULL

@@ -20,9 +20,11 @@ The current consumers cross-module are:
   surface uniform.
 - admin-action callers (E04 invitations/promotions, E05+ user
   lifecycle) — `log_admin_action` writes the server-only audit trail and
-  `AdminAction` is its action catalogue (S04.2). The `AdminAuditLog`
-  model stays intra-auth: the audit row is only ever written through the
-  helper, never constructed by peers.
+  `AdminAction` is its action catalogue (S04.2), plus the errors it can
+  raise at the call site (`UnknownAuditUserError`,
+  `ForbiddenAuditMetadataError`). The `AdminAuditLog` model stays
+  intra-auth: the audit row is only ever written through the helper,
+  never constructed by peers.
 
 `RefreshToken` and the shared `password_hasher` factory deliberately
 stay intra-auth: hashing is encapsulated by `create_user` and
@@ -34,7 +36,11 @@ from __future__ import annotations
 from backend.modules.auth.domain import AdminAction
 from backend.modules.auth.models import User, UserRole
 from backend.modules.auth.schemas import TokenPair, sanitize_device_label
-from backend.modules.auth.service.audit import log_admin_action
+from backend.modules.auth.service.audit import (
+    ForbiddenAuditMetadataError,
+    UnknownAuditUserError,
+    log_admin_action,
+)
 from backend.modules.auth.service.jwt import (
     ExpiredTokenError,
     InvalidTokenError,
@@ -56,8 +62,10 @@ from backend.modules.auth.transports.dependencies import (
 __all__ = [
     "AdminAction",
     "ExpiredTokenError",
+    "ForbiddenAuditMetadataError",
     "InvalidTokenError",
     "TokenPair",
+    "UnknownAuditUserError",
     "User",
     "UserRole",
     "any_user_exists",

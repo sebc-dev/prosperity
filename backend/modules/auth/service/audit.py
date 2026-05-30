@@ -26,6 +26,71 @@ from backend.modules.auth.domain import AdminAction
 from backend.modules.auth.models import AdminAuditLog, User
 
 
+class UnknownAuditUserError(Exception):
+    """`by` (or a non-null `target`) does not resolve to a `users` row.
+
+    Raised by `log_admin_action` *before* the flush so a privileged action
+    can never be recorded against an unresolved identity. The FK would also
+    reject the row, but only at flush time, as an opaque `IntegrityError`,
+    and — for `by` — only because the snapshot columns would already be
+    blank: a defence-in-depth check above the FK keeps a half-anonymous
+    audit row from ever being built.
+    """
+
+
+class ForbiddenAuditMetadataError(Exception):
+    """`metadata` carries a key whose name signals a secret/credential.
+
+    The audit trail must never store passwords/hashes, invitation or
+    refresh/JWT tokens, or TOTP/recovery secrets (see `log_admin_action`).
+    This is enforced at the single write path rather than left to caller
+    discipline — a guard-rail, not a guarantee (it matches by key name, so
+    it stops accidental leakage, not a caller who mislabels the key).
+    """
+
+
+# Case-insensitive substring blacklist for `metadata` keys. Substrings (not
+# exact names) so `password_hash`, `totp_secret`, `refresh_token`,
+# `invitation_token`, `recovery_code`... are all caught.
+_FORBIDDEN_METADATA_KEY_SUBSTRINGS = (
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "hash",
+    "totp",
+    "otp",
+    "recovery",
+    "jwt",
+    "bearer",
+    "credential",
+)
+
+
+def _reject_secret_metadata_keys(metadata: dict[str, Any] | None) -> None:
+    """Raise `ForbiddenAuditMetadataError` if any key looks like a secret.
+
+    Walks nested dicts and lists so a secret buried in
+    `{"ctx": {"refresh_token": ...}}` is caught too.
+    """
+    if metadata is None:
+        return
+    stack: list[Any] = [metadata]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, dict):
+            for key, value in current.items():
+                lowered = key.lower()
+                if any(needle in lowered for needle in _FORBIDDEN_METADATA_KEY_SUBSTRINGS):
+                    raise ForbiddenAuditMetadataError(
+                        f"metadata key {key!r} looks like a secret and must not be "
+                        "stored in the audit trail"
+                    )
+                stack.append(value)
+        elif isinstance(current, list):
+            stack.extend(current)
+
+
 async def log_admin_action(
     session: AsyncSession,
     *,
@@ -52,25 +117,40 @@ async def log_admin_action(
     the row. Because `ON DELETE SET NULL` later nulls the FKs when an
     account is deleted, this snapshot is the only thing that keeps the
     trail meaningful — so it must not depend on each caller remembering to
-    pass it (see `AdminAuditLog` docstring). An unknown `by` finds no
-    actor and the FK then raises `IntegrityError` at the flush below.
+    pass it (see `AdminAuditLog` docstring). An unresolved `by` (or a
+    non-null `target` that resolves to nothing) raises
+    `UnknownAuditUserError` *before* the flush, so a log can never be born
+    against an unknown identity (defence in depth above the FK).
 
     **Never log secrets in `metadata`.** The column is free-form JSONB by
     design, but callers MUST NOT store passwords or hashes, invitation
     tokens, TOTP/recovery secrets, or JWT/refresh tokens. Prefer
     identifiers (`invitation_id`, `target_user_id`) over sensitive values.
-    This is critical for `TWOFA_RESET_VIA_DB` (ADR 0013).
+    This is critical for `TWOFA_RESET_VIA_DB` (ADR 0013). A key-name
+    blacklist rejects the obvious offenders with `ForbiddenAuditMetadataError`,
+    but it is a guard-rail, not a substitute for caller discipline.
     """
+    # Coerce first: an out-of-catalogue string is a caller bug, reject it
+    # before touching the DB. `metadata` is screened next so a secret never
+    # reaches the row even in memory.
+    action = AdminAction(action)
+    _reject_secret_metadata_keys(metadata)
+
     actor = await session.get(User, by)
+    if actor is None:
+        raise UnknownAuditUserError(f"audit actor {by} does not exist")
     target_user = await session.get(User, target) if target is not None else None
+    if target is not None and target_user is None:
+        raise UnknownAuditUserError(f"audit target {target} does not exist")
+
     record = AdminAuditLog(
-        action=AdminAction(action),
+        action=action,
         actor_user_id=by,
-        actor_email=actor.email if actor is not None else None,
+        actor_email=actor.email,
         # `UserRole` is a `StrEnum`, so it formats to its bare value
         # ("admin"/"member") here whether the attribute holds the enum
         # member or the equivalent raw string the ORM has not yet coerced.
-        actor_label=f"{actor.email} ({actor.role})" if actor is not None else None,
+        actor_label=f"{actor.email} ({actor.role})",
         target_user_id=target,
         target_email=target_user.email if target_user is not None else None,
         event_metadata=metadata,

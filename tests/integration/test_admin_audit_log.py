@@ -26,12 +26,16 @@ from uuid import UUID
 
 import pytest
 from sqlalchemy import delete, select, text, update
-from sqlalchemy.exc import DBAPIError, IntegrityError
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.auth.domain import AdminAction, UserRole
 from backend.modules.auth.models import AdminAuditLog, User
-from backend.modules.auth.service.audit import log_admin_action
+from backend.modules.auth.service.audit import (
+    ForbiddenAuditMetadataError,
+    UnknownAuditUserError,
+    log_admin_action,
+)
 
 UserMaker = Callable[..., Awaitable[User]]
 
@@ -152,10 +156,23 @@ async def test_log_admin_action_allows_null_target_and_metadata(
         action=AdminAction.TWOFA_RESET_VIA_DB,
         by=actor.id,
     )
+    log_id = log.id
 
     assert log.target_user_id is None
     assert log.target_email is None
     assert log.event_metadata is None
+
+    # `TWOFA_RESET_VIA_DB` is the one catalogue member whose name differs
+    # from its value (`"2fa_reset_via_db"`, an illegal Python identifier).
+    # Read the raw column back to prove the StrEnum persists as its *value*,
+    # not its member name, through the `String` column.
+    auth_schema.expire_all()
+    raw_action = (
+        await auth_schema.execute(
+            text("SELECT action FROM admin_audit_logs WHERE id = :id"), {"id": log_id}
+        )
+    ).scalar_one()
+    assert raw_action == "2fa_reset_via_db"
 
 
 async def test_log_admin_action_fills_created_at_from_server_default(
@@ -246,15 +263,89 @@ async def test_log_admin_action_does_not_commit(
     assert remaining == []
 
 
-async def test_log_admin_action_unknown_actor_violates_fk(
+async def test_log_admin_action_unknown_actor_raises_before_flush(
     auth_schema: AsyncSession,
 ) -> None:
-    with pytest.raises(IntegrityError):
+    # An unresolved actor is rejected by the helper *before* the flush, as
+    # a clear `UnknownAuditUserError` rather than an opaque FK
+    # `IntegrityError` — and crucially before a half-anonymous row (FK set,
+    # snapshot blank) is ever built.
+    with pytest.raises(UnknownAuditUserError):
         await log_admin_action(
             auth_schema,
             action=AdminAction.USER_PROMOTED,
             by=UUID(int=0),
         )
+    # Nothing was added to the session.
+    assert (await auth_schema.execute(select(AdminAuditLog))).all() == []
+
+
+async def test_log_admin_action_unknown_target_raises_before_flush(
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    actor = await bound_user_factory(email="admin@example.com")
+
+    # A non-null `target` that resolves to nothing is rejected symmetrically
+    # with the actor — the FK would also reject it, but only at flush and
+    # without a clear cause.
+    with pytest.raises(UnknownAuditUserError):
+        await log_admin_action(
+            auth_schema,
+            action=AdminAction.USER_DISABLED,
+            by=actor.id,
+            target=UUID(int=0),
+        )
+    assert (await auth_schema.execute(select(AdminAuditLog))).all() == []
+
+
+async def test_log_admin_action_rejects_out_of_catalogue_action(
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+) -> None:
+    actor = await bound_user_factory(email="admin@example.com")
+
+    # The `action` arg is typed `AdminAction`, but the type hint is not
+    # enforced at runtime — `log_admin_action` coerces through
+    # `AdminAction(...)` so a raw string outside the catalogue is rejected
+    # at the call site, keeping the `text` column and the enum in lockstep.
+    with pytest.raises(ValueError):
+        await log_admin_action(
+            auth_schema,
+            action="not_a_real_action",  # type: ignore[arg-type]
+            by=actor.id,
+        )
+    assert (await auth_schema.execute(select(AdminAuditLog))).all() == []
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"password": "hunter2"},
+        {"refresh_token": "abc"},
+        {"totp_secret": "JBSWY3DPEHPK3PXP"},
+        {"recovery_code": "1234"},
+        {"ctx": {"nested": {"jwt": "ey..."}}},
+        {"items": [{"api_token": "t"}]},
+    ],
+)
+async def test_log_admin_action_rejects_secret_metadata_keys(
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+    metadata: dict,
+) -> None:
+    actor = await bound_user_factory(email="admin@example.com")
+
+    # Defence in depth: the never-log discipline is enforced at the single
+    # write path, including secrets buried in nested dicts/lists.
+    with pytest.raises(ForbiddenAuditMetadataError):
+        await log_admin_action(
+            auth_schema,
+            action=AdminAction.TWOFA_RESET_VIA_DB,
+            by=actor.id,
+            metadata=metadata,
+        )
+    assert (await auth_schema.execute(select(AdminAuditLog))).all() == []
 
 
 async def test_admin_audit_logs_rejects_update(

@@ -13,8 +13,10 @@ from backend.modules.auth.models import User as _user_model
 from backend.modules.auth.public import (
     AdminAction,
     ExpiredTokenError,
+    ForbiddenAuditMetadataError,
     InvalidTokenError,
     TokenPair,
+    UnknownAuditUserError,
     User,
     UserRole,
     any_user_exists,
@@ -47,8 +49,10 @@ def test_public_exports_exact_set() -> None:
     assert sorted(auth_public.__all__) == [
         "AdminAction",
         "ExpiredTokenError",
+        "ForbiddenAuditMetadataError",
         "InvalidTokenError",
         "TokenPair",
+        "UnknownAuditUserError",
         "User",
         "UserRole",
         "any_user_exists",
@@ -85,6 +89,8 @@ def test_public_symbols_are_callable_or_exceptions() -> None:
     assert callable(log_admin_action)
     assert issubclass(InvalidTokenError, Exception)
     assert issubclass(ExpiredTokenError, InvalidTokenError)
+    assert issubclass(UnknownAuditUserError, Exception)
+    assert issubclass(ForbiddenAuditMetadataError, Exception)
     assert isinstance(User, type)
     assert isinstance(UserRole, type)
     assert isinstance(AdminAction, type)
@@ -108,6 +114,8 @@ def test_public_names_are_identical_objects_to_internals() -> None:
     assert auth_public.UserRole is _user_role_enum
     assert auth_public.AdminAction is _admin_action_enum
     assert auth_public.log_admin_action is _audit_service.log_admin_action
+    assert auth_public.UnknownAuditUserError is _audit_service.UnknownAuditUserError
+    assert auth_public.ForbiddenAuditMetadataError is _audit_service.ForbiddenAuditMetadataError
     assert auth_public.get_current_user is _deps.get_current_user
     assert auth_public.require_admin is _deps.require_admin
     assert auth_public.require_member is _deps.require_member

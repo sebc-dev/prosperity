@@ -18,7 +18,7 @@ Internal to the auth module — cross-module callers must import via
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -78,7 +78,7 @@ def _reject_secret_metadata_keys(metadata: dict[str, Any] | None) -> None:
     while stack:
         current = stack.pop()
         if isinstance(current, dict):
-            for key, value in current.items():
+            for key, value in cast("dict[Any, Any]", current).items():
                 # `str(...)` guards against non-string keys (JSONB requires
                 # string keys, but a caller dict may not) — a clear rejection
                 # beats an opaque AttributeError on `.lower()`.
@@ -90,7 +90,7 @@ def _reject_secret_metadata_keys(metadata: dict[str, Any] | None) -> None:
                     )
                 stack.append(value)
         elif isinstance(current, list):
-            stack.extend(current)
+            stack.extend(cast("list[Any]", current))
 
 
 async def log_admin_action(

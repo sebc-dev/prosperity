@@ -332,7 +332,7 @@ async def test_log_admin_action_rejects_out_of_catalogue_action(
 async def test_log_admin_action_rejects_secret_metadata_keys(
     auth_schema: AsyncSession,
     bound_user_factory: UserMaker,
-    metadata: dict,
+    metadata: dict[str, object],
 ) -> None:
     actor = await bound_user_factory(email="admin@example.com")
 

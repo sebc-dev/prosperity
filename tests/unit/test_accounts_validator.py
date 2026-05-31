@@ -26,7 +26,9 @@ from backend.modules.accounts.domain import (
     AccountValidationError,
     AccountValidator,
     CurrencyMismatchError,
+    DuplicateMemberError,
     MemberShare,
+    NonPositiveShareRatioError,
     OwnershipShapeError,
     ShareRatioSumError,
     TooFewMembersError,
@@ -206,6 +208,80 @@ def test_share_ratio_sum_is_exact_decimal_no_tolerance() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Per-ratio positivity rule (each quote-part strictly > 0)
+# ---------------------------------------------------------------------------
+
+
+def test_rejects_negative_ratio() -> None:
+    with pytest.raises(NonPositiveShareRatioError):
+        AccountValidator.validate(
+            currency=_BASE,
+            household_base_currency=_BASE,
+            owner_id=None,
+            members=_members("0.7000", "-0.2000"),
+        )
+
+
+def test_rejects_zero_ratio() -> None:
+    # A zero quote-part is meaningless even when the others sum the rest to 1.
+    with pytest.raises(NonPositiveShareRatioError):
+        AccountValidator.validate(
+            currency=_BASE,
+            household_base_currency=_BASE,
+            owner_id=None,
+            members=_members("1.0000", "0.0000"),
+        )
+
+
+def test_positivity_checked_before_sum() -> None:
+    # [1.5, -0.5] sums *exactly* to 1.0000, so only the positivity rule can
+    # reject it — pins positivity-before-sum and proves the Σ check alone is
+    # insufficient (Numeric(5, 4) is signed).
+    with pytest.raises(NonPositiveShareRatioError):
+        AccountValidator.validate(
+            currency=_BASE,
+            household_base_currency=_BASE,
+            owner_id=None,
+            members=_members("1.5000", "-0.5000"),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Duplicate-member rule (a user cannot be listed twice)
+# ---------------------------------------------------------------------------
+
+
+def test_rejects_duplicate_member() -> None:
+    dup = uuid4()
+    with pytest.raises(DuplicateMemberError):
+        AccountValidator.validate(
+            currency=_BASE,
+            household_base_currency=_BASE,
+            owner_id=None,
+            members=[
+                MemberShare(user_id=dup, ratio=Decimal("0.5000")),
+                MemberShare(user_id=dup, ratio=Decimal("0.5000")),
+            ],
+        )
+
+
+def test_duplicate_checked_before_ratios() -> None:
+    # Duplicate members whose ratios would also be invalid: the duplicate rule
+    # fires first (before positivity / sum). Pins the rule order.
+    dup = uuid4()
+    with pytest.raises(DuplicateMemberError):
+        AccountValidator.validate(
+            currency=_BASE,
+            household_base_currency=_BASE,
+            owner_id=None,
+            members=[
+                MemberShare(user_id=dup, ratio=Decimal("0.3000")),
+                MemberShare(user_id=dup, ratio=Decimal("0.3000")),
+            ],
+        )
+
+
+# ---------------------------------------------------------------------------
 # Error taxonomy
 # ---------------------------------------------------------------------------
 
@@ -218,6 +294,8 @@ def test_all_leaf_errors_subclass_base() -> None:
         OwnershipShapeError,
         TooFewMembersError,
         ShareRatioSumError,
+        NonPositiveShareRatioError,
+        DuplicateMemberError,
     ):
         assert issubclass(leaf, AccountValidationError)
 

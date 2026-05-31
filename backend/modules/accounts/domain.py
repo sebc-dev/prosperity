@@ -76,6 +76,14 @@ class ShareRatioSumError(AccountValidationError):
     """Σ default_share_ratio != Decimal('1.0000') (exact, no float tolerance)."""
 
 
+class NonPositiveShareRatioError(AccountValidationError):
+    """A member's default_share_ratio is <= 0 — a quote-part must be strictly positive."""
+
+
+class DuplicateMemberError(AccountValidationError):
+    """The same user appears more than once in a shared account's members."""
+
+
 @dataclass(frozen=True, slots=True)
 class MemberShare:
     """A prospective membership of a shared account: a user + their quote-part.
@@ -99,7 +107,8 @@ class AccountValidator:
     centralised, fully property-testable rule.
 
     Rule order is part of the contract: currency, then ownership shape, then —
-    only once the shared form is confirmed — the share-ratio sum.
+    only once the shared form is confirmed — no duplicate member, each ratio
+    strictly positive, then the share-ratio sum.
     """
 
     @classmethod
@@ -114,6 +123,7 @@ class AccountValidator:
         cls._check_currency(currency, household_base_currency)
         cls._check_ownership_shape(owner_id, members)
         if owner_id is None:  # shared form confirmed by the shape check
+            cls._check_no_duplicate_members(members)
             cls._check_share_ratios(members)
 
     @staticmethod
@@ -137,7 +147,20 @@ class AccountValidator:
             )
 
     @staticmethod
+    def _check_no_duplicate_members(members: Sequence[MemberShare]) -> None:
+        if len({m.user_id for m in members}) != len(members):
+            raise DuplicateMemberError("a user cannot be listed twice in a shared account")
+
+    @staticmethod
     def _check_share_ratios(members: Sequence[MemberShare]) -> None:
+        # Each quote-part must be strictly positive *before* the sum is checked:
+        # `Numeric(5, 4)` is signed, so a negative/zero ratio (e.g. [1.5000,
+        # -0.5000]) would otherwise sum to 1.0000 and pass — a broken ownership
+        # invariant the Σ rule alone cannot catch. Defense-in-depth alongside the
+        # Pydantic `gt=0/lt=1` bounds landing at the S05.3 route boundary.
+        for m in members:
+            if m.ratio <= 0:
+                raise NonPositiveShareRatioError(f"default_share_ratio must be > 0, got {m.ratio}")
         total = sum((m.ratio for m in members), start=Decimal("0"))
         if total != _SHARE_RATIO_TOTAL:
             raise ShareRatioSumError(

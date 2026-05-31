@@ -38,13 +38,17 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from backend.modules.accounts.domain import (
     AccountType,
     CurrencyMismatchError,
+    DuplicateMemberError,
     MemberShare,
     ShareRatioSumError,
     TooFewMembersError,
 )
 from backend.modules.accounts.models import Account, AccountMember, Household
 from backend.modules.accounts.service.accounts import create_personal, create_shared
-from backend.modules.accounts.service.household import invalidate_household_cache
+from backend.modules.accounts.service.household import (
+    HouseholdNotInitializedError,
+    invalidate_household_cache,
+)
 from backend.modules.auth.models import User, UserRole
 
 UserMaker = Callable[..., Awaitable[User]]
@@ -275,6 +279,49 @@ async def test_create_shared_rejects_single_member(auth_schema: AsyncSession) ->
 
     assert await _count(auth_schema, Account) == 0
     assert await _count(auth_schema, AccountMember) == 0
+
+
+async def test_create_shared_rejects_duplicate_member_before_write(
+    auth_schema: AsyncSession, bound_user_factory: UserMaker
+) -> None:
+    # The same user listed twice (ratios summing to 1) is rejected by the pure
+    # validator *before* any write — a clean DuplicateMemberError (422 family),
+    # not the raw IntegrityError the unique constraint would raise at flush.
+    await _seed_initialized_household(auth_schema)
+    u1 = await bound_user_factory(email="dup@example.com")
+    members = [
+        MemberShare(user_id=u1.id, ratio=Decimal("0.5000")),
+        MemberShare(user_id=u1.id, ratio=Decimal("0.5000")),
+    ]
+
+    with pytest.raises(DuplicateMemberError):
+        await create_shared(
+            auth_schema,
+            members=members,
+            name="Doublon",
+            type=AccountType.COURANT,
+            currency="EUR",
+        )
+
+    assert await _count(auth_schema, Account) == 0
+    assert await _count(auth_schema, AccountMember) == 0
+
+
+async def test_create_personal_raises_when_household_not_initialized(
+    household_singleton: AsyncSession,
+) -> None:
+    # `household_singleton` seeds the row WITHOUT `initialized_at` (NULL);
+    # `get_household` treats that as "not set up" and raises before any write.
+    with pytest.raises(HouseholdNotInitializedError):
+        await create_personal(
+            household_singleton,
+            owner_id=uuid.uuid4(),
+            name="PasDeSetup",
+            type=AccountType.COURANT,
+            currency="EUR",
+        )
+
+    assert await _count(household_singleton, Account) == 0
 
 
 # ---------------------------------------------------------------------------

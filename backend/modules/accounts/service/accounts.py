@@ -52,7 +52,13 @@ async def create_personal(
         owner_id=owner_id,
         members=(),
     )
-    account = Account(name=name, type=type, currency=currency, owner_id=owner_id)
+    account = Account(
+        household_id=household.id,
+        name=name,
+        type=type,
+        currency=currency,
+        owner_id=owner_id,
+    )
     session.add(account)
     await session.flush()  # surface PK here; no commit (get_db owns it, ADR 0015)
     return account
@@ -82,7 +88,13 @@ async def create_shared(
         owner_id=None,
         members=members,
     )
-    account = Account(name=name, type=type, currency=currency, owner_id=None)
+    account = Account(
+        household_id=household.id,
+        name=name,
+        type=type,
+        currency=currency,
+        owner_id=None,
+    )
     session.add(account)
     await session.flush()  # assign account.id for the members' FK (same transaction)
     session.add_all(

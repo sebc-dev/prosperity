@@ -1,4 +1,27 @@
+enum account_type: courant, livret, epargne, especes, credit
 enum user_role: admin, member
+
+table account_members
+  col account_id: UUID NOT NULL
+  col default_share_ratio: NUMERIC(5, 4) NOT NULL
+  col id: UUID NOT NULL
+  col joined_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col user_id: UUID NOT NULL
+  pk pk_account_members(id)
+  idx ix_account_members_user_id INDEX: user_id
+  idx uq_account_members_account_id_user_id UNIQUE: account_id, user_id
+
+table accounts
+  col archived_at: TIMESTAMP WITH TIME ZONE NULL
+  col created_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col currency: VARCHAR(3) NOT NULL
+  col household_id: UUID NOT NULL
+  col id: UUID NOT NULL
+  col name: VARCHAR(120) NOT NULL
+  col owner_id: UUID NULL
+  col type: account_type NOT NULL
+  pk pk_accounts(id)
+  idx ix_accounts_owner_id INDEX: owner_id
 
 table admin_audit_logs
   col action: VARCHAR NOT NULL

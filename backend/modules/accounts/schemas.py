@@ -112,6 +112,19 @@ class AccountCreateShared(BaseModel):
     )
 
 
+class AccountUpdate(BaseModel):
+    """`PATCH /accounts/{id}`: `name` only — `currency`/`type` frozen (D6).
+
+    `extra="forbid"` turns any `currency`/`type` in the body into a 422
+    rather than a silent no-op: unlike the server-derived `owner_id` (D3),
+    these are real columns a client might believe are editable, so a loud
+    rejection teaches the contract.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=_NAME_MIN, max_length=_NAME_MAX)
+
+
 class AccountResponse(BaseModel):
     """Flat account view (D9). The members list is exposed in S05.4.
 

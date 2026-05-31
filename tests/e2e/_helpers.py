@@ -74,6 +74,23 @@ async def create_invitation(client: AsyncClient, admin_access: str, email: str) 
     return resp.json()
 
 
+async def onboard_member(client: AsyncClient, admin_access: str, email: str, password: str) -> str:
+    """invitation → accept → the member's access token (Parcours 1, condensed).
+
+    Reuses the golden onboarding path so an accounts journey can stand up a
+    second authenticated user without re-asserting the per-step invitation
+    contracts (already covered by `test_onboarding_multi_user`). Returns the
+    member's access token.
+    """
+    inv = await create_invitation(client, admin_access, email)
+    accept = await client.post(
+        "/accept-invite",
+        json={"token": inv["token"], "password": password, "display_name": email.split("@", 1)[0]},
+    )
+    assert accept.status_code == 200, accept.text
+    return accept.json()["access_token"]
+
+
 async def fetch_audit_rows(
     sessionmaker: async_sessionmaker[AsyncSession],
 ) -> list[tuple[str, object, object]]:

@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.exc import DBAPIError, IntegrityError
@@ -42,12 +43,16 @@ from backend.modules.accounts.schemas import (
     AccountCreatePersonal,
     AccountCreateShared,
     AccountResponse,
+    AccountUpdate,
     SetupRequest,
 )
 from backend.modules.accounts.service.accounts import (
+    archive,
     create_personal,
     create_shared,
+    get_accessible,
     list_accessible,
+    rename,
 )
 from backend.modules.accounts.service.setup import (
     initialize_bootstrap,
@@ -222,6 +227,10 @@ accounts_router = APIRouter(prefix="/accounts", tags=["accounts"])
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
 
+# Uniform 404 body shared by GET/PATCH/DELETE on `{id}` — the same string for
+# "doesn't exist" and "exists but not yours", so no path is an existence
+# oracle (D4 non-disclosure).
+_NOT_FOUND_DETAIL = "Account not found."
 # 422 body when a shared account lists a `user_id` with no matching user row
 # (FK 23503). Generic on purpose — it does not echo the offending id.
 _UNKNOWN_MEMBER_DETAIL = "A referenced member does not exist."
@@ -338,3 +347,55 @@ async def list_accounts(
     user's personal account here.
     """
     return await list_accessible(session, user_id=user.id)
+
+
+@accounts_router.get("/{account_id}", response_model=AccountResponse)
+async def get_account(
+    account_id: UUID,
+    user: CurrentUser,
+    session: SessionDep,
+) -> Account:
+    """Fetch one account by id; 404 (not 403) if inaccessible/archived/unknown.
+
+    The uniform 404 (admin included) keeps an account's existence from leaking
+    to a non-member (D4).
+    """
+    account = await get_accessible(session, account_id=account_id, user_id=user.id)
+    if account is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL)
+    return account
+
+
+@accounts_router.patch("/{account_id}", response_model=AccountResponse)
+async def patch_account(
+    account_id: UUID,
+    body: AccountUpdate,
+    user: CurrentUser,
+    session: SessionDep,
+) -> Account:
+    """Edit an account's `name` only; `currency`/`type` are frozen (D6).
+
+    A body carrying `currency`/`type` is a 422 (`extra="forbid"` on the
+    schema). An inaccessible/archived/unknown account is the uniform 404 (D4).
+    """
+    account = await rename(session, account_id=account_id, user_id=user.id, name=body.name)
+    if account is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL)
+    return account
+
+
+@accounts_router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_account(
+    account_id: UUID,
+    user: CurrentUser,
+    session: SessionDep,
+) -> Response:
+    """Soft-delete an account (set `archived_at`); 204 on success, else 404.
+
+    Never a hard delete — the row stays in the DB and drops out of every
+    accessible read. A second delete (already archived) → 404, same as an
+    inaccessible/unknown account (D7/D4 non-disclosure).
+    """
+    if not await archive(session, account_id=account_id, user_id=user.id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

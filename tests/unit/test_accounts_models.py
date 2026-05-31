@@ -79,9 +79,7 @@ def _fk_to(table: Table, referred_table: str) -> ForeignKey:
     # than `fk.column`: the unit tier imports only `accounts.models`, so the
     # `users` table is absent from the metadata and column resolution raises.
     return next(
-        fk
-        for fk in table.foreign_keys
-        if fk.target_fullname.split(".")[0] == referred_table
+        fk for fk in table.foreign_keys if fk.target_fullname.split(".")[0] == referred_table
     )
 
 
@@ -154,8 +152,7 @@ def test_account_member_unique_constraint() -> None:
     uc = next(
         c
         for c in table.constraints
-        if isinstance(c, UniqueConstraint)
-        and c.name == "uq_account_members_account_id_user_id"
+        if isinstance(c, UniqueConstraint) and c.name == "uq_account_members_account_id_user_id"
     )
     assert list(uc.columns.keys()) == ["account_id", "user_id"]
 
@@ -163,8 +160,7 @@ def test_account_member_unique_constraint() -> None:
 def test_account_member_user_id_indexed() -> None:
     table = cast(Table, AccountMember.__table__)
     assert any(
-        isinstance(idx, Index) and idx.name == "ix_account_members_user_id"
-        for idx in table.indexes
+        isinstance(idx, Index) and idx.name == "ix_account_members_user_id" for idx in table.indexes
     )
 
 

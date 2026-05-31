@@ -43,6 +43,7 @@ def _account_type_values(enum_cls: type[AccountType]) -> list[str]:
     # `_user_role_values`).
     return [member.value for member in enum_cls]
 
+
 # Fixed singleton identifier (ADR 0010). Hard-coded everywhere — no DB
 # lookup. Re-exported via `accounts.public.HOUSEHOLD_ID`.
 HOUSEHOLD_SINGLETON_UUID: Final[uuid.UUID] = uuid.UUID("00000000-0000-0000-0000-000000000001")

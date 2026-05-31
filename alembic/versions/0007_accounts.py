@@ -84,9 +84,7 @@ def upgrade() -> None:
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("account_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("user_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column(
-            "default_share_ratio", sa.Numeric(precision=5, scale=4), nullable=False
-        ),
+        sa.Column("default_share_ratio", sa.Numeric(precision=5, scale=4), nullable=False),
         sa.Column(
             "joined_at",
             sa.DateTime(timezone=True),
@@ -112,9 +110,7 @@ def upgrade() -> None:
             name=op.f("uq_account_members_account_id_user_id"),
         ),
     )
-    op.create_index(
-        "ix_account_members_user_id", "account_members", ["user_id"], unique=False
-    )
+    op.create_index("ix_account_members_user_id", "account_members", ["user_id"], unique=False)
 
 
 def downgrade() -> None:

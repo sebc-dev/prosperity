@@ -26,6 +26,10 @@ from backend.modules.accounts.models import (
 )
 from backend.modules.auth.models import User
 
+# Every test here inserts an `Account`, whose `household_id` FK requires the
+# singleton `household` row to exist (ADR 0010); seed it for the whole module.
+pytestmark = pytest.mark.usefixtures("household_singleton")
+
 
 async def test_personal_account_persists(
     auth_schema: AsyncSession,
@@ -109,9 +113,7 @@ async def test_default_share_ratio_is_decimal_not_float(
 
     auth_schema.expire_all()
     reloaded = (
-        await auth_schema.execute(
-            select(AccountMember).where(AccountMember.id == member_id)
-        )
+        await auth_schema.execute(select(AccountMember).where(AccountMember.id == member_id))
     ).scalar_one()
     assert isinstance(reloaded.default_share_ratio, Decimal)
     assert reloaded.default_share_ratio == Decimal("0.3333")
@@ -127,15 +129,11 @@ async def test_duplicate_member_violates_unique(
     await auth_schema.flush()
 
     auth_schema.add(
-        AccountMember(
-            account_id=account.id, user_id=user.id, default_share_ratio=Decimal("0.5000")
-        )
+        AccountMember(account_id=account.id, user_id=user.id, default_share_ratio=Decimal("0.5000"))
     )
     await auth_schema.flush()
     auth_schema.add(
-        AccountMember(
-            account_id=account.id, user_id=user.id, default_share_ratio=Decimal("0.5000")
-        )
+        AccountMember(account_id=account.id, user_id=user.id, default_share_ratio=Decimal("0.5000"))
     )
     with pytest.raises(IntegrityError):
         await auth_schema.flush()
@@ -148,9 +146,7 @@ async def test_delete_user_owning_account_raises_restrict(
     # Decision F02: an owner is disabled, never hard-deleted — RESTRICT makes
     # the delete raise rather than orphan or silently reassign the account.
     user = await bound_user_factory()
-    account = Account(
-        name="Perso", type=AccountType.COURANT, currency="EUR", owner_id=user.id
-    )
+    account = Account(name="Perso", type=AccountType.COURANT, currency="EUR", owner_id=user.id)
     auth_schema.add(account)
     await auth_schema.flush()
 
@@ -168,9 +164,7 @@ async def test_delete_user_member_raises_restrict(
     auth_schema.add(account)
     await auth_schema.flush()
     auth_schema.add(
-        AccountMember(
-            account_id=account.id, user_id=user.id, default_share_ratio=Decimal("1.0000")
-        )
+        AccountMember(account_id=account.id, user_id=user.id, default_share_ratio=Decimal("1.0000"))
     )
     await auth_schema.flush()
 
@@ -228,12 +222,8 @@ async def test_account_member_factory_builds_shared_account(
         account = account_factory(owner_id=None)
         # Explicit ratios summing to 1 (the factory default 0.5000 is only
         # valid for 2 members — here it happens to fit, but pin it anyway).
-        member_factory(
-            account_id=account.id, user_id=u1.id, default_share_ratio=Decimal("0.6000")
-        )
-        member_factory(
-            account_id=account.id, user_id=u2.id, default_share_ratio=Decimal("0.4000")
-        )
+        member_factory(account_id=account.id, user_id=u1.id, default_share_ratio=Decimal("0.6000"))
+        member_factory(account_id=account.id, user_id=u2.id, default_share_ratio=Decimal("0.4000"))
         return account.id
 
     account_id = await auth_schema.run_sync(_build)

@@ -47,8 +47,11 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
 
-import backend.modules.accounts.models  # noqa: F401  # pyright: ignore[reportUnusedImport]  side-effect: register tables on `Base.metadata`
 from backend.main import app
+
+# Importing `Household` also registers every accounts table on `Base.metadata`
+# (the side-effect `auth_schema`'s `create_all` relies on).
+from backend.modules.accounts.models import Household
 from backend.modules.auth.models import User
 from backend.shared.db import get_db
 from backend.shared.models import Base
@@ -114,6 +117,25 @@ async def auth_schema(db_session: AsyncSession) -> AsyncSession:
 
 
 @pytest_asyncio.fixture(loop_scope="session")
+async def household_singleton(auth_schema: AsyncSession) -> AsyncSession:
+    """Seed the singleton `household` row (ADR 0010).
+
+    `accounts.household_id` FK-references `household.id` and defaults to the
+    singleton UUID, so every `Account` insert needs the row to exist first —
+    without it the integration tier fails `fk_accounts_household_id_household`.
+    Seeded on the transactional `auth_schema` session, so the rollback
+    teardown removes it per test. `Household.id` defaults to the singleton
+    UUID, so no explicit id is passed.
+    """
+
+    def _seed(sync_session: Session) -> None:
+        sync_session.add(Household(name="Test Household", base_currency="EUR"))
+
+    await auth_schema.run_sync(_seed)
+    return auth_schema
+
+
+@pytest_asyncio.fixture(loop_scope="session")
 async def bound_user_factory(
     auth_schema: AsyncSession,
 ) -> Callable[..., Awaitable[User]]:
@@ -151,9 +173,7 @@ async def bound_account_factories(
     breaks.
     """
 
-    async def _bind() -> tuple[
-        type[UserFactory], type[AccountFactory], type[AccountMemberFactory]
-    ]:
+    async def _bind() -> tuple[type[UserFactory], type[AccountFactory], type[AccountMemberFactory]]:
         def _do(sync_session: Session) -> None:
             for factory in (UserFactory, AccountFactory, AccountMemberFactory):
                 factory._meta.sqlalchemy_session = sync_session  # type: ignore[attr-defined]

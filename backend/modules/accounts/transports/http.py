@@ -19,6 +19,7 @@ must go through `backend.modules.accounts.public`.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -46,6 +47,7 @@ from backend.modules.accounts.schemas import (
 from backend.modules.accounts.service.accounts import (
     create_personal,
     create_shared,
+    list_accessible,
 )
 from backend.modules.accounts.service.setup import (
     initialize_bootstrap,
@@ -322,3 +324,17 @@ async def create_shared_account(
             extra={"sqlstate": getattr(exc.orig, "sqlstate", None)},
         )
         raise
+
+
+@accounts_router.get("", response_model=list[AccountResponse])
+async def list_accounts(
+    user: CurrentUser,
+    session: SessionDep,
+) -> Sequence[Account]:
+    """List the accounts visible to the caller (watertight by filter, not RBAC).
+
+    Owned personal accounts ∪ shared accounts where the caller is a member,
+    archived excluded. The admin is NOT exempt (F03/D2): it never sees another
+    user's personal account here.
+    """
+    return await list_accessible(session, user_id=user.id)

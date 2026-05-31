@@ -23,6 +23,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from uuid import UUID
 
+from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.accounts.domain import AccountType, AccountValidator, MemberShare
@@ -103,3 +104,42 @@ async def create_shared(
     )
     await session.flush()
     return account
+
+
+# --- Resource-scoped access + reads/mutations (S05.3) -----------------------
+#
+# F03 watertightness is enforced here, by resource — NOT by RBAC at the route
+# (D2). The admin is deliberately NOT exempt: `_accessible` is the single
+# predicate every read/mutation funnels through, so list and detail can never
+# diverge on what a given user may see (D5). It always excludes archived rows,
+# so a soft-deleted account is invisible to everyone (the soft-delete oracle
+# stays a uniform 404, D4/D7).
+
+
+def _accessible(user_id: UUID) -> tuple[ColumnElement[bool], ColumnElement[bool]]:
+    """WHERE fragments for "visible to `user_id`": owned OR member, AND live.
+
+    Returned as a tuple so callers splat it into `.where(*_accessible(uid))`
+    alongside any per-call predicate (e.g. `Account.id == account_id`). The
+    membership arm uses a correlated `IN (SELECT …)` rather than a JOIN so the
+    personal-ownership arm needs no DISTINCT and the row shape stays `Account`.
+    """
+    return (
+        Account.archived_at.is_(None),
+        or_(
+            Account.owner_id == user_id,
+            Account.id.in_(
+                select(AccountMember.account_id).where(AccountMember.user_id == user_id)
+            ),
+        ),
+    )
+
+
+async def list_accessible(session: AsyncSession, *, user_id: UUID) -> Sequence[Account]:
+    """Accounts visible to `user_id` (F03 — no admin exemption), newest first.
+
+    Owned personal accounts ∪ shared accounts where the user is a member,
+    archived excluded. A user with no account gets an empty sequence.
+    """
+    stmt = select(Account).where(*_accessible(user_id)).order_by(Account.created_at.desc())
+    return (await session.execute(stmt)).scalars().all()

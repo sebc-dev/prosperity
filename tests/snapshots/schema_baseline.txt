@@ -1,4 +1,31 @@
+enum account_type: courant, livret, epargne, especes, credit
 enum user_role: admin, member
+
+table account_members
+  col account_id: UUID NOT NULL
+  col default_share_ratio: NUMERIC(5, 4) NOT NULL
+  col id: UUID NOT NULL
+  col joined_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col user_id: UUID NOT NULL
+  pk pk_account_members(id)
+  fk fk_account_members_account_id_accounts: (account_id) -> accounts(id) ON DELETE CASCADE
+  fk fk_account_members_user_id_users: (user_id) -> users(id) ON DELETE RESTRICT
+  idx ix_account_members_user_id INDEX: user_id
+  idx uq_account_members_account_id_user_id UNIQUE: account_id, user_id
+
+table accounts
+  col archived_at: TIMESTAMP WITH TIME ZONE NULL
+  col created_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col currency: VARCHAR(3) NOT NULL
+  col household_id: UUID NOT NULL
+  col id: UUID NOT NULL
+  col name: VARCHAR(120) NOT NULL
+  col owner_id: UUID NULL
+  col type: account_type NOT NULL
+  pk pk_accounts(id)
+  fk fk_accounts_household_id_household: (household_id) -> household(id)
+  fk fk_accounts_owner_id_users: (owner_id) -> users(id) ON DELETE RESTRICT
+  idx ix_accounts_owner_id INDEX: owner_id
 
 table admin_audit_logs
   col action: VARCHAR NOT NULL
@@ -11,6 +38,8 @@ table admin_audit_logs
   col target_email: VARCHAR(254) NULL
   col target_user_id: UUID NULL
   pk pk_admin_audit_logs(id)
+  fk fk_admin_audit_logs_actor_user_id_users: (actor_user_id) -> users(id) ON DELETE SET NULL
+  fk fk_admin_audit_logs_target_user_id_users: (target_user_id) -> users(id) ON DELETE SET NULL
   idx ix_admin_audit_logs_actor_user_id_created_at INDEX: actor_user_id, created_at
   idx ix_admin_audit_logs_target_user_id INDEX: target_user_id
 
@@ -37,6 +66,7 @@ table invitations
   col revoked_at: TIMESTAMP WITH TIME ZONE NULL
   col token_hash: VARCHAR(64) NOT NULL
   pk pk_invitations(id)
+  fk fk_invitations_invited_by_users: (invited_by) -> users(id) ON DELETE RESTRICT
   idx ix_invitations_invited_by INDEX: invited_by
   idx uq_invitations_pending_email UNIQUE: lower((email)::text)) WHERE ((accepted_at IS NULL) AND (revoked_at IS NULL)
   idx uq_invitations_token_hash UNIQUE: token_hash
@@ -52,6 +82,8 @@ table refresh_tokens
   col token_hash: VARCHAR(64) NOT NULL
   col user_id: UUID NOT NULL
   pk pk_refresh_tokens(id)
+  fk fk_refresh_tokens_parent_id_refresh_tokens: (parent_id) -> refresh_tokens(id) ON DELETE SET NULL
+  fk fk_refresh_tokens_user_id_users: (user_id) -> users(id) ON DELETE CASCADE
   idx ix_refresh_tokens_family_id INDEX: family_id
   idx ix_refresh_tokens_user_id INDEX: user_id
   idx uq_refresh_tokens_token_hash UNIQUE: token_hash

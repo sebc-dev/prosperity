@@ -41,10 +41,18 @@ from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
 
 from backend.main import app
+
+# Importing `Household` also registers every accounts table on `Base.metadata`
+# (the side-effect `auth_schema`'s `create_all` relies on).
+from backend.modules.accounts.models import Household
 from backend.modules.auth.models import User
 from backend.shared.db import get_db
 from backend.shared.models import Base
-from tests.factories.sqlalchemy import UserFactory
+from tests.factories.sqlalchemy import (
+    AccountFactory,
+    AccountMemberFactory,
+    UserFactory,
+)
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
@@ -86,6 +94,25 @@ async def auth_schema(db_session: AsyncSession) -> AsyncSession:
 
 
 @pytest_asyncio.fixture(loop_scope="session")
+async def household_singleton(auth_schema: AsyncSession) -> AsyncSession:
+    """Seed the singleton `household` row (ADR 0010).
+
+    `accounts.household_id` FK-references `household.id` and defaults to the
+    singleton UUID, so every `Account` insert needs the row to exist first —
+    without it the integration tier fails `fk_accounts_household_id_household`.
+    Seeded on the transactional `auth_schema` session, so the rollback
+    teardown removes it per test. `Household.id` defaults to the singleton
+    UUID, so no explicit id is passed.
+    """
+
+    def _seed(sync_session: Session) -> None:
+        sync_session.add(Household(name="Test Household", base_currency="EUR"))
+
+    await auth_schema.run_sync(_seed)
+    return auth_schema
+
+
+@pytest_asyncio.fixture(loop_scope="session")
 async def bound_user_factory(
     auth_schema: AsyncSession,
 ) -> Callable[..., Awaitable[User]]:
@@ -105,6 +132,33 @@ async def bound_user_factory(
         return await auth_schema.run_sync(_create)
 
     return _make_user
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def bound_account_factories(
+    auth_schema: AsyncSession,
+) -> Callable[
+    [], Awaitable[tuple[type[UserFactory], type[AccountFactory], type[AccountMemberFactory]]]
+]:
+    """Bind User/Account/AccountMember factories to the test's session.
+
+    Mirrors `bound_user_factory` but binds the three factories an accounts
+    integration test needs onto a *single* sync session, so persisted rows
+    share one identity-map / one flush boundary. `bound_user_factory` binds
+    only `UserFactory`; building a shared account needs all three on the same
+    session, otherwise objects attach to divergent sessions and the flush
+    breaks.
+    """
+
+    async def _bind() -> tuple[type[UserFactory], type[AccountFactory], type[AccountMemberFactory]]:
+        def _do(sync_session: Session) -> None:
+            for factory in (UserFactory, AccountFactory, AccountMemberFactory):
+                factory._meta.sqlalchemy_session = sync_session  # type: ignore[attr-defined]
+
+        await auth_schema.run_sync(_do)
+        return UserFactory, AccountFactory, AccountMemberFactory
+
+    return _bind
 
 
 @pytest_asyncio.fixture(loop_scope="session")

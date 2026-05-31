@@ -52,7 +52,11 @@ from backend.main import app
 from backend.modules.auth.models import User
 from backend.shared.db import get_db
 from backend.shared.models import Base
-from tests.factories.sqlalchemy import UserFactory
+from tests.factories.sqlalchemy import (
+    AccountFactory,
+    AccountMemberFactory,
+    UserFactory,
+)
 
 
 def _docker_available() -> bool:
@@ -129,6 +133,31 @@ async def bound_user_factory(
         return await auth_schema.run_sync(_create)
 
     return _make_user
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def bound_account_factories(
+    auth_schema: AsyncSession,
+) -> Callable[[], Awaitable[tuple[type, type, type]]]:
+    """Bind User/Account/AccountMember factories to the test's session.
+
+    Mirrors `bound_user_factory` but binds the three factories an accounts
+    integration test needs onto a *single* sync session, so persisted rows
+    share one identity-map / one flush boundary. `bound_user_factory` binds
+    only `UserFactory`; building a shared account needs all three on the same
+    session, otherwise objects attach to divergent sessions and the flush
+    breaks.
+    """
+
+    async def _bind() -> tuple[type, type, type]:
+        def _do(sync_session: Session) -> None:
+            for factory in (UserFactory, AccountFactory, AccountMemberFactory):
+                factory._meta.sqlalchemy_session = sync_session  # type: ignore[attr-defined]
+
+        await auth_schema.run_sync(_do)
+        return UserFactory, AccountFactory, AccountMemberFactory
+
+    return _bind
 
 
 @pytest_asyncio.fixture(loop_scope="session")

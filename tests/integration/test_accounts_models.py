@@ -61,12 +61,16 @@ async def test_account_type_round_trips_all_five(
     bound_user_factory: Callable[..., Awaitable[User]],
 ) -> None:
     user = await bound_user_factory()
+    # Capture `id` before the loop: the `expire_all()` below also expires
+    # `user`, so re-reading `user.id` on the next iteration would emit a sync
+    # lazy SELECT outside the async greenlet (MissingGreenlet).
+    owner_id = user.id
     for member in AccountType:
         account = Account(
             name=f"acct-{member.value}",
             type=member,
             currency="EUR",
-            owner_id=user.id,
+            owner_id=owner_id,
         )
         auth_schema.add(account)
         await auth_schema.flush()

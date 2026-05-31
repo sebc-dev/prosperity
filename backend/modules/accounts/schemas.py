@@ -126,7 +126,7 @@ class AccountUpdate(BaseModel):
 
 
 class AccountResponse(BaseModel):
-    """Flat account view (D9). The members list is exposed in S05.4.
+    """Flat account view. The members roster is exposed by `AccountDetailResponse`.
 
     `from_attributes=True` lets FastAPI serialise the ORM `Account` directly;
     every field is a scalar loaded at flush, so no async lazy-load fires at
@@ -141,3 +141,42 @@ class AccountResponse(BaseModel):
     currency: str
     owner_id: UUID | None
     created_at: datetime
+
+
+# --- Member-management schemas (S05.4) --------------------------------------
+
+
+class AccountMembersRoster(BaseModel):
+    """Total re-balance body: the **complete** member set targeted after the op.
+
+    The HTTP verb (+ the `{user_id}` path param on PATCH/DELETE) declares the
+    intent; the service cross-checks this roster against the current membership.
+    `min_length=1` is deliberately permissive — the "≥ 2 members" floor is
+    **authoritative in the domain** (`validate_member_set` → `TooFewMembersError`
+    → 422), so refusing to remove the second-to-last member reads as a business
+    rule, not a schema rejection. `max_length` mirrors `AccountCreateShared`'s
+    anti-DoS bound. Reuses `AccountMemberInput` (S05.3) for each entry.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    members: list[AccountMemberInput] = Field(min_length=1, max_length=_SHARED_MEMBERS_MAX)
+
+
+class AccountMemberResponse(BaseModel):
+    """One member of a shared account in `AccountDetailResponse`."""
+
+    model_config = ConfigDict(from_attributes=True)
+    user_id: UUID
+    default_share_ratio: Decimal
+
+
+class AccountDetailResponse(AccountResponse):
+    """`AccountResponse` + the member roster.
+
+    Serves `GET /accounts/{id}` and the member-mutation routes (S05.4). A
+    superset of `AccountResponse` (scalar fields unchanged, `members` added), so
+    the contract is strictly widened — S05.3 detail tests stay green. A personal
+    account serialises to `members == []`.
+    """
+
+    members: list[AccountMemberResponse]

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 from httpx import AsyncClient
@@ -73,7 +74,11 @@ async def test_get_by_id_owner_200(
 
     resp = await async_client.get(f"/accounts/{acc_id}", headers=_bearer(owner_id))
     assert resp.status_code == 200, resp.text
-    assert resp.json()["id"] == str(acc_id)
+    body = resp.json()
+    assert body["id"] == str(acc_id)
+    # S05.4: GET /{id} now returns the detail view; a personal account has no
+    # members.
+    assert body["members"] == []
 
 
 async def test_get_by_id_member_200(
@@ -95,7 +100,14 @@ async def test_get_by_id_member_200(
 
     resp = await async_client.get(f"/accounts/{shared_id}", headers=_bearer(u1_id))
     assert resp.status_code == 200, resp.text
-    assert resp.json()["id"] == str(shared_id)
+    body = resp.json()
+    assert body["id"] == str(shared_id)
+    # S05.4: the shared account's roster is exposed (the caller is one of the two
+    # members) and sums to 1.
+    members = body["members"]
+    assert len(members) == 2
+    assert str(u1_id) in {m["user_id"] for m in members}
+    assert sum(Decimal(str(m["default_share_ratio"])) for m in members) == Decimal("1.0")
 
 
 async def test_get_by_id_member_on_admin_personal_404(

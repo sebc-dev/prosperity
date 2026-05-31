@@ -387,3 +387,52 @@ def test_property_ratios_not_summing_to_one_rejected(total: int, data: st.DataOb
             owner_id=None,
             members=members,
         )
+
+
+# === S05.4 validate_member_set ===
+# `validate_member_set` re-validates a shared account's member set alone (no
+# currency / ownership-shape rules), used by the S05.4 member mutations. It
+# reuses the same private helpers as `validate`'s shared branch, so the rules
+# (>= 2, no duplicate, each ratio > 0, Σ == 1.0000) must hold identically.
+
+
+def test_member_set_accepts_two_members_summing_one() -> None:
+    AccountValidator.validate_member_set(_members("0.5000", "0.5000"))
+
+
+def test_member_set_accepts_three_members_summing_one() -> None:
+    AccountValidator.validate_member_set(_members("0.3300", "0.3300", "0.3400"))
+
+
+def test_member_set_rejects_single_member() -> None:
+    with pytest.raises(TooFewMembersError):
+        AccountValidator.validate_member_set(_members("1.0000"))
+
+
+def test_member_set_rejects_empty() -> None:
+    with pytest.raises(TooFewMembersError):
+        AccountValidator.validate_member_set([])
+
+
+def test_member_set_rejects_sum_not_one() -> None:
+    with pytest.raises(ShareRatioSumError):
+        AccountValidator.validate_member_set(_members("0.5000", "0.4000"))
+
+
+def test_member_set_rejects_non_positive_ratio() -> None:
+    members = [
+        MemberShare(user_id=uuid4(), ratio=Decimal("1.5000")),
+        MemberShare(user_id=uuid4(), ratio=Decimal("-0.5000")),
+    ]
+    with pytest.raises(NonPositiveShareRatioError):
+        AccountValidator.validate_member_set(members)
+
+
+def test_member_set_rejects_duplicate_member() -> None:
+    dup = uuid4()
+    members = [
+        MemberShare(user_id=dup, ratio=Decimal("0.5000")),
+        MemberShare(user_id=dup, ratio=Decimal("0.5000")),
+    ]
+    with pytest.raises(DuplicateMemberError):
+        AccountValidator.validate_member_set(members)

@@ -138,7 +138,9 @@ async def bound_user_factory(
 @pytest_asyncio.fixture(loop_scope="session")
 async def bound_account_factories(
     auth_schema: AsyncSession,
-) -> Callable[[], Awaitable[tuple[type, type, type]]]:
+) -> Callable[
+    [], Awaitable[tuple[type[UserFactory], type[AccountFactory], type[AccountMemberFactory]]]
+]:
     """Bind User/Account/AccountMember factories to the test's session.
 
     Mirrors `bound_user_factory` but binds the three factories an accounts
@@ -149,7 +151,9 @@ async def bound_account_factories(
     breaks.
     """
 
-    async def _bind() -> tuple[type, type, type]:
+    async def _bind() -> tuple[
+        type[UserFactory], type[AccountFactory], type[AccountMemberFactory]
+    ]:
         def _do(sync_session: Session) -> None:
             for factory in (UserFactory, AccountFactory, AccountMemberFactory):
                 factory._meta.sqlalchemy_session = sync_session  # type: ignore[attr-defined]

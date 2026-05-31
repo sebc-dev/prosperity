@@ -67,8 +67,11 @@ def test_migration_literal_matches_orm_constant() -> None:
 # `__tablename__` is not re-tested in the unit tier: the table name is
 # already captured by the level-1 schema snapshot (`table accounts` /
 # `table account_members`), so a `test_*_tablename` would be tautological.
-# These tests only pin decisions invisible to the snapshot (FK `ondelete`,
-# absence of a CHECK, absence of a standalone index, the `Numeric` type).
+# FK `ondelete` likewise lives in the snapshot now (migration-authoritative)
+# and in the integration behaviour tests (RESTRICT/CASCADE actually fire), so
+# it is not re-introspected off the ORM here. These tests only pin decisions
+# left uncovered: absence of a CHECK, absence of a standalone index, the
+# `Numeric(5,4)` type, and column presence.
 
 
 def _fk_to(table: Table, referred_table: str) -> ForeignKey:
@@ -103,13 +106,6 @@ def test_account_owner_id_is_nullable() -> None:
     assert cast(Table, Account.__table__).c.owner_id.nullable is True
 
 
-def test_account_owner_fk_is_restrict() -> None:
-    # Decision F02: a user owning an account is disabled, never deleted —
-    # RESTRICT makes a hard delete raise rather than orphan the account.
-    fk = _fk_to(cast(Table, Account.__table__), "users")
-    assert fk.ondelete == "RESTRICT"
-
-
 def test_account_household_fk_present_and_unindexed() -> None:
     table = cast(Table, Account.__table__)
     assert _fk_to(table, "household") is not None
@@ -121,14 +117,6 @@ def test_account_owner_id_is_indexed() -> None:
     # The RESTRICT FK must be indexed to avoid a seq-scan on `users` delete.
     table = cast(Table, Account.__table__)
     assert any(list(idx.columns.keys()) == ["owner_id"] for idx in table.indexes)
-
-
-def test_account_type_column_values_callable_emits_values() -> None:
-    # `values_callable` is wired on the *values* (lowercase French), not the
-    # member names — the integration round-trip is the load-bearing guard,
-    # this pins the construction-time wiring.
-    col = cast(Table, Account.__table__).c.type
-    assert col.type.enums == ["courant", "livret", "epargne", "especes", "credit"]  # type: ignore[attr-defined]
 
 
 def test_account_has_no_check_constraint() -> None:
@@ -159,18 +147,6 @@ def test_default_share_ratio_is_numeric_5_4() -> None:
     assert isinstance(col_type, Numeric)
     assert col_type.precision == 5
     assert col_type.scale == 4
-
-
-def test_account_member_account_fk_is_cascade() -> None:
-    # Removing an account removes its membership links (no meaning without it).
-    fk = _fk_to(cast(Table, AccountMember.__table__), "accounts")
-    assert fk.ondelete == "CASCADE"
-
-
-def test_account_member_user_fk_is_restrict() -> None:
-    # A member user is disabled, never deleted (decision F02).
-    fk = _fk_to(cast(Table, AccountMember.__table__), "users")
-    assert fk.ondelete == "RESTRICT"
 
 
 def test_account_member_unique_constraint() -> None:

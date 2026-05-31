@@ -12,6 +12,12 @@ The snapshot captures:
 - Per-table column name, dialect-compiled type, and nullability (catches
   a column dropped, renamed, retyped, or with flipped NULL/NOT NULL).
 - Per-table primary key (name + columns).
+- Per-table foreign keys with their constrained/referred columns and
+  `ON DELETE` action (catches a migration that flips RESTRICT↔CASCADE or
+  drops an `ondelete` — invisible in a column/index-only diff, yet a
+  silent data-integrity regression: decision F02 pins `owner_id` /
+  `account_members.user_id` to RESTRICT and `account_members.account_id`
+  to CASCADE).
 - Per-table CHECK constraints with their normalised SQL body (catches
   a constraint silently dropped between revisions — e.g., the household
   singleton CHECK whose absence would let raw INSERTs spawn a second
@@ -105,6 +111,19 @@ def _format_schema(engine: Engine) -> str:
         if pk["constrained_columns"]:
             pk_cols = ", ".join(pk["constrained_columns"])
             lines.append(f"  pk {pk_name}({pk_cols})")
+        # FKs surface here (not via pg_indexes); the snapshot needs the
+        # `ON DELETE` action because a column/index diff is blind to it —
+        # a migration that drops `ondelete` or flips RESTRICT↔CASCADE
+        # (decision F02) would otherwise pass unnoticed. SQLAlchemy omits
+        # `NO ACTION` from `options`, so a bare FK renders without a suffix.
+        for fk in sorted(insp.get_foreign_keys(table), key=lambda f: f.get("name") or ""):
+            fk_name = fk.get("name") or ""
+            fk_cols = ", ".join(fk["constrained_columns"])
+            ref = fk["referred_table"]
+            ref_cols = ", ".join(fk["referred_columns"])
+            ondelete = (fk.get("options") or {}).get("ondelete")
+            suffix = f" ON DELETE {ondelete}" if ondelete else ""
+            lines.append(f"  fk {fk_name}: ({fk_cols}) -> {ref}({ref_cols}){suffix}")
         # CHECK constraints surface here (not via pg_indexes); the
         # snapshot needs them because a missing CHECK is invisible in a
         # column-name-only diff (e.g. dropping `ck_household_singleton`

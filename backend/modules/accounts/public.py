@@ -13,6 +13,11 @@ RBAC code in E04).
 
 from __future__ import annotations
 
+from backend.modules.accounts.events import (
+    AccountMemberAdded,
+    AccountMemberRemoved,
+    ShareRatioUpdated,
+)
 from backend.modules.accounts.models import HOUSEHOLD_SINGLETON_UUID as HOUSEHOLD_ID
 from backend.modules.accounts.service.household import (
     HouseholdNotInitializedError,
@@ -22,7 +27,10 @@ from backend.modules.accounts.service.setup import bootstrap_initial_admin_from_
 
 __all__ = [
     "HOUSEHOLD_ID",
+    "AccountMemberAdded",
+    "AccountMemberRemoved",
     "HouseholdNotInitializedError",
+    "ShareRatioUpdated",
     "bootstrap_initial_admin_from_env",
     "get_household",
 ]

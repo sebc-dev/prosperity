@@ -38,10 +38,13 @@ from backend.modules.accounts.domain import (
     ShareRatioSumError,
     TooFewMembersError,
 )
-from backend.modules.accounts.models import Account
+from backend.modules.accounts.models import Account, AccountMember
 from backend.modules.accounts.schemas import (
     AccountCreatePersonal,
     AccountCreateShared,
+    AccountDetailResponse,
+    AccountMemberResponse,
+    AccountMembersRoster,
     AccountResponse,
     AccountUpdate,
     SetupRequest,
@@ -53,6 +56,12 @@ from backend.modules.accounts.service.accounts import (
     get_accessible,
     list_accessible,
     rename,
+)
+from backend.modules.accounts.service.members import (
+    add_member,
+    list_members,
+    remove_member,
+    update_share_ratio,
 )
 from backend.modules.accounts.service.setup import (
     initialize_bootstrap,
@@ -255,6 +264,23 @@ def _validation_detail(exc: AccountValidationError) -> str:
     return _VALIDATION_DETAILS.get(type(exc), _DEFAULT_VALIDATION_DETAIL)
 
 
+def _detail(account: Account, members: Sequence[AccountMember]) -> AccountDetailResponse:
+    """Build the `AccountResponse` + roster view (D6/D7, no ORM relationship)."""
+    return AccountDetailResponse(
+        id=account.id,
+        name=account.name,
+        type=account.type,
+        currency=account.currency,
+        owner_id=account.owner_id,
+        created_at=account.created_at,
+        members=[AccountMemberResponse.model_validate(m) for m in members],
+    )
+
+
+def _roster_shares(roster: AccountMembersRoster) -> list[MemberShare]:
+    return [MemberShare(user_id=m.user_id, ratio=m.default_share_ratio) for m in roster.members]
+
+
 @accounts_router.post(
     "/personal",
     response_model=AccountResponse,
@@ -349,21 +375,23 @@ async def list_accounts(
     return await list_accessible(session, user_id=user.id)
 
 
-@accounts_router.get("/{account_id}", response_model=AccountResponse)
+@accounts_router.get("/{account_id}", response_model=AccountDetailResponse)
 async def get_account(
     account_id: UUID,
     user: CurrentUser,
     session: SessionDep,
-) -> Account:
-    """Fetch one account by id; 404 (not 403) if inaccessible/archived/unknown.
+) -> AccountDetailResponse:
+    """Fetch one account by id, with its member roster; 404 if inaccessible.
 
-    The uniform 404 (admin included) keeps an account's existence from leaking
-    to a non-member (D4).
+    Returns `AccountDetailResponse` (S05.4): the scalar account fields plus
+    `members` (empty for a personal account). The uniform 404 (admin included)
+    keeps an account's existence from leaking to a non-member (D4).
     """
     account = await get_accessible(session, account_id=account_id, user_id=user.id)
     if account is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL)
-    return account
+    members = await list_members(session, account_id)
+    return _detail(account, members)
 
 
 @accounts_router.patch("/{account_id}", response_model=AccountResponse)
@@ -397,5 +425,128 @@ async def delete_account(
     inaccessible/unknown account (D7/D4 non-disclosure).
     """
     if not await archive(session, account_id=account_id, user_id=user.id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- Member-management routes (S05.4) ---------------------------------------
+#
+# Guarded by **membership** of the account (computed in the service), never by
+# `require_admin`/`require_member`: any current member may manage the roster, an
+# admin who is not a member may not (D5, glossary). A non-member — admin
+# included — gets the uniform 404, never 422, even with an invalid roster: the
+# service confirms membership *before* validating the body, so the 422 mapping
+# below is only reachable once membership is established (no existence oracle).
+
+
+@accounts_router.post(
+    "/{account_id}/members",
+    response_model=AccountDetailResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def add_account_member(
+    account_id: UUID,
+    body: AccountMembersRoster,
+    user: CurrentUser,
+    session: SessionDep,
+) -> AccountDetailResponse:
+    """Add one member to a shared account via a complete re-balanced roster.
+
+    Σ=1 / ≥ 2 / positive / no-duplicate are re-validated (→ 422); a member
+    `user_id` with no user row trips `fk_account_members_user_id_users` → 422
+    (FK 23503), never 500. A caller who is not a member → 404.
+    """
+    try:
+        result = await add_member(
+            session, account_id=account_id, actor_user_id=user.id, roster=_roster_shares(body)
+        )
+    except AccountValidationError as exc:
+        logger.info("account_member_rejected", extra={"error": type(exc).__name__})
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_validation_detail(exc)
+        ) from exc
+    except IntegrityError as exc:
+        if getattr(exc.orig, "sqlstate", None) == "23503":
+            logger.info("account_member_rejected", extra={"error": "unknown_member"})
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_UNKNOWN_MEMBER_DETAIL
+            ) from exc
+        logger.error(
+            "account_member_unexpected_integrity",
+            extra={"sqlstate": getattr(exc.orig, "sqlstate", None)},
+        )
+        raise
+    if result is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL)
+    return _detail(*result)
+
+
+@accounts_router.patch(
+    "/{account_id}/members/{user_id}",
+    response_model=AccountDetailResponse,
+)
+async def update_account_member(
+    account_id: UUID,
+    user_id: UUID,
+    body: AccountMembersRoster,
+    user: CurrentUser,
+    session: SessionDep,
+) -> AccountDetailResponse:
+    """Edit `{user_id}`'s quote-part via a complete roster (membership unchanged).
+
+    Σ maintained at 1 (→ 422 otherwise); a roster that changes the membership is
+    a 422 (PATCH is not an add/remove channel). Caller not a member, or
+    `{user_id}` not a member → 404.
+    """
+    try:
+        result = await update_share_ratio(
+            session,
+            account_id=account_id,
+            actor_user_id=user.id,
+            target_user_id=user_id,
+            roster=_roster_shares(body),
+        )
+    except AccountValidationError as exc:
+        logger.info("account_member_rejected", extra={"error": type(exc).__name__})
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_validation_detail(exc)
+        ) from exc
+    if result is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL)
+    return _detail(*result)
+
+
+@accounts_router.delete(
+    "/{account_id}/members/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_account_member(
+    account_id: UUID,
+    user_id: UUID,
+    body: AccountMembersRoster,
+    user: CurrentUser,
+    session: SessionDep,
+) -> Response:
+    """Remove `{user_id}`, the remaining members re-balanced by the roster body.
+
+    The roster must be exactly the survivors (→ 422 otherwise); removing the
+    second-to-last member is a 422 (`TooFewMembersError` — a shared account keeps
+    ≥ 2 members), never executed partially. Caller not a member, or `{user_id}`
+    not a member → 404.
+    """
+    try:
+        result = await remove_member(
+            session,
+            account_id=account_id,
+            actor_user_id=user.id,
+            target_user_id=user_id,
+            roster=_roster_shares(body),
+        )
+    except AccountValidationError as exc:
+        logger.info("account_member_rejected", extra={"error": type(exc).__name__})
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_validation_detail(exc)
+        ) from exc
+    if result is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

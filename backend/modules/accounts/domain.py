@@ -126,6 +126,26 @@ class AccountValidator:
             cls._check_no_duplicate_members(members)
             cls._check_share_ratios(members)
 
+    @classmethod
+    def validate_member_set(cls, members: Sequence[MemberShare]) -> None:
+        """Validate a shared account's **member set** alone (no currency/ownership).
+
+        Same invariants as the `shared` branch of `validate`: ≥ 2 members, no
+        duplicate, every quote-part strictly positive, Σ == Decimal('1.0000').
+        Used by the S05.4 member mutations, which re-validate the **complete**
+        roster the client supplies (total re-balance) without replaying the
+        currency / ownership-shape rules that only apply at creation.
+
+        Rule order mirrors `validate`'s shared branch: cardinality floor, then
+        no-duplicate, then the per-ratio + sum check.
+        """
+        if len(members) < _MIN_SHARED_MEMBERS:
+            raise TooFewMembersError(
+                f"a shared account needs >= {_MIN_SHARED_MEMBERS} members, got {len(members)}"
+            )
+        cls._check_no_duplicate_members(members)
+        cls._check_share_ratios(members)
+
     @staticmethod
     def _check_currency(currency: str, household_base_currency: str) -> None:
         if currency != household_base_currency:

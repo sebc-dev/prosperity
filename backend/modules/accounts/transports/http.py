@@ -19,20 +19,49 @@ must go through `backend.modules.accounts.public`.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import Settings, get_settings
-from backend.modules.accounts.schemas import SetupRequest
+from backend.modules.accounts.domain import (
+    AccountValidationError,
+    CurrencyMismatchError,
+    DuplicateMemberError,
+    MemberShare,
+    NonPositiveShareRatioError,
+    OwnershipShapeError,
+    ShareRatioSumError,
+    TooFewMembersError,
+)
+from backend.modules.accounts.models import Account
+from backend.modules.accounts.schemas import (
+    AccountCreatePersonal,
+    AccountCreateShared,
+    AccountResponse,
+    AccountUpdate,
+    SetupRequest,
+)
+from backend.modules.accounts.service.accounts import (
+    archive,
+    create_personal,
+    create_shared,
+    get_accessible,
+    list_accessible,
+    rename,
+)
 from backend.modules.accounts.service.setup import (
     initialize_bootstrap,
     is_setup_open,
 )
 from backend.modules.auth.public import (
     TokenPair,
+    User,
+    get_current_user,
     issue_access_token,
     issue_refresh_token,
     sanitize_device_label,
@@ -180,3 +209,193 @@ async def setup_submit(
         },
     )
     return TokenPair(access_token=access_token, refresh_token=refresh_token)
+
+
+# --- Account CRUD routes (S05.3) --------------------------------------------
+#
+# A second router on this module, `prefix="/accounts"`, hosting the F03-
+# watertight CRUD. Every handler is guarded by `get_current_user`
+# (authentication) and NEVER by `require_admin`/`require_member`: the
+# watertightness is a per-resource filter in the service (`_accessible`), not
+# an RBAC gate — the admin is deliberately not exempt (D2, glossary F03).
+# Mapping `require_admin` here would invert the invariant.
+#
+# An inaccessible / archived / unknown account is a uniform 404 (never 403),
+# so a non-member — admin included — cannot probe an account's existence (D4).
+
+accounts_router = APIRouter(prefix="/accounts", tags=["accounts"])
+
+CurrentUser = Annotated[User, Depends(get_current_user)]
+
+# Uniform 404 body shared by GET/PATCH/DELETE on `{id}` — the same string for
+# "doesn't exist" and "exists but not yours", so no path is an existence
+# oracle (D4 non-disclosure).
+_NOT_FOUND_DETAIL = "Account not found."
+# 422 body when a shared account lists a `user_id` with no matching user row
+# (FK 23503). Generic on purpose — it does not echo the offending id.
+_UNKNOWN_MEMBER_DETAIL = "A referenced member does not exist."
+
+# Curated 422 details per domain error class (C-SEC-1): we never echo
+# `str(exc)`, which would leak the household base currency
+# (`CurrencyMismatchError`) and internal sums (`ShareRatioSumError`) — a
+# non-issue under the V1 EUR lock, but a real disclosure once V2 is
+# multi-currency. The precise `str(exc)` is logged server-side instead.
+_VALIDATION_DETAILS: dict[type[AccountValidationError], str] = {
+    CurrencyMismatchError: "Account currency must match the household base currency.",
+    OwnershipShapeError: "Invalid account ownership shape.",
+    TooFewMembersError: "A shared account needs at least two members.",
+    ShareRatioSumError: "Member share ratios must sum to 1.",
+    NonPositiveShareRatioError: "Each member share ratio must be strictly positive.",
+    DuplicateMemberError: "A user cannot be listed twice in a shared account.",
+}
+_DEFAULT_VALIDATION_DETAIL = "Account creation rejected."
+
+
+def _validation_detail(exc: AccountValidationError) -> str:
+    return _VALIDATION_DETAILS.get(type(exc), _DEFAULT_VALIDATION_DETAIL)
+
+
+@accounts_router.post(
+    "/personal",
+    response_model=AccountResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_personal_account(
+    body: AccountCreatePersonal,
+    user: CurrentUser,
+    session: SessionDep,
+) -> Account:
+    """Create the caller's personal account; `owner_id` is the token's user (D3).
+
+    `owner_id` is taken from `get_current_user`, never the body — a stray
+    `owner_id` in the payload was already dropped by the schema. Domain
+    rejections (currency mismatch, ownership shape) map to a curated 422
+    (C-SEC-1), never a 500.
+    """
+    try:
+        return await create_personal(
+            session,
+            owner_id=user.id,
+            name=body.name,
+            type=body.type,
+            currency=body.currency,
+        )
+    except AccountValidationError as exc:
+        logger.info("account_create_rejected", extra={"error": type(exc).__name__})
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_validation_detail(exc)
+        ) from exc
+
+
+@accounts_router.post(
+    "/shared",
+    response_model=AccountResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_shared_account(
+    body: AccountCreateShared,
+    user: CurrentUser,
+    session: SessionDep,
+) -> Account:
+    """Create a shared account with its members (≥ 2, quote-parts Σ == 1).
+
+    Domain rejections (Σ ≠ 1, duplicate member, ratio ≤ 0, < 2 members,
+    currency mismatch) → curated 422 (C-SEC-1). A member `user_id` with no
+    matching user trips `fk_account_members_user_id_users` at flush; we catch
+    only `IntegrityError`/SQLSTATE 23503 → 422 (C-ARCH-1) — narrower than
+    `/setup`'s `DBAPIError` because account creation has no business race, so
+    a concurrent 40001 may surface as 500 (no corruption, no disclosure). Any
+    other SQLSTATE (e.g. 23505, pre-empted by `DuplicateMemberError`) is a
+    real bug → re-raise → 500.
+    """
+    members = [MemberShare(user_id=m.user_id, ratio=m.default_share_ratio) for m in body.members]
+    try:
+        return await create_shared(
+            session,
+            members=members,
+            name=body.name,
+            type=body.type,
+            currency=body.currency,
+        )
+    except AccountValidationError as exc:
+        logger.info("account_create_rejected", extra={"error": type(exc).__name__})
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_validation_detail(exc)
+        ) from exc
+    except IntegrityError as exc:
+        if getattr(exc.orig, "sqlstate", None) == "23503":
+            logger.info("account_create_rejected", extra={"error": "unknown_member"})
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_UNKNOWN_MEMBER_DETAIL
+            ) from exc
+        logger.error(
+            "account_create_unexpected_integrity",
+            extra={"sqlstate": getattr(exc.orig, "sqlstate", None)},
+        )
+        raise
+
+
+@accounts_router.get("", response_model=list[AccountResponse])
+async def list_accounts(
+    user: CurrentUser,
+    session: SessionDep,
+) -> Sequence[Account]:
+    """List the accounts visible to the caller (watertight by filter, not RBAC).
+
+    Owned personal accounts ∪ shared accounts where the caller is a member,
+    archived excluded. The admin is NOT exempt (F03/D2): it never sees another
+    user's personal account here.
+    """
+    return await list_accessible(session, user_id=user.id)
+
+
+@accounts_router.get("/{account_id}", response_model=AccountResponse)
+async def get_account(
+    account_id: UUID,
+    user: CurrentUser,
+    session: SessionDep,
+) -> Account:
+    """Fetch one account by id; 404 (not 403) if inaccessible/archived/unknown.
+
+    The uniform 404 (admin included) keeps an account's existence from leaking
+    to a non-member (D4).
+    """
+    account = await get_accessible(session, account_id=account_id, user_id=user.id)
+    if account is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL)
+    return account
+
+
+@accounts_router.patch("/{account_id}", response_model=AccountResponse)
+async def patch_account(
+    account_id: UUID,
+    body: AccountUpdate,
+    user: CurrentUser,
+    session: SessionDep,
+) -> Account:
+    """Edit an account's `name` only; `currency`/`type` are frozen (D6).
+
+    A body carrying `currency`/`type` is a 422 (`extra="forbid"` on the
+    schema). An inaccessible/archived/unknown account is the uniform 404 (D4).
+    """
+    account = await rename(session, account_id=account_id, user_id=user.id, name=body.name)
+    if account is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL)
+    return account
+
+
+@accounts_router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_account(
+    account_id: UUID,
+    user: CurrentUser,
+    session: SessionDep,
+) -> Response:
+    """Soft-delete an account (set `archived_at`); 204 on success, else 404.
+
+    Never a hard delete — the row stays in the DB and drops out of every
+    accessible read. A second delete (already archived) → 404, same as an
+    inaccessible/unknown account (D7/D4 non-disclosure).
+    """
+    if not await archive(session, account_id=account_id, user_id=user.id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

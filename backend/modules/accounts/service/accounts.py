@@ -21,8 +21,10 @@ is the intra-module S05.3 route).
 from __future__ import annotations
 
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from uuid import UUID
 
+from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.accounts.domain import AccountType, AccountValidator, MemberShare
@@ -103,3 +105,87 @@ async def create_shared(
     )
     await session.flush()
     return account
+
+
+# --- Resource-scoped access + reads/mutations (S05.3) -----------------------
+#
+# F03 watertightness is enforced here, by resource — NOT by RBAC at the route
+# (D2). The admin is deliberately NOT exempt: `_accessible` is the single
+# predicate every read/mutation funnels through, so list and detail can never
+# diverge on what a given user may see (D5). It always excludes archived rows,
+# so a soft-deleted account is invisible to everyone (the soft-delete oracle
+# stays a uniform 404, D4/D7).
+
+
+def _accessible(user_id: UUID) -> tuple[ColumnElement[bool], ColumnElement[bool]]:
+    """WHERE fragments for "visible to `user_id`": owned OR member, AND live.
+
+    Returned as a tuple so callers splat it into `.where(*_accessible(uid))`
+    alongside any per-call predicate (e.g. `Account.id == account_id`). The
+    membership arm uses a correlated `IN (SELECT …)` rather than a JOIN so the
+    personal-ownership arm needs no DISTINCT and the row shape stays `Account`.
+    """
+    return (
+        Account.archived_at.is_(None),
+        or_(
+            Account.owner_id == user_id,
+            Account.id.in_(
+                select(AccountMember.account_id).where(AccountMember.user_id == user_id)
+            ),
+        ),
+    )
+
+
+async def list_accessible(session: AsyncSession, *, user_id: UUID) -> Sequence[Account]:
+    """Accounts visible to `user_id` (F03 — no admin exemption), newest first.
+
+    Owned personal accounts ∪ shared accounts where the user is a member,
+    archived excluded. A user with no account gets an empty sequence.
+    """
+    stmt = select(Account).where(*_accessible(user_id)).order_by(Account.created_at.desc())
+    return (await session.execute(stmt)).scalars().all()
+
+
+async def get_accessible(
+    session: AsyncSession, *, account_id: UUID, user_id: UUID
+) -> Account | None:
+    """The account if `user_id` may access it (and it is live), else `None`.
+
+    `None` collapses three indistinguishable cases at the route — unknown id,
+    inaccessible, archived — into one uniform 404 (D4 non-disclosure).
+    """
+    stmt = select(Account).where(Account.id == account_id, *_accessible(user_id))
+    return (await session.execute(stmt)).scalar_one_or_none()
+
+
+async def rename(
+    session: AsyncSession, *, account_id: UUID, user_id: UUID, name: str
+) -> Account | None:
+    """Rename (name only) an accessible account; `None` if not accessible.
+
+    `currency`/`type` are never touched here (frozen at creation, D6).
+    Flush-only — `get_db` owns the commit boundary (ADR 0015).
+    """
+    account = await get_accessible(session, account_id=account_id, user_id=user_id)
+    if account is None:
+        return None
+    account.name = name
+    await session.flush()
+    return account
+
+
+async def archive(session: AsyncSession, *, account_id: UUID, user_id: UUID) -> bool:
+    """Soft-delete an accessible account (set `archived_at`); never a hard delete.
+
+    Returns `True` on success, `False` if the account is not accessible (→ 404).
+    Because `_accessible` already excludes archived rows, a second archive of
+    the same account finds nothing → `False` → 404 (idempotent in the sense of
+    "no corruption / row preserved", not a 204-replay, D7/C-SEC-4). Flush-only
+    (ADR 0015).
+    """
+    account = await get_accessible(session, account_id=account_id, user_id=user_id)
+    if account is None:
+        return False
+    account.archived_at = datetime.now(UTC)
+    await session.flush()
+    return True

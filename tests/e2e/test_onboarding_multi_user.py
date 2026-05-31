@@ -20,6 +20,7 @@ from tests.e2e._helpers import (
     bootstrap_admin,
     create_invitation,
     fetch_audit_rows,
+    onboard_member,
     user_id_by_email,
 )
 
@@ -28,6 +29,12 @@ pytestmark = [pytest.mark.e2e, pytest.mark.usefixtures("_clean_committed_db")]
 INVITEE_EMAIL = "invitee@example.com"
 MEMBER_PASSWORD = "member-password-123"
 ATTACKER_EMAIL = "attacker@evil.example.com"
+
+ACCOUNTS_MEMBER_EMAIL = "accounts-member@example.com"
+
+
+def _account_ids(payload: list[dict[str, object]]) -> set[str]:
+    return {row["id"] for row in payload}  # type: ignore[misc]
 
 
 async def test_onboarding_multi_user(committed_client, committed_sessionmaker):  # noqa: PLR0915 — E2E journey is deliberately long (D10)
@@ -126,3 +133,105 @@ async def test_onboarding_multi_user(committed_client, committed_sessionmaker): 
     assert [r[0] for r in rows] == ["invite_sent", "invite_accepted"]
     assert rows[0][1] == admin_id and rows[0][2] is None  # sent: by admin, no target
     assert rows[1][1] is None and rows[1][2] == member_id  # accepted: actor-less
+
+
+async def test_onboarding_accounts_etancheite(committed_client, committed_sessionmaker):
+    """Parcours 1 extension (S05.3): accounts watertightness F03, end-to-end.
+
+    Bootstrap admin → onboard a member → admin creates a personal + a shared
+    account → `GET /accounts` reflects the RBAC filter (a member never sees the
+    admin's personal account; the admin is NOT exempt from a member's personal
+    account) → a business rejection (currency ≠ EUR, then Σ ratios ≠ 1) is a
+    clean 422 end-to-end. Proves the propagation household currency →
+    `AccountValidator` → HTTP, and the cross-endpoint role filter that neither
+    the unit nor the integration tier exercises inter-role end-to-end (D2/F03).
+    """
+    client = committed_client
+
+    # 1. Bootstrap admin (household EUR initialised) + onboard a member.
+    admin_access, _admin_refresh, admin_email = await bootstrap_admin(client)
+    member_access = await onboard_member(
+        client, admin_access, ACCOUNTS_MEMBER_EMAIL, MEMBER_PASSWORD
+    )
+    admin_id = await user_id_by_email(committed_sessionmaker, admin_email)
+    member_id = await user_id_by_email(committed_sessionmaker, ACCOUNTS_MEMBER_EMAIL)
+
+    # 2. Admin creates a personal account.
+    admin_personal = await client.post(
+        "/accounts/personal",
+        json={"name": "Admin perso", "type": "courant", "currency": "EUR"},
+        headers=auth_headers(admin_access),
+    )
+    assert admin_personal.status_code == 201, admin_personal.text
+    admin_personal_id = admin_personal.json()["id"]
+
+    # 3. Admin creates a shared account including both users (0.5 / 0.5).
+    shared = await client.post(
+        "/accounts/shared",
+        json={
+            "name": "Foyer commun",
+            "type": "courant",
+            "currency": "EUR",
+            "members": [
+                {"user_id": str(admin_id), "default_share_ratio": "0.5"},
+                {"user_id": str(member_id), "default_share_ratio": "0.5"},
+            ],
+        },
+        headers=auth_headers(admin_access),
+    )
+    assert shared.status_code == 201, shared.text
+    shared_id = shared.json()["id"]
+
+    # 4. RBAC filter (F03): admin sees personal + shared; the member sees ONLY
+    #    the shared account — never the admin's personal account.
+    admin_list = await client.get("/accounts", headers=auth_headers(admin_access))
+    assert admin_list.status_code == 200
+    assert _account_ids(admin_list.json()) == {admin_personal_id, shared_id}
+
+    member_list = await client.get("/accounts", headers=auth_headers(member_access))
+    assert member_list.status_code == 200
+    assert _account_ids(member_list.json()) == {shared_id}
+
+    # 5. The member creates a personal account; the admin is NOT exempt — it
+    #    does not appear in the admin's listing (F03, the load-bearing cover).
+    member_personal = await client.post(
+        "/accounts/personal",
+        json={"name": "Member perso", "type": "livret", "currency": "EUR"},
+        headers=auth_headers(member_access),
+    )
+    assert member_personal.status_code == 201, member_personal.text
+    member_personal_id = member_personal.json()["id"]
+
+    admin_list_after = await client.get("/accounts", headers=auth_headers(admin_access))
+    assert member_personal_id not in _account_ids(admin_list_after.json())
+
+    # 6. Business rejections propagate to a clean 422 end-to-end.
+    bad_currency = await client.post(
+        "/accounts/shared",
+        json={
+            "name": "Mauvaise devise",
+            "type": "courant",
+            "currency": "USD",  # ≠ household base EUR
+            "members": [
+                {"user_id": str(admin_id), "default_share_ratio": "0.5"},
+                {"user_id": str(member_id), "default_share_ratio": "0.5"},
+            ],
+        },
+        headers=auth_headers(admin_access),
+    )
+    assert bad_currency.status_code == 422, bad_currency.text
+
+    bad_sum = await client.post(
+        "/accounts/shared",
+        json={
+            "name": "Mauvaise somme",
+            "type": "courant",
+            "currency": "EUR",
+            "members": [
+                {"user_id": str(admin_id), "default_share_ratio": "0.5"},
+                {"user_id": str(member_id), "default_share_ratio": "0.4"},
+            ],
+        },
+        headers=auth_headers(admin_access),
+    )
+    assert bad_sum.status_code == 422, bad_sum.text

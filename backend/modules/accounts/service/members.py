@@ -43,7 +43,13 @@ from backend.modules.accounts.domain import (
     MemberShare,
     OwnershipShapeError,
 )
+from backend.modules.accounts.events import (
+    AccountMemberAdded,
+    AccountMemberRemoved,
+    ShareRatioUpdated,
+)
 from backend.modules.accounts.models import Account, AccountMember
+from backend.shared.events import publish
 
 
 async def _member_account(
@@ -141,6 +147,11 @@ async def add_member(
         raise OwnershipShapeError("POST /members must add exactly one member and remove none")
 
     members = await _apply_roster(session, account_id=account_id, current=current, roster=roster)
+    # Synchronous publish, after flush, before get_db commits (same transaction,
+    # ADR 0015). V1: no subscriber → no-op. The focal member is the single newcomer.
+    (new_user_id,) = added
+    new_ratio = next(ms.ratio for ms in roster if ms.user_id == new_user_id)
+    publish(AccountMemberAdded(account_id=account_id, user_id=new_user_id, share_ratio=new_ratio))
     return account, members
 
 
@@ -173,7 +184,20 @@ async def update_share_ratio(
     if {ms.user_id for ms in roster} != current_users:
         raise OwnershipShapeError("PATCH /members/{user_id} must not change the membership")
 
+    old_ratio = next(m.default_share_ratio for m in current if m.user_id == target_user_id)
+    new_ratio = next(ms.ratio for ms in roster if ms.user_id == target_user_id)
+
     members = await _apply_roster(session, account_id=account_id, current=current, roster=roster)
+    # Focal event: only the targeted member's delta (co-members re-balanced but
+    # not evented in V1 — see ShareRatioUpdated docstring). After flush, in-tx.
+    publish(
+        ShareRatioUpdated(
+            account_id=account_id,
+            user_id=target_user_id,
+            old_ratio=old_ratio,
+            new_ratio=new_ratio,
+        )
+    )
     return account, members
 
 
@@ -209,4 +233,6 @@ async def remove_member(
         raise OwnershipShapeError("DELETE /members/{user_id} must drop exactly the target member")
 
     members = await _apply_roster(session, account_id=account_id, current=current, roster=roster)
+    # After flush, in-tx. Focal event: the removed member (V1: no subscriber).
+    publish(AccountMemberRemoved(account_id=account_id, user_id=target_user_id))
     return account, members

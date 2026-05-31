@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Iterator
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 import pytest
@@ -211,7 +212,7 @@ async def test_post_shared_201_creates_account_and_members(
     assert len(rows) == 2
     assert {r.user_id for r in rows} == {m1.id, m2.id}
     for r in rows:
-        assert r.default_share_ratio == pytest.approx(0.5)
+        assert r.default_share_ratio == Decimal("0.5000")
 
 
 async def test_post_shared_422_one_member(

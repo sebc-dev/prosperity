@@ -13,12 +13,16 @@ What this pins:
 - a rejected mutation (422 / 404) publishes **nothing** (publish is after the
   validation + flush, and never reached on a 404);
 - dispatch is by exact type (an `AccountMemberAdded` subscriber is silent on a
-  DELETE/PATCH).
+  DELETE/PATCH);
+- a subscriber that *raises* rolls the mutation back — the dispatch is
+  synchronous and *inside* the request transaction, not a post-commit hook.
 
-Note (transaction nuance): this proves *publish-before-request-commit ordering*
-and the flushed payload — not the atomicity of a subscriber side effect (there
-is no subscriber in V1; that is out of scope, deferred to E08). The bus is
-process-global mutable state, so an autouse fixture clears it around each test.
+Note (transaction nuance): `test_raising_subscriber_rolls_back_the_mutation`
+exercises the atomicity directly — a handler that raises aborts the request and
+rolls the mutation back, proving the dispatch shares the caller's transaction
+(V1 ships no real subscriber, so out-of-transaction side effects stay out of
+scope, deferred to E08). The bus is process-global mutable state, so an autouse
+fixture clears it around each test.
 """
 
 from __future__ import annotations
@@ -203,3 +207,51 @@ async def test_dispatch_is_by_exact_type(
     assert resp.status_code == 200
 
     assert added == []
+
+
+async def test_raising_subscriber_rolls_back_the_mutation(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_account_factories: FactoryBundle,
+) -> None:
+    """A subscriber that raises aborts the request and rolls the mutation back.
+
+    The load-bearing proof that dispatch is **synchronous and inside the request
+    transaction**: `publish` runs before `get_db` commits, so a handler that
+    raises propagates into the request, `get_db` rolls back, and the add is
+    undone. A post-commit dispatcher would have committed the add *before* the
+    subscriber ran, leaving the newcomer persisted — exactly what we assert never
+    happens. (`raise_app_exceptions` defaults to True, so the handler's exception
+    surfaces through the ASGI transport rather than as a 500.)
+    """
+    ids = await _seed(household_singleton, bound_account_factories)
+
+    class _SubscriberBoom(RuntimeError):
+        """Raised by a misbehaving subscriber to abort the request."""
+
+    def _boom(_event: AccountMemberAdded) -> None:
+        raise _SubscriberBoom("subscriber side effect failed")
+
+    subscribe(AccountMemberAdded, _boom)
+
+    add_m3 = _roster((ids["m1"], "0.33"), (ids["m2"], "0.33"), (ids["m3"], "0.34"))
+    with pytest.raises(_SubscriberBoom):
+        await async_client.post(
+            f"/accounts/{ids['account']}/members",
+            json=add_m3,
+            headers=_bearer(ids["m1"]),
+        )
+
+    # Drop the misbehaving subscriber so the verifying mutation can run clean.
+    clear_subscribers()
+
+    # The add was rolled back: m3 is not a member, so re-adding them is a fresh
+    # +1 (201). Had the failed request persisted m3, this identical roster would
+    # be a no-op membership change and be rejected (422). 201 therefore proves
+    # the transaction — mutation *and* dispatch together — rolled back.
+    retry = await async_client.post(
+        f"/accounts/{ids['account']}/members",
+        json=add_m3,
+        headers=_bearer(ids["m1"]),
+    )
+    assert retry.status_code == 201, retry.text

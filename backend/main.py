@@ -9,7 +9,12 @@ from fastapi import FastAPI
 
 from backend.config import get_settings
 from backend.modules.accounts.public import bootstrap_initial_admin_from_env
-from backend.modules.accounts.transports.http import router as accounts_router
+from backend.modules.accounts.transports.http import (
+    accounts_router,
+)
+from backend.modules.accounts.transports.http import (
+    router as setup_router,
+)
 from backend.modules.auth.transports.http import (
     accept_invite_router,
     invitations_router,
@@ -49,6 +54,7 @@ app = FastAPI(title="Prosperity", lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(invitations_router)
 app.include_router(accept_invite_router)
+app.include_router(setup_router)
 app.include_router(accounts_router)
 
 

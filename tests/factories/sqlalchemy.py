@@ -15,21 +15,35 @@ fed by `db_session`) is documented in Stratégie de tests §10.4.
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import cast
 
 from factory.alchemy import SQLAlchemyModelFactory
+from factory.declarations import LazyFunction
 from factory.faker import Faker
-from factory.helpers import lazy_attribute
+from factory.helpers import lazy_attribute, post_generation
 from pwdlib import PasswordHash
 
 from backend.modules.accounts.domain import AccountType
 from backend.modules.accounts.models import Account, AccountMember
 from backend.modules.auth.models import User
 from backend.modules.budget.models import Category
+from backend.modules.transactions.models import Split, Transaction
 
-__all__ = ["AccountFactory", "AccountMemberFactory", "CategoryFactory", "UserFactory"]
+__all__ = [
+    "AccountFactory",
+    "AccountMemberFactory",
+    "CategoryFactory",
+    "SplitFactory",
+    "TransactionFactory",
+    "UserFactory",
+]
 
 
 _password_hasher = PasswordHash.recommended()
+
+# Default magnitude of a `SplitFactory` leg, shared by the factory field and
+# `TransactionFactory`'s zero-sum pair so the two never drift apart.
+_DEFAULT_SPLIT_AMOUNT_CENTS = 1000
 
 
 class UserFactory(SQLAlchemyModelFactory):
@@ -117,3 +131,78 @@ class CategoryFactory(SQLAlchemyModelFactory):
 
     name = Faker("word")
     parent_id = None
+
+
+class SplitFactory(SQLAlchemyModelFactory):
+    """Persist a `Split`. Caller passes `transaction_id` + `account_id`.
+
+    `amount_cents`/`currency` default to a single positive EUR leg; pair two
+    explicit instances (`-N`/`+N`) for a balanced transaction, or use
+    `TransactionFactory` which builds the balanced pair automatically.
+    `category_id`/`savings_goal_id` left NULL by default.
+    """
+
+    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
+        model = Split
+        sqlalchemy_session_persistence = "flush"
+
+    amount_cents = _DEFAULT_SPLIT_AMOUNT_CENTS
+    currency = "EUR"
+    category_id = None
+    savings_goal_id = None
+
+
+class TransactionFactory(SQLAlchemyModelFactory):
+    """Persist a `Transaction`; by default attach a **zero-sum** pair of
+    splits (one debit `-N`, one credit `+N`, same currency, same account).
+
+    Caller passes the required FKs `account_id` + `created_by`.
+
+    - `TransactionFactory()` -> balanced (`sum(splits.amount_cents) == 0`).
+    - `TransactionFactory(splits__amount_cents=5000)` -> balanced at ±5000.
+    - `TransactionFactory(splits=False)` -> NO auto-splits (the test adds its
+      own, e.g. an unbalanced pair for a negative test).
+
+    `SplitFactory` shares this factory's session (bound together by
+    `bound_transaction_factories`), so the post-generation splits flush in the
+    same session as their transaction — `obj.id` is available post-flush.
+    """
+
+    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
+        model = Transaction
+        sqlalchemy_session_persistence = "flush"
+
+    date = Faker("date_object")
+    state = "draft"
+    payee = Faker("company")
+    description = None
+    category_id = None
+    tags = LazyFunction(list)
+    debt_generation_override = "default"
+
+    # `obj` (the built `Transaction`) is left unannotated: factory-boy passes
+    # the instance as the first positional arg, but pyright models the hook as
+    # a method and would reject any non-`self` type there. The remaining params
+    # and the return are typed, so no blanket `# type: ignore` is needed.
+    @post_generation
+    def splits(obj, create: bool, extracted: object, **kwargs: object) -> None:  # noqa: N805
+        # `extracted is False` -> caller opts out of the auto balanced pair.
+        if not create or extracted is False:
+            return
+        amount = cast(int, kwargs.get("amount_cents", _DEFAULT_SPLIT_AMOUNT_CENTS))
+        currency = cast(str, kwargs.get("currency", "EUR"))
+        transaction = cast(Transaction, obj)
+        # The debit/credit reference the transaction's own account by default;
+        # equal magnitudes with opposite signs keep the pair zero-sum.
+        SplitFactory(
+            transaction_id=transaction.id,
+            account_id=transaction.account_id,
+            amount_cents=-amount,
+            currency=currency,
+        )
+        SplitFactory(
+            transaction_id=transaction.id,
+            account_id=transaction.account_id,
+            amount_cents=amount,
+            currency=currency,
+        )

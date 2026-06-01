@@ -101,6 +101,44 @@ table refresh_tokens
   idx ix_refresh_tokens_user_id INDEX: user_id
   idx uq_refresh_tokens_token_hash UNIQUE: token_hash
 
+table splits
+  col account_id: UUID NOT NULL
+  col amount_cents: BIGINT NOT NULL
+  col category_id: UUID NULL
+  col currency: VARCHAR(3) NOT NULL
+  col id: UUID NOT NULL
+  col savings_goal_id: UUID NULL
+  col transaction_id: UUID NOT NULL
+  pk pk_splits(id)
+  fk fk_splits_account_id_accounts: (account_id) -> accounts(id) ON DELETE RESTRICT
+  fk fk_splits_category_id_categories: (category_id) -> categories(id) ON DELETE RESTRICT
+  fk fk_splits_transaction_id_transactions: (transaction_id) -> transactions(id) ON DELETE CASCADE
+  idx ix_splits_account_id INDEX: account_id
+  idx ix_splits_category_id INDEX: category_id
+  idx ix_splits_transaction_id INDEX: transaction_id
+
+table transactions
+  col account_id: UUID NOT NULL
+  col category_id: UUID NULL
+  col confirmed_at: TIMESTAMP WITH TIME ZONE NULL
+  col created_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col created_by: UUID NOT NULL
+  col date: DATE NOT NULL
+  col debt_generation_override: VARCHAR NOT NULL
+  col description: VARCHAR NULL
+  col id: UUID NOT NULL
+  col payee: VARCHAR(255) NULL
+  col state: VARCHAR NOT NULL
+  col tags: VARCHAR[] NOT NULL
+  col voided_at: TIMESTAMP WITH TIME ZONE NULL
+  pk pk_transactions(id)
+  fk fk_transactions_account_id_accounts: (account_id) -> accounts(id) ON DELETE RESTRICT
+  fk fk_transactions_category_id_categories: (category_id) -> categories(id) ON DELETE RESTRICT
+  fk fk_transactions_created_by_users: (created_by) -> users(id) ON DELETE RESTRICT
+  idx ix_transactions_account_id INDEX: account_id
+  idx ix_transactions_category_id INDEX: category_id
+  idx ix_transactions_created_by INDEX: created_by
+
 table users
   col created_at: TIMESTAMP WITH TIME ZONE NOT NULL
   col disabled_at: TIMESTAMP WITH TIME ZONE NULL

@@ -33,7 +33,7 @@ from backend.modules.accounts.domain import (
     ShareRatioSumError,
     TooFewMembersError,
 )
-from tests.strategies import account_with_members_strategy, share_ratios
+from tests.strategies import GeneratedAccount, account_with_members_strategy, share_ratios
 
 _BASE = "EUR"
 
@@ -311,7 +311,7 @@ def test_all_leaf_errors_subclass_base() -> None:
 
 
 @given(account=account_with_members_strategy(shape="shared"))
-def test_property_valid_shared_is_accepted(account) -> None:
+def test_property_valid_shared_is_accepted(account: GeneratedAccount) -> None:
     # ∀ multiset of Decimal ratios summing to 1 with |members| ≥ 2 → accepted.
     AccountValidator.validate(
         currency=_BASE,
@@ -322,7 +322,9 @@ def test_property_valid_shared_is_accepted(account) -> None:
 
 
 @given(owner_id=st.uuids(), account=account_with_members_strategy(shape="shared"))
-def test_property_owner_plus_members_always_rejected(owner_id: UUID, account) -> None:
+def test_property_owner_plus_members_always_rejected(
+    owner_id: UUID, account: GeneratedAccount
+) -> None:
     # ∀ owner_id + non-empty members → contradictory shape → OwnershipShapeError.
     with pytest.raises(OwnershipShapeError):
         AccountValidator.validate(

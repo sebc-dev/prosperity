@@ -64,9 +64,7 @@ def _user_row(uid: UUID) -> User:
     )
 
 
-def _seed_shared(
-    session: AsyncSession, members: list[UUID], ratios: list[Decimal]
-) -> Account:
+def _seed_shared(session: AsyncSession, members: list[UUID], ratios: list[Decimal]) -> Account:
     """INSERT un compte commun valide + ses membres (name/currency/type NOT NULL).
 
     `AsyncSession.add` / `.add_all` sont synchrones (pas d'IO) ; le flush est
@@ -146,9 +144,7 @@ def test_property_rebalance_keeps_sum_one(rebalance_socle, n: int, data: st.Data
                 await s.begin()
                 acc = _seed_shared(s, members, initial)
                 await s.flush()
-                roster = [
-                    MemberShare(user_id=members[i], ratio=rebalanced[i]) for i in range(n)
-                ]
+                roster = [MemberShare(user_id=members[i], ratio=rebalanced[i]) for i in range(n)]
                 result = await update_share_ratio(
                     s,
                     account_id=acc.id,
@@ -158,15 +154,15 @@ def test_property_rebalance_keeps_sum_one(rebalance_socle, n: int, data: st.Data
                 )
                 assert result is not None
                 _, reloaded = result
-                assert (
-                    sum((m.default_share_ratio for m in reloaded), Decimal("0"))
-                    == Decimal("1.0000")
+                assert sum((m.default_share_ratio for m in reloaded), Decimal("0")) == Decimal(
+                    "1.0000"
                 )
-                # Re-lecture indépendante : l'état persisté (flush) vérifie aussi Σ=1.
+                # Re-lecture via une requête distincte (toujours intra-transaction,
+                # post-flush) : confirme Σ=1 sur l'état renvoyé par la DB, pas
+                # seulement sur le tuple `result`. Pas un round-trip cross-session.
                 again = await list_members(s, acc.id)
-                assert (
-                    sum((m.default_share_ratio for m in again), Decimal("0"))
-                    == Decimal("1.0000")
+                assert sum((m.default_share_ratio for m in again), Decimal("0")) == Decimal(
+                    "1.0000"
                 )
                 await s.rollback()  # rien ne persiste hors de l'exemple
         finally:
@@ -204,9 +200,7 @@ def test_property_inconsistent_rebalance_rejected(
                 # Roster incohérent : même membership, mais Σ = 1 + bump/10000 != 1.
                 bad = list(initial)
                 bad[0] = bad[0] + Decimal(bump) / Decimal(10000)
-                bad_roster = [
-                    MemberShare(user_id=members[i], ratio=bad[i]) for i in range(n)
-                ]
+                bad_roster = [MemberShare(user_id=members[i], ratio=bad[i]) for i in range(n)]
                 with pytest.raises(AccountValidationError):
                     await update_share_ratio(
                         s,
@@ -241,9 +235,7 @@ def test_rebalance_50_50_to_30_70(rebalance_socle) -> None:
             sm = async_sessionmaker(engine, expire_on_commit=False)
             async with sm() as s:
                 await s.begin()
-                acc = _seed_shared(
-                    s, members, [Decimal("0.5000"), Decimal("0.5000")]
-                )
+                acc = _seed_shared(s, members, [Decimal("0.5000"), Decimal("0.5000")])
                 await s.flush()
                 roster = [
                     MemberShare(user_id=members[0], ratio=Decimal("0.3000")),

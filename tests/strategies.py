@@ -66,7 +66,13 @@ def share_ratios(draw: st.DrawFn, *, n: int, total: int = _BASIS_POINTS) -> list
     ``total == 10000`` (défaut) ⇒ Σ == ``Decimal("1.0000")`` ; ``total != 10000``
     ⇒ Σ != 1 (alimente le test de rejet Σ≠1, S05.5 D3). Généralise le composite
     inline `_members_summing_to` de `test_accounts_validator.py`.
+
+    `ValueError` si ``total < n`` : N parts entières ≥ 1 imposent ``total >= n``
+    (sinon partition impossible). Garde explicite car le helper est public et
+    réutilisable hors de ses appelants S05.5.
     """
+    if total < n:
+        raise ValueError(f"share_ratios requiert total >= n, reçu total={total}, n={n}")
     cuts = sorted(
         draw(
             st.lists(

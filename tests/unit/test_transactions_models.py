@@ -13,6 +13,7 @@ from typing import cast
 
 from sqlalchemy import (
     ARRAY,
+    UUID,
     BigInteger,
     CheckConstraint,
     Date,
@@ -51,6 +52,28 @@ def test_expected_columns_and_nullability() -> None:
     assert cols["category_id"].nullable is True
     assert cols["confirmed_at"].nullable is True
     assert cols["voided_at"].nullable is True
+
+
+def test_created_at_has_server_default() -> None:
+    # `created_at` is the ONE column with a SQL `server_default` (now());
+    # `tags`/`debt_generation_override` use ORM Python-side defaults (their
+    # tests assert `server_default is None`). Pin the asymmetry so a switch to
+    # an ORM-side default — which would silently break create_all/Alembic
+    # snapshot parity — turns this test red.
+    col = cast(Table, Transaction.__table__).c["created_at"]
+    assert col.server_default is not None
+
+
+def test_uuid_columns_are_uuid_type() -> None:
+    # Every id / FK column is a UUID (a drift to `String` would still pass the
+    # nullability/FK tests). `savings_goal_id` is listed too: the dormant
+    # column must stay a UUID so the future FK activation matches.
+    tx_cols = cast(Table, Transaction.__table__).c
+    for name in ("id", "account_id", "category_id", "created_by"):
+        assert isinstance(tx_cols[name].type, UUID), name
+    split_cols = cast(Table, Split.__table__).c
+    for name in ("id", "transaction_id", "account_id", "category_id", "savings_goal_id"):
+        assert isinstance(split_cols[name].type, UUID), name
 
 
 def test_no_amount_or_bank_transaction_id_column() -> None:
@@ -105,9 +128,7 @@ def test_transaction_fk_ondelete_actions_and_names() -> None:
     table = cast(Table, Transaction.__table__)
     fks = {c.name: c for c in table.constraints if isinstance(c, ForeignKeyConstraint)}
     assert fks["fk_transactions_account_id_accounts"].ondelete == "RESTRICT"
-    assert (
-        fks["fk_transactions_account_id_accounts"].elements[0].column.table.name == "accounts"
-    )
+    assert fks["fk_transactions_account_id_accounts"].elements[0].column.table.name == "accounts"
     assert fks["fk_transactions_category_id_categories"].ondelete == "RESTRICT"
     assert (
         fks["fk_transactions_category_id_categories"].elements[0].column.table.name == "categories"

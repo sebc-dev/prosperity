@@ -42,6 +42,11 @@ from testcontainers.postgres import PostgresContainer
 
 from alembic import command
 
+# Every persisted-module table is registered on `Base.metadata` via the
+# integration `conftest.py` (it imports the models + the factories), so the
+# `create_all` parity test below materialises the full schema.
+from backend.shared.models import Base
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 SNAPSHOT_PATH = REPO_ROOT / "tests" / "snapshots" / "schema_baseline.txt"
@@ -152,6 +157,18 @@ def _schema_snapshot(sync_dsn: str) -> str:
         engine.dispose()
 
 
+def _without_table(schema: str, table: str) -> str:
+    """Drop the `table <name>` block from a formatted schema.
+
+    `create_all` never stamps the `alembic_version` bookkeeping table, while
+    `alembic upgrade head` does — strip it from both sides so the comparison
+    stays schema-to-schema. Blocks are separated by a blank line (see
+    `_format_schema`).
+    """
+    blocks = schema.split("\n\n")
+    return "\n\n".join(b for b in blocks if not b.startswith(f"table {table}"))
+
+
 def test_baseline_migration_round_trip(postgres_container: PostgresContainer) -> None:
     async_dsn = postgres_container.get_connection_url()
     # Reflection runs synchronously via psycopg2-binary (declared as dev dep).
@@ -185,3 +202,40 @@ def test_baseline_migration_round_trip(postgres_container: PostgresContainer) ->
     assert "table categories" not in post, f"categories table leaked after downgrade:\n{post}"
     assert "table splits" not in post, f"splits table leaked after downgrade:\n{post}"
     assert "table transactions" not in post, f"transactions table leaked after downgrade:\n{post}"
+
+
+def test_create_all_matches_alembic_head(postgres_container: PostgresContainer) -> None:
+    """`Base.metadata.create_all` must produce byte-for-byte the same schema as
+    `alembic upgrade head` — column types, PK, FKs + `ON DELETE`, indexes, and
+    crucially the constraint/index *names* (the `NAMING_CONVENTION` parity).
+
+    The integration tier runs on `create_all` (the `auth_schema` fixture)
+    while prod runs the migrations. Their parity used to be only *implicit*
+    (inferred from the CASCADE/RESTRICT behaviour tests plus a shared snapshot
+    file). This pins it directly, so a divergence — e.g. a migration whose FK
+    name no longer matches the model's `Index(...)` — fails loudly here.
+    """
+    async_dsn = postgres_container.get_connection_url()
+    sync_dsn = async_dsn.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+
+    engine = create_engine(sync_dsn)
+    try:
+        # Start clean (a prior test may have left model tables) and build the
+        # schema purely from the ORM metadata.
+        Base.metadata.drop_all(engine)
+        Base.metadata.create_all(engine)
+        create_all_schema = _format_schema(engine)
+    finally:
+        engine.dispose()
+
+    expected = SNAPSHOT_PATH.read_text().strip()
+    assert _without_table(create_all_schema, "alembic_version") == _without_table(
+        expected, "alembic_version"
+    )
+
+    # Leave the session-scoped container clean for sibling tests.
+    engine = create_engine(sync_dsn)
+    try:
+        Base.metadata.drop_all(engine)
+    finally:
+        engine.dispose()

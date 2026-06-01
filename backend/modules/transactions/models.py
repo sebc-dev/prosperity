@@ -117,6 +117,12 @@ class Transaction(Base):
         nullable=True,
     )
     tags: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
+    # `default`/`force_full_debt`/`force_no_debt` (domain Literal). Plain
+    # `String` without a CHECK, like `state` — the value lock lives at the
+    # domain boundary (S07.3). Unlike `currency`/`state` (open sets kept ENUM-
+    # free for V2 evolution), this is a *closed* 3-value set driving a
+    # sensitive budget mechanic, so S07.3 should weigh a defense-in-depth
+    # CHECK here specifically when it adds the domain lock.
     debt_generation_override: Mapped[str] = mapped_column(
         String,
         nullable=False,
@@ -195,7 +201,10 @@ class Split(Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
     # Dormant FK: nullable UUID column WITHOUT a `ForeignKey` (savings_goals
     # does not exist yet — option (a)). To be activated by the story that
-    # creates `savings`. No FK ⇒ no dedicated index (nothing to protect).
+    # creates `savings`. No active FK to protect ⇒ no index here yet; the
+    # "fast-aggregate" index CONTEXT.md §`split.savings_goal_id` calls for is
+    # deferred to that same story (added alongside the constraint, after any
+    # orphan UUIDs are cleaned, once the column actually carries values).
     savings_goal_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         nullable=True,

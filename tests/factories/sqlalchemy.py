@@ -41,6 +41,10 @@ __all__ = [
 
 _password_hasher = PasswordHash.recommended()
 
+# Default magnitude of a `SplitFactory` leg, shared by the factory field and
+# `TransactionFactory`'s zero-sum pair so the two never drift apart.
+_DEFAULT_SPLIT_AMOUNT_CENTS = 1000
+
 
 class UserFactory(SQLAlchemyModelFactory):
     """Persist a `User` with an Argon2id hash derived from a plaintext.
@@ -142,7 +146,7 @@ class SplitFactory(SQLAlchemyModelFactory):
         model = Split
         sqlalchemy_session_persistence = "flush"
 
-    amount_cents = 1000
+    amount_cents = _DEFAULT_SPLIT_AMOUNT_CENTS
     currency = "EUR"
     category_id = None
     savings_goal_id = None
@@ -176,15 +180,17 @@ class TransactionFactory(SQLAlchemyModelFactory):
     tags = LazyFunction(list)
     debt_generation_override = "default"
 
+    # `obj` (the built `Transaction`) is left unannotated: factory-boy passes
+    # the instance as the first positional arg, but pyright models the hook as
+    # a method and would reject any non-`self` type there. The remaining params
+    # and the return are typed, so no blanket `# type: ignore` is needed.
     @post_generation
-    def splits(obj, create, extracted, **kwargs):  # type: ignore[no-untyped-def]  # noqa: N805
-        # `obj` is the persisted `Transaction` instance (factory-boy passes the
-        # built object as the first arg of a post_generation hook).
+    def splits(obj, create: bool, extracted: object, **kwargs: object) -> None:  # noqa: N805
         # `extracted is False` -> caller opts out of the auto balanced pair.
         if not create or extracted is False:
             return
-        amount = kwargs.get("amount_cents", 1000)
-        currency = kwargs.get("currency", "EUR")
+        amount = cast(int, kwargs.get("amount_cents", _DEFAULT_SPLIT_AMOUNT_CENTS))
+        currency = cast(str, kwargs.get("currency", "EUR"))
         transaction = cast(Transaction, obj)
         # The debit/credit reference the transaction's own account by default;
         # equal magnitudes with opposite signs keep the pair zero-sum.

@@ -23,24 +23,31 @@ pytestmark = pytest.mark.usefixtures("household_singleton")
 async def _seed_account(
     session: AsyncSession,
     bound: Callable[[], Awaitable[tuple[type, type, type, type]]],
-) -> tuple[uuid.UUID, uuid.UUID]:
-    """Build a user + personal account, returning (account_id, user_id)."""
-    user_factory, account_factory, _tx_factory, _split_factory = await bound()
+) -> tuple[uuid.UUID, uuid.UUID, tuple[type, type, type, type]]:
+    """Build a user + personal account.
+
+    Returns `(account_id, user_id, factories)` — binding the four factories
+    once and handing the tuple back, so callers reuse it instead of awaiting
+    `bound()` a second time (the bind is idempotent but the extra call is noise).
+    """
+    factories = await bound()
+    user_factory, account_factory, _tx_factory, _split_factory = factories
 
     def _build(_sync_session: object) -> tuple[uuid.UUID, uuid.UUID]:
         user = user_factory()
         account = account_factory(owner_id=user.id)
         return account.id, user.id
 
-    return await session.run_sync(_build)
+    account_id, user_id = await session.run_sync(_build)
+    return account_id, user_id, factories
 
 
 async def test_default_transaction_is_zero_sum(
     auth_schema: AsyncSession,
     bound_transaction_factories: Callable[[], Awaitable[tuple[type, type, type, type]]],
 ) -> None:
-    account_id, user_id = await _seed_account(auth_schema, bound_transaction_factories)
-    _u, _a, transaction_factory, _s = await bound_transaction_factories()
+    account_id, user_id, factories = await _seed_account(auth_schema, bound_transaction_factories)
+    _u, _a, transaction_factory, _s = factories
 
     def _build(_sync_session: object) -> uuid.UUID:
         tx = transaction_factory(account_id=account_id, created_by=user_id)
@@ -66,8 +73,8 @@ async def test_amount_override_stays_balanced(
     auth_schema: AsyncSession,
     bound_transaction_factories: Callable[[], Awaitable[tuple[type, type, type, type]]],
 ) -> None:
-    account_id, user_id = await _seed_account(auth_schema, bound_transaction_factories)
-    _u, _a, transaction_factory, _s = await bound_transaction_factories()
+    account_id, user_id, factories = await _seed_account(auth_schema, bound_transaction_factories)
+    _u, _a, transaction_factory, _s = factories
 
     def _build(_sync_session: object) -> uuid.UUID:
         tx = transaction_factory(
@@ -97,8 +104,8 @@ async def test_splits_false_yields_no_splits(
     auth_schema: AsyncSession,
     bound_transaction_factories: Callable[[], Awaitable[tuple[type, type, type, type]]],
 ) -> None:
-    account_id, user_id = await _seed_account(auth_schema, bound_transaction_factories)
-    _u, _a, transaction_factory, _s = await bound_transaction_factories()
+    account_id, user_id, factories = await _seed_account(auth_schema, bound_transaction_factories)
+    _u, _a, transaction_factory, _s = factories
 
     def _build(_sync_session: object) -> uuid.UUID:
         tx = transaction_factory(account_id=account_id, created_by=user_id, splits=False)
@@ -120,8 +127,8 @@ async def test_explicit_unbalanced_splits_for_negative_case(
 ) -> None:
     # Documents generating an UNbalanced transaction for S07.3 negative tests:
     # opt out of the auto pair, then add two mismatched legs.
-    account_id, user_id = await _seed_account(auth_schema, bound_transaction_factories)
-    _u, _a, transaction_factory, split_factory = await bound_transaction_factories()
+    account_id, user_id, factories = await _seed_account(auth_schema, bound_transaction_factories)
+    _u, _a, transaction_factory, split_factory = factories
 
     def _build(_sync_session: object) -> uuid.UUID:
         tx = transaction_factory(account_id=account_id, created_by=user_id, splits=False)
@@ -143,8 +150,8 @@ async def test_factory_defaults(
     auth_schema: AsyncSession,
     bound_transaction_factories: Callable[[], Awaitable[tuple[type, type, type, type]]],
 ) -> None:
-    account_id, user_id = await _seed_account(auth_schema, bound_transaction_factories)
-    _u, _a, transaction_factory, _s = await bound_transaction_factories()
+    account_id, user_id, factories = await _seed_account(auth_schema, bound_transaction_factories)
+    _u, _a, transaction_factory, _s = factories
 
     def _build(_sync_session: object) -> tuple[str, list[str], str, object]:
         tx = transaction_factory(account_id=account_id, created_by=user_id)
@@ -155,3 +162,36 @@ async def test_factory_defaults(
     assert tags == []
     assert override == "default"
     assert category_id is None
+
+
+async def test_currency_override_propagates_to_both_legs(
+    auth_schema: AsyncSession,
+    bound_transaction_factories: Callable[[], Awaitable[tuple[type, type, type, type]]],
+) -> None:
+    # `splits__currency` must reach BOTH legs (the only post-generation param
+    # not otherwise exercised): a single-currency zero-sum pair in CHF.
+    account_id, user_id, factories = await _seed_account(auth_schema, bound_transaction_factories)
+    _u, _a, transaction_factory, _s = factories
+
+    def _build(_sync_session: object) -> uuid.UUID:
+        tx = transaction_factory(
+            account_id=account_id,
+            created_by=user_id,
+            splits__amount_cents=2500,
+            splits__currency="CHF",
+        )
+        return tx.id
+
+    tx_id = await auth_schema.run_sync(_build)
+
+    rows = (
+        (
+            await auth_schema.execute(
+                text("SELECT currency FROM splits WHERE transaction_id = :id"),
+                {"id": tx_id},
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert list(rows) == ["CHF", "CHF"]

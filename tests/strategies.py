@@ -1,4 +1,10 @@
-"""Stratégies Hypothesis partagées pour les tests property-based (S05.5, S06.4).
+"""Stratégies Hypothesis partagées pour les tests property-based (S05.5, S06.4, S07.1).
+
+`money_strategy` (S07.1) génère un `Money` valide (devise tirée dans `CURRENCIES`,
+montant entier borné) ; `distinct_currency_pair` fournit deux devises garanties
+distinctes pour les properties cross-devise. Premier consommateur de `Money` en
+property-based ; calque `account_with_members_strategy`.
+
 
 `category_tree_strategy` (S06.4) génère un arbre/forêt de catégories
 **acyclique par construction** (chaque nœud pointe vers un parent déjà émis ou
@@ -33,12 +39,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Literal
+from typing import Final, Literal
 from uuid import UUID, uuid4
 
 import hypothesis.strategies as st
 
 from backend.modules.accounts.domain import AccountType, MemberShare
+from backend.shared.currency import CURRENCIES, Currency
+from backend.shared.money import Money
 
 # Numeric(5, 4) → échelle 4 ⇒ 10000 « points de base » pour 1.0000 exact.
 _BASIS_POINTS: int = 10_000
@@ -242,3 +250,29 @@ def category_tree_strategy(
         if chosen is not None:
             children[chosen] = children.get(chosen, 0) + 1
     return GeneratedCategoryTree(nodes=tuple((nid, parent[nid]) for nid in ids))
+
+
+_MONEY_BOUND: Final[int] = 10**9  # ±10 M€ en centimes : large mais évite l'overflow visuel
+_CURRENCY_CHOICES: Final = sorted(CURRENCIES)  # dérivé du Literal `Currency` (source unique)
+
+
+@st.composite
+def money_strategy(draw: st.DrawFn, *, currency: Currency | None = None) -> Money:
+    """Génère un `Money` valide (S07.1, premier consommateur property-based).
+
+    `currency=None` => devise tirée dans les codes connus (`CURRENCIES`, donc
+    suit automatiquement une extension V2 — pas de liste en dur). Montant entier
+    borné par `±_MONEY_BOUND` : large, mais évite des sorties illisibles sans
+    masquer de cas limite (l'arithmétique entière de Python n'overflow pas).
+    """
+    cur = currency if currency is not None else draw(st.sampled_from(_CURRENCY_CHOICES))
+    amount = draw(st.integers(min_value=-_MONEY_BOUND, max_value=_MONEY_BOUND))
+    return Money(amount, cur)  # type: ignore[arg-type]  # cur ∈ Currency par construction
+
+
+@st.composite
+def distinct_currency_pair(draw: st.DrawFn) -> tuple[Currency, Currency]:
+    """Deux devises GARANTIES distinctes (évite le rejet `assume`, zéro exemple gaspillé)."""
+    a = draw(st.sampled_from(_CURRENCY_CHOICES))
+    b = draw(st.sampled_from([c for c in _CURRENCY_CHOICES if c != a]))
+    return a, b  # type: ignore[return-value]  # a != b ∈ Currency par construction

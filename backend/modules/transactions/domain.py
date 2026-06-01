@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import datetime as dt
 import enum
-from typing import Final, Literal
+from typing import ClassVar, Final, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -95,15 +95,27 @@ class TransactionError(Exception):
     Une base commune laisse le service S07.4 mapper toute la famille avec un
     `except TransactionError` unique, tout en gardant `domain.py` stdlib-only
     (gabarit `budget.domain.CategoryError` / `accounts.domain.AccountValidationError`).
+
+    `code` (ClassVar) : identifiant stable et SANS PII, à recopier tel quel dans
+    le `WriteResult.error.code` exposé client. Le service NE DOIT JAMAIS recopier
+    `str(exc)` (qui peut contenir un UUID/un montant) dans `error.message` : il
+    utilise `exc.code` + les attributs typés (`field`, `transaction_id`, …) comme
+    canal sûr, jamais le message libre.
     """
+
+    code: ClassVar[str] = "transaction_error"
 
 
 class UnbalancedTransactionError(TransactionError):
     """`sum(splits) != Money(0, ccy)` sur une transaction `confirmed` (ADR 0001)."""
 
+    code: ClassVar[str] = "unbalanced_transaction"
+
 
 class InvalidStateTransitionError(TransactionError):
     """Transition non listée dans `STATE_TRANSITIONS` (jamais silencieuse)."""
+
+    code: ClassVar[str] = "invalid_state_transition"
 
     def __init__(self, from_state: TransactionState, to_state: TransactionState) -> None:
         super().__init__(f"transition interdite : {from_state} → {to_state}")
@@ -116,8 +128,10 @@ class ImmutableFieldViolation(TransactionError):
 
     Correspond au code `WriteResult` `immutable_field_violation` (glossaire,
     anticipe E13). Le service NE DOIT JAMAIS copier `str(exc)` dans le
-    `error.message` exposé client : utiliser le `code` typé.
+    `error.message` exposé client : utiliser `code` + l'attribut typé `field`.
     """
+
+    code: ClassVar[str] = "immutable_field_violation"
 
     def __init__(self, field: str) -> None:
         super().__init__(f"champ gelé modifié sur une transaction confirmée : {field}")
@@ -128,10 +142,19 @@ class UncategorizedExpenseError(TransactionError):
     """Confirmation refusée : un split dépense (non-transfert) n'a pas de catégorie.
 
     Glossaire §`splits.category_id NULL` : pas de catégorie « Sans catégorie »
-    magique — l'utilisateur choisit explicitement. Le service NE DOIT JAMAIS
-    exposer `str(exc)` (il contient l'UUID de la transaction) ; utiliser le
-    `code` typé.
+    magique — l'utilisateur choisit explicitement. L'UUID de la transaction est
+    porté par l'attribut typé `transaction_id` (canal de debug structuré), PAS
+    seulement dans le message : le service utilise `code`/`transaction_id` et NE
+    DOIT JAMAIS recopier `str(exc)` dans le `error.message` exposé client.
     """
+
+    code: ClassVar[str] = "uncategorized_expense"
+
+    def __init__(self, transaction_id: UUID) -> None:
+        super().__init__(
+            f"dépense non catégorisée sur une transaction confirmée : {transaction_id}"
+        )
+        self.transaction_id = transaction_id
 
 
 class Split(BaseModel):
@@ -278,4 +301,4 @@ def assert_expenses_categorized(tx: Transaction) -> None:
     if is_transfer(tx):
         return
     if any(split.category_id is None for split in tx.splits):
-        raise UncategorizedExpenseError(str(tx.id))
+        raise UncategorizedExpenseError(tx.id)

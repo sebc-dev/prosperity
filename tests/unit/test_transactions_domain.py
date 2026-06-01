@@ -21,6 +21,7 @@ from uuid import UUID, uuid4
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from pydantic import ValidationError
 
 from backend.modules.transactions.domain import (
     EDITABLE_AFTER_CONFIRMED,
@@ -140,7 +141,7 @@ class TestZeroSum:
 
     def test_transaction_is_frozen(self) -> None:
         tx = _tx(state=TransactionState.DRAFT, splits=(_split(Money(1000, "EUR")),))
-        with pytest.raises(Exception):  # noqa: B017 — pydantic ValidationError sur frozen
+        with pytest.raises(ValidationError):  # frozen=True → réassignation interdite
             tx.state = TransactionState.PLANNED  # type: ignore[misc]
 
     def test_splits_collection_is_immutable(self) -> None:
@@ -153,7 +154,7 @@ class TestZeroSum:
 
     def test_split_amount_is_money(self) -> None:
         # strict=True refuse un int brut là où un Money est attendu.
-        with pytest.raises(Exception):  # noqa: B017 — pydantic ValidationError
+        with pytest.raises(ValidationError):
             Split(account_id=uuid4(), amount=100)  # type: ignore[arg-type]
 
     @given(splits=balanced_splits_strategy())
@@ -270,6 +271,28 @@ class TestImmutability:
         old = self._confirmed_pair()
         check_mutation_allowed(old, old.model_copy(update={"state": TransactionState.VOID}))
 
+    def test_rebuilt_identical_splits_not_flagged(self) -> None:
+        # Filet load-bearing : le checker compare `splits` PAR VALEUR (et non par
+        # identité). Le mapper S07.4 reconstruira des `Split` distincts depuis la
+        # DB → s'ils sont structurellement égaux, aucune ImmutableFieldViolation
+        # ne doit être levée. Une régression de `Split.__eq__`/`__hash__` (passage
+        # à une comparaison d'identité) ferait échouer CHAQUE édition d'une
+        # transaction confirmée — ce test la rattrape.
+        old = self._confirmed_pair()
+        rebuilt = tuple(
+            Split(
+                account_id=s.account_id,
+                category_id=s.category_id,
+                amount=Money(s.amount.amount_cents, s.amount.currency),
+            )
+            for s in old.splits
+        )
+        # Instances réellement distinctes (sinon le test ne prouverait rien).
+        assert rebuilt is not old.splits
+        assert all(new_s is not old_s for new_s, old_s in zip(rebuilt, old.splits, strict=True))
+        assert rebuilt == old.splits  # … mais égaux par valeur.
+        check_mutation_allowed(old, old.model_copy(update={"splits": rebuilt}))  # no raise
+
     def test_editable_set_matches_model_fields(self) -> None:
         # Verrou D14 : partition gelé/éditable figée. Tout renommage/ajout de
         # champ casse ce test plutôt que de faire fuiter un champ financier.
@@ -288,7 +311,11 @@ class TestImmutability:
     ) -> None:
         # ∀ confirmed `old` + mutation portant UNIQUEMENT sur un sous-ensemble
         # de EDITABLE_AFTER_CONFIRMED → jamais d'ImmutableFieldViolation.
-        fields = data.draw(st.lists(st.sampled_from(sorted(EDITABLE_AFTER_CONFIRMED)), unique=True))
+        # min_size=1 : on veut au moins une mutation réelle (la liste vide
+        # donnerait un no-raise trivial qui dilue le signal de la property).
+        fields = data.draw(
+            st.lists(st.sampled_from(sorted(EDITABLE_AFTER_CONFIRMED)), min_size=1, unique=True)
+        )
         updates: dict[str, object] = {}
         for field in fields:
             if field == "category_id":
@@ -403,8 +430,11 @@ class TestTransferGuard:
                 _split(Money(1000, "EUR"), account_id=acc, category_id=None),
             ),
         )
-        with pytest.raises(UncategorizedExpenseError):
+        with pytest.raises(UncategorizedExpenseError) as exc:
             assert_expenses_categorized(tx)
+        # L'UUID est porté par un attribut typé (canal sûr), pas seulement le message.
+        assert exc.value.transaction_id == tx.id
+        assert exc.value.code == "uncategorized_expense"
 
     def test_expense_fully_categorized_ok(self) -> None:
         acc = uuid4()
@@ -495,3 +525,15 @@ class TestTransferGuard:
         )
         assert is_transfer(tx)
         assert_expenses_categorized(tx)  # no raise — comportement documenté
+
+    @given(splits=balanced_splits_strategy(distinct_accounts=False))
+    def test_property_uncategorized_expense_raises(self, splits: tuple[Split, ...]) -> None:
+        # ∀ dépense confirmée (même compte → non-transfert) dont AU MOINS un split
+        # perd sa catégorie → UncategorizedExpenseError. `distinct_accounts=False`
+        # exerce la forme dépense canonique (is_transfer False) en property-based,
+        # absente des autres properties (toutes en distinct_accounts=True).
+        uncategorized = (splits[0].model_copy(update={"category_id": None}), *splits[1:])
+        tx = _tx(state=TransactionState.CONFIRMED, splits=uncategorized)
+        assert not is_transfer(tx)
+        with pytest.raises(UncategorizedExpenseError):
+            assert_expenses_categorized(tx)

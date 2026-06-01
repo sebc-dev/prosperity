@@ -359,7 +359,7 @@ def confirmed_transaction_strategy(
         payee=draw(st.none() | st.text(max_size=20)),
         created_by=uuid4(),
         splits=splits,
-        category_id=uuid4(),
+        category_id=draw(st.none() | st.uuids()),
         description=draw(st.none() | st.text(max_size=20)),
         tags=tuple(draw(st.lists(st.text(max_size=10), max_size=3))),
         debt_generation_override="default",

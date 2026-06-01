@@ -1,0 +1,220 @@
+"""Structural tests for `transactions.models` (S07.2, P07.2.1 + P07.2.2).
+
+No DB: introspect the SQLAlchemy table metadata only. The persisted
+behaviour (CASCADE/RESTRICT, round-trip) lives in the integration tier; the
+level-1 snapshot pins create_all/Alembic name parity.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from typing import cast
+
+from sqlalchemy import (
+    ARRAY,
+    BigInteger,
+    CheckConstraint,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKeyConstraint,
+    String,
+    Table,
+)
+
+from backend.modules.transactions.models import Split, Transaction
+
+# --------------------------------------------------------------------------
+# Transaction
+# --------------------------------------------------------------------------
+
+
+def test_tablename_is_transactions() -> None:
+    assert Transaction.__tablename__ == "transactions"
+
+
+def test_expected_columns_and_nullability() -> None:
+    cols = cast(Table, Transaction.__table__).c
+    assert cols["id"].primary_key is True
+    # NOT NULL
+    assert cols["account_id"].nullable is False
+    assert cols["date"].nullable is False
+    assert cols["state"].nullable is False
+    assert cols["created_by"].nullable is False
+    assert cols["created_at"].nullable is False
+    assert cols["tags"].nullable is False
+    assert cols["debt_generation_override"].nullable is False
+    # NULL
+    assert cols["payee"].nullable is True
+    assert cols["description"].nullable is True
+    assert cols["category_id"].nullable is True
+    assert cols["confirmed_at"].nullable is True
+    assert cols["voided_at"].nullable is True
+
+
+def test_no_amount_or_bank_transaction_id_column() -> None:
+    # The amount is derived `sum(splits.amount_cents)` (note 🔑); the bank
+    # link lives in `Reconciliation` (ADR 0006). Both columns are forbidden.
+    cols = cast(Table, Transaction.__table__).c
+    assert "amount" not in cols
+    assert "amount_cents" not in cols
+    assert "bank_transaction_id" not in cols
+
+
+def test_state_is_plain_string_without_check() -> None:
+    table = cast(Table, Transaction.__table__)
+    state_type = table.c["state"].type
+    assert isinstance(state_type, String)
+    assert not isinstance(state_type, Enum)  # not a PG ENUM
+    assert not any(isinstance(c, CheckConstraint) for c in table.constraints)
+
+
+def test_debt_generation_override_default_is_default() -> None:
+    col = cast(Table, Transaction.__table__).c["debt_generation_override"]
+    assert col.default is not None
+    assert col.default.arg == "default"  # type: ignore[union-attr]
+    assert col.server_default is None  # ORM-side only, not server_default
+
+
+def test_tags_is_array_of_string_with_list_default() -> None:
+    col = cast(Table, Transaction.__table__).c["tags"]
+    assert isinstance(col.type, ARRAY)
+    assert isinstance(col.type.item_type, String)
+    # ORM Python-side callable default (SQLAlchemy wraps `list` to accept an
+    # optional execution context), NOT a `server_default` — so `create_all`
+    # and the migration stay at parity (the snapshot ignores ORM defaults).
+    assert col.default is not None
+    assert col.default.is_callable is True  # type: ignore[union-attr]
+    assert col.server_default is None
+
+
+def test_date_is_date_not_datetime() -> None:
+    date_type = cast(Table, Transaction.__table__).c["date"].type
+    assert isinstance(date_type, Date)
+    assert not isinstance(date_type, DateTime)
+
+
+def test_payee_is_string_255() -> None:
+    payee_type = cast(Table, Transaction.__table__).c["payee"].type
+    assert isinstance(payee_type, String)
+    assert payee_type.length == 255
+
+
+def test_transaction_fk_ondelete_actions_and_names() -> None:
+    table = cast(Table, Transaction.__table__)
+    fks = {c.name: c for c in table.constraints if isinstance(c, ForeignKeyConstraint)}
+    assert fks["fk_transactions_account_id_accounts"].ondelete == "RESTRICT"
+    assert (
+        fks["fk_transactions_account_id_accounts"].elements[0].column.table.name == "accounts"
+    )
+    assert fks["fk_transactions_category_id_categories"].ondelete == "RESTRICT"
+    assert (
+        fks["fk_transactions_category_id_categories"].elements[0].column.table.name == "categories"
+    )
+    assert fks["fk_transactions_created_by_users"].ondelete == "RESTRICT"
+    assert fks["fk_transactions_created_by_users"].elements[0].column.table.name == "users"
+
+
+def test_fk_to_categories_is_by_string_no_budget_import() -> None:
+    # `transactions ⟂ budget` (contrat 1): the model must not import the
+    # `Category` model. The FK is a string reference resolved at runtime, so
+    # importing `transactions.models` must NOT pull in `budget.models`.
+    #
+    # Run in a fresh interpreter: in a full pytest run other test modules
+    # (e.g. `test_budget_models.py`) already populated `sys.modules`, so an
+    # in-process `sys.modules` check would be meaningless. The subprocess
+    # imports `transactions.models` alone and proves `budget.models` stays
+    # absent.
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import backend.modules.transactions.models; "
+            "assert 'backend.modules.budget.models' not in sys.modules, "
+            "sorted(m for m in sys.modules if 'budget' in m)",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_transaction_index_names() -> None:
+    names = {ix.name for ix in cast(Table, Transaction.__table__).indexes}
+    assert names == {
+        "ix_transactions_account_id",
+        "ix_transactions_category_id",
+        "ix_transactions_created_by",
+    }
+
+
+# --------------------------------------------------------------------------
+# Split
+# --------------------------------------------------------------------------
+
+
+def test_split_tablename_is_splits() -> None:
+    assert Split.__tablename__ == "splits"
+
+
+def test_split_columns_and_nullability() -> None:
+    cols = cast(Table, Split.__table__).c
+    assert cols["id"].primary_key is True
+    assert cols["transaction_id"].nullable is False
+    assert cols["account_id"].nullable is False
+    assert cols["amount_cents"].nullable is False
+    assert cols["currency"].nullable is False
+    assert cols["category_id"].nullable is True
+    assert cols["savings_goal_id"].nullable is True
+
+
+def test_amount_cents_is_bigint() -> None:
+    assert isinstance(cast(Table, Split.__table__).c["amount_cents"].type, BigInteger)
+
+
+def test_currency_is_string_3() -> None:
+    currency_type = cast(Table, Split.__table__).c["currency"].type
+    assert isinstance(currency_type, String)
+    assert currency_type.length == 3
+
+
+def test_split_transaction_fk_is_cascade() -> None:
+    table = cast(Table, Split.__table__)
+    fks = {c.name: c for c in table.constraints if isinstance(c, ForeignKeyConstraint)}
+    fk = fks["fk_splits_transaction_id_transactions"]
+    assert fk.ondelete == "CASCADE"
+    assert fk.elements[0].column.table.name == "transactions"
+
+
+def test_split_account_and_category_fk_are_restrict() -> None:
+    table = cast(Table, Split.__table__)
+    fks = {c.name: c for c in table.constraints if isinstance(c, ForeignKeyConstraint)}
+    assert fks["fk_splits_account_id_accounts"].ondelete == "RESTRICT"
+    assert fks["fk_splits_account_id_accounts"].elements[0].column.table.name == "accounts"
+    assert fks["fk_splits_category_id_categories"].ondelete == "RESTRICT"
+    assert fks["fk_splits_category_id_categories"].elements[0].column.table.name == "categories"
+
+
+def test_savings_goal_id_has_no_foreign_key() -> None:
+    # Dormant column (option a): nullable UUID without an active FK, so the
+    # `savings_goals` table can be created later without replaying this
+    # migration.
+    col = cast(Table, Split.__table__).c["savings_goal_id"]
+    assert not col.foreign_keys
+    assert col.nullable is True
+
+
+def test_split_index_names() -> None:
+    names = {ix.name for ix in cast(Table, Split.__table__).indexes}
+    assert names == {
+        "ix_splits_transaction_id",
+        "ix_splits_account_id",
+        "ix_splits_category_id",
+    }
+
+
+def test_split_has_no_check_constraint() -> None:
+    table = cast(Table, Split.__table__)
+    assert not any(isinstance(c, CheckConstraint) for c in table.constraints)

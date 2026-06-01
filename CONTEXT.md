@@ -56,7 +56,7 @@ Une ligne d'une transaction (montant signé sur un compte ou une catégorie cibl
 _Avoid_: ligne, poste, entry
 
 **Money** :
-Value object `(amount_in_cents: int, currency: ISO4217)`. Pas d'opération arithmétique cross-devise (refus au niveau du type). Le **modèle reste multi-devise** ; l'usage fonctionnel est verrouillé à EUR en V1 via `household.base_currency` (cf. ADR 0008).
+Value object `(amount_cents: int, currency: ISO4217)`. Pas d'opération arithmétique cross-devise (refus au niveau du type). Le **modèle reste multi-devise** ; l'usage fonctionnel est verrouillé à EUR en V1 via `household.base_currency` (cf. ADR 0008).
 _Avoid_: amount seul, prix
 
 **`household.base_currency`** :

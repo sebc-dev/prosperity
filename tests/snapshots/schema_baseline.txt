@@ -47,6 +47,19 @@ table alembic_version
   col version_num: VARCHAR(32) NOT NULL
   pk alembic_version_pkc(version_num)
 
+table categories
+  col archived_at: TIMESTAMP WITH TIME ZONE NULL
+  col color: VARCHAR(7) NULL
+  col created_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col icon: VARCHAR NULL
+  col id: UUID NOT NULL
+  col name: VARCHAR(120) NOT NULL
+  col parent_id: UUID NULL
+  pk pk_categories(id)
+  fk fk_categories_parent_id_categories: (parent_id) -> categories(id) ON DELETE RESTRICT
+  idx ix_categories_active INDEX: parent_id) WHERE (archived_at IS NULL
+  idx ix_categories_parent_id INDEX: parent_id
+
 table household
   col base_currency: VARCHAR(3) NOT NULL
   col created_at: TIMESTAMP WITH TIME ZONE NOT NULL

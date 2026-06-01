@@ -36,7 +36,7 @@ Livrable agrégé : un user peut créer une hiérarchie de catégories aussi pro
 | Phase | Description | Diff |
 |---|---|---|
 | **P06.2.1** | `budget/domain.py` (oui le module budget porte aussi les categories) : `CycleDetector` pur : `walk_up_parents(start_id, would_become_child_of) → raises CategoryCycleError if would_create_cycle`. Tests example + Hypothesis (gen arbres aléatoires, vérifie qu'aucune mutation acceptée ne crée de cycle) | ~150 |
-| **P06.2.2** | `budget.service.create_category` et `update_category_parent` appellent `CycleDetector`. Tests intégration : créer A → B → C; tenter de mettre A en enfant de C échoue avec `CategoryCycleError` ; mettre A en enfant de B (pas un cycle car B est enfant de A initialement) → on doit accepter ? Cas tricky : déplacer un parent dans son propre enfant = cycle. Test explicite | ~120 |
+| **P06.2.2** | `budget.service.create_category` et `move_category` (déplacement) appellent `CycleDetector` **avant tout write** (flush-only, ADR 0015). Tests intégration : arbre A → B → C ; mettre A enfant de C échoue (`CategoryCycleError`) ; **mettre A enfant de B (B déjà enfant de A) échoue aussi** — déplacer un nœud sous l'un de ses propres descendants (direct ou indirect) = cycle ; déplacer C sous A (non-descendant de C) → accepté | ~120 |
 
 ---
 

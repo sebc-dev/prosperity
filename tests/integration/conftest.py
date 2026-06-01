@@ -46,11 +46,13 @@ from backend.main import app
 # (the side-effect `auth_schema`'s `create_all` relies on).
 from backend.modules.accounts.models import Household
 from backend.modules.auth.models import User
+from backend.modules.budget.models import Category
 from backend.shared.db import get_db
 from backend.shared.models import Base
 from tests.factories.sqlalchemy import (
     AccountFactory,
     AccountMemberFactory,
+    CategoryFactory,
     UserFactory,
 )
 
@@ -132,6 +134,27 @@ async def bound_user_factory(
         return await auth_schema.run_sync(_create)
 
     return _make_user
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def bound_category_factory(
+    auth_schema: AsyncSession,
+) -> Callable[..., Awaitable[Category]]:
+    """Persist a `Category` against the test's session (gabarit
+    `bound_user_factory`). Pass `parent_id=<id>` for a child; omit for a root.
+
+    `Category` has no FK to `household`/`users`, so a single factory suffices
+    (no multi-factory `bound_*_factories` as for shared accounts).
+    """
+
+    async def _make_category(**overrides: object) -> Category:
+        def _create(sync_session: Session) -> Category:
+            CategoryFactory._meta.sqlalchemy_session = sync_session  # type: ignore[attr-defined]
+            return cast(Category, CategoryFactory(**overrides))
+
+        return await auth_schema.run_sync(_create)
+
+    return _make_category
 
 
 @pytest_asyncio.fixture(loop_scope="session")

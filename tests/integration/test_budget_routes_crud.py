@@ -179,6 +179,26 @@ async def test_get_401_anonymous(async_client: AsyncClient, auth_schema: AsyncSe
     assert resp.status_code == 401
 
 
+async def test_get_order_is_deterministic_by_id_tiebreaker(
+    async_client: AsyncClient, auth_schema: AsyncSession, bound_user_factory: UserMaker
+) -> None:
+    # Two rows inserted in the SAME transaction share `created_at` (server-side
+    # `func.now()` = transaction start), so only the `(created_at, id)`
+    # tie-breaker makes the order deterministic. Explicit out-of-order ids
+    # (`hi` added before `lo`) prove the ORDER BY is applied, not insertion order.
+    user = await bound_user_factory(email="order@example.com")
+    lo = Category(id=UUID(int=1), name="Lo", parent_id=None)
+    hi = Category(id=UUID(int=2), name="Hi", parent_id=None)
+    auth_schema.add_all([hi, lo])
+    await auth_schema.flush()
+
+    resp = await async_client.get("/categories", headers=_bearer(user.id))
+
+    assert resp.status_code == 200, resp.text
+    ids = [row["id"] for row in resp.json()]
+    assert ids == [str(UUID(int=1)), str(UUID(int=2))]  # ascending id, stable
+
+
 async def test_get_response_shape(
     async_client: AsyncClient, auth_schema: AsyncSession, bound_user_factory: UserMaker
 ) -> None:

@@ -434,5 +434,4 @@ async def test_delete_flush_only_no_commit(committed_engine: AsyncEngine) -> Non
         # no commit
 
     async with sm() as session:
-        assert await _count(session) == 1
-        assert category_id is not None
+        assert await _count(session) == 1  # row preserved: flush without commit rolled back

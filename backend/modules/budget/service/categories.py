@@ -30,7 +30,7 @@ until E07/E08); the S06.3 routes live in `budget.transports` (intra-module).
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -51,6 +51,12 @@ from backend.modules.budget.models import Category
 # `pg_advisory_xact_lock(key, household_id)` so movers in different households
 # do not serialise against each other.
 _CATEGORY_MOVE_LOCK_KEY = 0xCA7E_0603
+
+# Reads `{id: parent_id}` for a node and its ancestors. `_assert_no_cycle` is
+# parametrised by which loader to use: `create_category` takes the CTE snapshot
+# (`_load_ancestor_chain`), `move_category` the hardened `FOR SHARE` walk
+# (`_load_ancestor_chain_locked`, D7).
+_ChainLoader = Callable[[AsyncSession, UUID], Awaitable[dict[UUID, UUID | None]]]
 
 
 async def _load_ancestor_chain(session: AsyncSession, start_id: UUID) -> dict[UUID, UUID | None]:
@@ -77,18 +83,25 @@ async def _load_ancestor_chain(session: AsyncSession, start_id: UUID) -> dict[UU
 
 
 async def _assert_no_cycle(
-    session: AsyncSession, *, node_id: UUID, new_parent_id: UUID | None
+    session: AsyncSession,
+    *,
+    node_id: UUID,
+    new_parent_id: UUID | None,
+    load_chain: _ChainLoader = _load_ancestor_chain,
 ) -> None:
     """Run the pure detector against a freshly-loaded ancestor chain.
 
     The root case (`new_parent_id is None`) short-circuits here, so the
     domain's None branch is exercised from the service, not the DB — no
-    query is issued for a move to root.
+    query is issued for a move to root. `load_chain` selects how the chain is
+    read: the default CTE snapshot for `create_category`, or the hardened
+    `FOR SHARE` walk (`_load_ancestor_chain_locked`) injected by `move_category`
+    (D7) — both paths share this single guard.
     """
     if new_parent_id is None:
         CycleDetector.detect_cycle(node_id=node_id, new_parent_id=None, get_parent=lambda _: None)
         return
-    chain = await _load_ancestor_chain(session, new_parent_id)
+    chain = await load_chain(session, new_parent_id)
     CycleDetector.detect_cycle(node_id=node_id, new_parent_id=new_parent_id, get_parent=chain.get)
 
 
@@ -168,15 +181,12 @@ async def move_category(
     if category is None or category.archived_at is not None:
         raise CategoryNotFoundError(f"category {category_id} not found")
     previous_parent_id = category.parent_id
-    if new_parent_id is None:
-        CycleDetector.detect_cycle(
-            node_id=category_id, new_parent_id=None, get_parent=lambda _: None
-        )
-    else:
-        chain = await _load_ancestor_chain_locked(session, new_parent_id)
-        CycleDetector.detect_cycle(
-            node_id=category_id, new_parent_id=new_parent_id, get_parent=chain.get
-        )
+    await _assert_no_cycle(
+        session,
+        node_id=category_id,
+        new_parent_id=new_parent_id,
+        load_chain=_load_ancestor_chain_locked,
+    )
     category.parent_id = new_parent_id
     await session.flush()
     return category, previous_parent_id

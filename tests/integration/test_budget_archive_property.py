@@ -155,13 +155,14 @@ def test_archive_noncascade_two_level_concrete(archive_socle: str) -> None:
                 rows = (
                     await s.execute(select(Category.id, Category.parent_id, Category.archived_at))
                 ).all()
-                by_id = {r.id: r for r in rows}
-                assert by_id[child].archived_at is not None
-                assert by_id[root].archived_at is None
-                assert by_id[grandchild].archived_at is None
-                assert by_id[root].parent_id is None
-                assert by_id[child].parent_id == root
-                assert by_id[grandchild].parent_id == child
+                archived = {r.id for r in rows if r.archived_at is not None}
+                parents = {r.id: r.parent_id for r in rows}
+                before_structure = {nid: pid for nid, pid in tree.nodes}
+                # Non-cascade : SEUL l'enfant du milieu est archivé (racine et
+                # petit-enfant intacts). Non-re-parentage : snapshot structurel
+                # inchangé (même oracle agrégé que la property).
+                assert archived == {child}
+                assert parents == before_structure
                 await s.rollback()
         finally:
             await engine.dispose()

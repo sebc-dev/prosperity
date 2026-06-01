@@ -126,7 +126,7 @@ def test_property_strategy_trees_accepted_by_detector(tree: GeneratedCategoryTre
 
 def test_strategy_importable_without_side_effect() -> None:
     # Contrat du `tests/strategies.py` : importable sans effet de bord (gabarit
-    # `account_with_members_strategy`). On vérifie le contrat d'API public sans
-    # instancier ni toucher de ressource externe.
+    # `account_with_members_strategy`). On vérifie la surface d'API publique
+    # réutilisable E07/E08 sans instancier ni toucher de ressource externe.
     assert callable(strategies.category_tree_strategy)
-    assert issubclass(strategies.GeneratedCategoryTree, object)
+    assert {"ids", "parent_of", "descendants"} <= set(dir(strategies.GeneratedCategoryTree))

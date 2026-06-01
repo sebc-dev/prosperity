@@ -33,6 +33,7 @@ from backend.modules.accounts.domain import (
     ShareRatioSumError,
     TooFewMembersError,
 )
+from tests.strategies import GeneratedAccount, account_with_members_strategy, share_ratios
 
 _BASE = "EUR"
 
@@ -301,49 +302,28 @@ def test_all_leaf_errors_subclass_base() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Property-based (Hypothesis, inline strategies — shared strategy lands S05.5)
+# Property-based (Hypothesis) — consolidated on the shared strategy (S05.5, D3)
 # ---------------------------------------------------------------------------
+# The inline `_members_summing_to` composite that lived here moved to
+# `tests.strategies.share_ratios` (total-parametrised) so E08/E09 can reuse it.
+# These properties re-point onto it without losing coverage — in particular the
+# Σ≠1 rejection (`total != 10000`) is preserved as a non-regression guarantee.
 
 
-@st.composite
-def _members_summing_to(draw: st.DrawFn, *, total: int, max_size: int = 6) -> list[MemberShare]:
-    """N∈[2,max_size] strictly-positive 4dp Decimal ratios summing to total/10000.
-
-    Partition `total` into N integer parts ≥ 1 via distinct cut-points, then
-    map each part p to Decimal(p)/Decimal(10000) — exact at scale 4. The sum is
-    `total/10000`, so `total == 10000` yields Σ == Decimal("1.0000") exactly.
-    """
-    n = draw(st.integers(min_value=2, max_value=max_size))
-    assume(total >= n)  # need at least 1 unit per part
-    cuts = sorted(
-        draw(
-            st.lists(
-                st.integers(min_value=1, max_value=total - 1),
-                min_size=n - 1,
-                max_size=n - 1,
-                unique=True,
-            )
-        )
-    )
-    bounds = [0, *cuts, total]
-    parts = [bounds[i + 1] - bounds[i] for i in range(n)]
-    return [MemberShare(user_id=uuid4(), ratio=Decimal(p) / Decimal(10000)) for p in parts]
-
-
-@given(members=_members_summing_to(total=10000))
-def test_property_valid_shared_is_accepted(members: list[MemberShare]) -> None:
+@given(account=account_with_members_strategy(shape="shared"))
+def test_property_valid_shared_is_accepted(account: GeneratedAccount) -> None:
     # ∀ multiset of Decimal ratios summing to 1 with |members| ≥ 2 → accepted.
     AccountValidator.validate(
         currency=_BASE,
         household_base_currency=_BASE,
         owner_id=None,
-        members=members,
+        members=account.members,
     )
 
 
-@given(owner_id=st.uuids(), members=_members_summing_to(total=10000))
+@given(owner_id=st.uuids(), account=account_with_members_strategy(shape="shared"))
 def test_property_owner_plus_members_always_rejected(
-    owner_id: UUID, members: list[MemberShare]
+    owner_id: UUID, account: GeneratedAccount
 ) -> None:
     # ∀ owner_id + non-empty members → contradictory shape → OwnershipShapeError.
     with pytest.raises(OwnershipShapeError):
@@ -351,7 +331,7 @@ def test_property_owner_plus_members_always_rejected(
             currency=_BASE,
             household_base_currency=_BASE,
             owner_id=owner_id,
-            members=members,
+            members=account.members,
         )
 
 
@@ -373,13 +353,20 @@ def test_property_currency_mismatch_always_rejected(currency: str, owner_id: UUI
 
 
 @given(
+    n=st.integers(min_value=2, max_value=6),
     total=st.integers(min_value=2, max_value=20000),
     data=st.data(),
 )
-def test_property_ratios_not_summing_to_one_rejected(total: int, data: st.DataObject) -> None:
+def test_property_ratios_not_summing_to_one_rejected(
+    n: int, total: int, data: st.DataObject
+) -> None:
     # ∀ positive 4dp ratios, |members| ≥ 2, Σ != 1.0000 → ShareRatioSumError.
+    # Non-regression: the partition generator is shared, but `total != 10000`
+    # still exercises the Σ≠1 rejection path (S05.5 D3).
+    assume(total >= n)  # need at least 1 unit per part
     assume(total != 10000)
-    members = data.draw(_members_summing_to(total=total))
+    ratios = data.draw(share_ratios(n=n, total=total))
+    members = [MemberShare(user_id=uuid4(), ratio=r) for r in ratios]
     with pytest.raises(ShareRatioSumError):
         AccountValidator.validate(
             currency=_BASE,

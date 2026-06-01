@@ -21,6 +21,40 @@ from pydantic.dataclasses import dataclass
 
 from backend.shared.currency import CURRENCY_SYMBOLS, Currency
 
+# ---------------------------------------------------------------------------
+# Constantes de formatage / parsing FR (lues par `Money.format_french` et
+# `parse_french` ci-dessous ; définies en tête pour l'ordre de lecture).
+# ---------------------------------------------------------------------------
+
+_CENTS_PER_UNIT: Final[int] = 100
+_THOUSANDS_SEP: Final[str] = " "  # U+202F espace fine insécable (milliers)
+_CURRENCY_GAP: Final[str] = " "  # U+00A0 espace insécable (avant le symbole)
+_DECIMAL_SEP: Final[str] = ","
+# Normalisation parse : toute variante d'espace est supprimée -> round-trip robuste.
+_SPACE_TRANSLATION: Final = {0x202F: None, 0x00A0: None, 0x20: None}
+_DECIMAL_DIGITS: Final[int] = 2
+_ASCII_DIGITS: Final = frozenset("0123456789")  # rejette les chiffres Unicode
+
+
+def _is_ascii_digits(s: str) -> bool:
+    """`True` ssi `s` est non vide et composé UNIQUEMENT de chiffres ASCII 0-9.
+
+    `str.isdigit()` accepte les chiffres Unicode (fullwidth, arabe-indic, exposants)
+    -> on s'en prémunit pour ne pas accepter silencieusement `"１２,３４ €"`.
+    """
+    return bool(s) and set(s) <= _ASCII_DIGITS
+
+
+def _group_thousands(units: int) -> str:
+    """`1234` -> `"1 234"` (groupes de 3, séparés par `U+202F`). `units >= 0`."""
+    s = str(units)
+    parts: list[str] = []
+    while len(s) > 3:  # noqa: PLR2004 — groupes de 3 chiffres (notation des milliers)
+        parts.insert(0, s[-3:])
+        s = s[:-3]
+    parts.insert(0, s)
+    return _THOUSANDS_SEP.join(parts)
+
 
 class IncompatibleCurrencyError(Exception):
     """Opération arithmétique ou comparaison d'ordre entre devises distinctes.
@@ -85,7 +119,7 @@ class Money:
         return self.amount_cents < other.amount_cents
 
     def format_french(self) -> str:
-        """`Money(123456, "EUR")` -> `"1 234,56 €"` (séparateurs typographiques FR).
+        """`Money(123456, "EUR")` -> `"1 234,56 €"` (typographie FR).
 
         Milliers = espace fine insécable `U+202F` ; séparateur décimal = virgule ;
         espace insécable `U+00A0` avant le symbole de devise.
@@ -96,38 +130,8 @@ class Money:
         return f"{sign}{_group_thousands(units)}{_DECIMAL_SEP}{cents:02d}{_CURRENCY_GAP}{symbol}"
 
 
-_CENTS_PER_UNIT: Final[int] = 100
-_THOUSANDS_SEP: Final[str] = " "  # espace fine insécable (séparateur de milliers)
-_CURRENCY_GAP: Final[str] = " "  # espace insécable (avant le symbole)
-_DECIMAL_SEP: Final[str] = ","
-# Normalisation parse : toute variante d'espace est supprimée -> round-trip robuste.
-_SPACE_TRANSLATION: Final = {0x202F: None, 0x00A0: None, 0x20: None}
-_DECIMAL_DIGITS: Final[int] = 2
-_ASCII_DIGITS: Final = frozenset("0123456789")  # rejette les chiffres Unicode
-
-
-def _is_ascii_digits(s: str) -> bool:
-    """`True` ssi `s` est non vide et composé UNIQUEMENT de chiffres ASCII 0-9.
-
-    `str.isdigit()` accepte les chiffres Unicode (fullwidth, arabe-indic, exposants)
-    -> on s'en prémunit pour ne pas accepter silencieusement `"１２,３４ €"`.
-    """
-    return bool(s) and set(s) <= _ASCII_DIGITS
-
-
-def _group_thousands(units: int) -> str:
-    """`1234` -> `"1 234"` (groupes de 3, séparés par `U+202F`). `units >= 0`."""
-    s = str(units)
-    parts: list[str] = []
-    while len(s) > 3:  # noqa: PLR2004 — groupes de 3 chiffres (notation des milliers)
-        parts.insert(0, s[-3:])
-        s = s[:-3]
-    parts.insert(0, s)
-    return _THOUSANDS_SEP.join(parts)
-
-
 def parse_french(text: str) -> Money:
-    """Inverse de `format_french` : `"1 234,56 €"` -> `Money(123456, "EUR")`.
+    """Inverse de `format_french` : `"1 234,56 €"` -> `Money(123456, "EUR")`.
 
     Politique de parsing (tranchée explicitement) :
 
@@ -137,9 +141,11 @@ def parse_french(text: str) -> Money:
       non-ASCII rejetés).
     - **Groupage des milliers LAXISTE** : tout espace (`U+202F`/`U+00A0`/`U+0020`)
       est normalisé/supprimé avant lecture ; le placement des séparateurs n'est PAS
-      vérifié (`"1234,56 €"` comme `"1 234,56 €"` sont acceptés). Choix assumé :
-      l'invariant contractuel est `parse_french(m.format_french()) == m`, pas
-      l'inverse ; un groupage utilisateur libre est toléré.
+      vérifié (`"1234,56 €"` comme `"1 234,56 €"` sont acceptés). Le signe `-` n'est
+      lu qu'après cette normalisation, donc un signe détaché (`"- 1 234,56 €"`) est
+      lui aussi toléré. Choix assumé : l'invariant contractuel est
+      `parse_french(m.format_french()) == m`, pas l'inverse ; un groupage
+      utilisateur libre est toléré.
 
     Garantit le round-trip : ∀ `m`, `parse_french(m.format_french()) == m`.
     """

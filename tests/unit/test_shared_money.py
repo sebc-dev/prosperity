@@ -20,6 +20,11 @@ from pydantic import ValidationError
 from backend.shared.money import IncompatibleCurrencyError, Money, parse_french
 from tests.strategies import distinct_currency_pair, money_strategy
 
+# Codepoints typographiques FR attendus en sortie de `format_french` (D7) — épinglés
+# explicitement pour distinguer un vrai insécable d'un espace ASCII (U+0020).
+NNBSP = "\u202f"  # U+202F espace fine insécable (séparateur de milliers)
+NBSP = "\u00a0"  # U+00A0 espace insécable (avant le symbole de devise)
+
 # ---------------------------------------------------------------------------
 # Arithmetic, ordering, immutability (example-based)
 # ---------------------------------------------------------------------------
@@ -186,30 +191,30 @@ def test_property_cross_currency_always_raises(pair: tuple[str, str], x: Money, 
 
 
 def test_format_thousands() -> None:
-    # Codepoints exacts : U+202F (milliers) et U+00A0 (avant symbole).
-    assert Money(123456, "EUR").format_french() == "1 234,56 €"
+    # Codepoints exacts : U+202F (milliers) et U+00A0 (avant symbole) — pas ASCII.
+    assert Money(123456, "EUR").format_french() == f"1{NNBSP}234,56{NBSP}€"
 
 
 def test_format_zero() -> None:
-    assert Money(0, "EUR").format_french() == "0,00 €"
+    assert Money(0, "EUR").format_french() == f"0,00{NBSP}€"
 
 
 def test_format_sub_unit() -> None:
-    assert Money(56, "EUR").format_french() == "0,56 €"
+    assert Money(56, "EUR").format_french() == f"0,56{NBSP}€"
 
 
 def test_format_negative() -> None:
-    assert Money(-123456, "EUR").format_french() == "-1 234,56 €"
+    assert Money(-123456, "EUR").format_french() == f"-1{NNBSP}234,56{NBSP}€"
 
 
 def test_format_millions() -> None:
-    assert Money(123456789, "EUR").format_french() == "1 234 567,89 €"
+    assert Money(123456789, "EUR").format_french() == f"1{NNBSP}234{NNBSP}567,89{NBSP}€"
 
 
 def test_format_very_large() -> None:
     # 4 groupes, au-delà de _MONEY_BOUND : _group_thousands tient ; round-trip OK.
     m = Money(1234567890123, "EUR")
-    assert m.format_french() == "12 345 678 901,23 €"
+    assert m.format_french() == f"12{NNBSP}345{NNBSP}678{NNBSP}901,23{NBSP}€"
     assert parse_french(m.format_french()) == m
 
 
@@ -219,8 +224,9 @@ def test_format_very_large() -> None:
 )
 def test_format_each_currency_symbol(currency: str, symbol: str) -> None:
     out = Money(123456, currency).format_french()  # type: ignore[arg-type]
-    # Le gap U+00A0 doit précéder le symbole (pas un espace ASCII).
-    assert out.endswith(f" {symbol}")
+    # Le gap U+00A0 (insécable) doit précéder le symbole, pas un espace ASCII.
+    assert out.endswith(f"{NBSP}{symbol}")
+    assert not out.endswith(f" {symbol}")
 
 
 # ---------------------------------------------------------------------------
@@ -229,7 +235,9 @@ def test_format_each_currency_symbol(currency: str, symbol: str) -> None:
 
 
 def test_parse_nominal() -> None:
-    assert parse_french("1 234,56 €") == Money(123456, "EUR")
+    # Entrée typographique exacte (insécables U+202F / U+00A0), telle que produite
+    # par `format_french`.
+    assert parse_french(f"1{NNBSP}234,56{NBSP}€") == Money(123456, "EUR")
 
 
 def test_parse_accepts_plain_space() -> None:
@@ -300,5 +308,5 @@ def test_property_format_parse_roundtrip(m: Money) -> None:
 
 @given(money_strategy())
 def test_property_format_has_two_decimals(m: Money) -> None:
-    # La sortie se termine toujours par `,DD<gap><symbole>` (non tautologique).
-    assert re.search(r",\d{2} \S+$", m.format_french()) is not None
+    # La sortie se termine toujours par `,DD` + gap insécable U+00A0 + symbole.
+    assert re.search(rf",\d{{2}}{NBSP}\S+$", m.format_french()) is not None

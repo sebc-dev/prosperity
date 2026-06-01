@@ -26,6 +26,7 @@ from uuid import UUID, uuid4
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import func, select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import backend.modules.budget.transports.http as budget_http
@@ -33,6 +34,19 @@ from backend.config import get_settings
 from backend.modules.auth.models import AdminAuditLog, User
 from backend.modules.auth.service.jwt import issue_access_token
 from backend.modules.budget.models import Category
+
+
+class _FakeSerializationFailure(Exception):
+    """Stand-in for asyncpg's serialization failure, exposing `.sqlstate`."""
+
+    sqlstate = "40001"
+
+
+class _FakeUnknownDbError(Exception):
+    """An unexpected SQLSTATE — must re-raise (→ 500), never be masked."""
+
+    sqlstate = "99999"
+
 
 _settings = get_settings()
 
@@ -247,6 +261,56 @@ async def test_move_422_unknown_new_parent(
 
     assert resp.status_code == 422, resp.text
     assert await _audit_rows(auth_schema) == []
+
+
+async def test_move_409_on_serialization_failure(
+    async_client: AsyncClient,
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A concurrent mover that loses the race surfaces as 40001 → 409 retry,
+    # never a 500 (D7). True concurrency can't run through the savepoint
+    # harness, so we monkeypatch the service to raise the serialization
+    # failure the FOR SHARE walk would raise.
+    user = await bound_user_factory(email="mv9@example.com")
+    child = await _seed(auth_schema, "Child")
+    child_id = child.id
+
+    async def _raise_40001(*_args: object, **_kwargs: object) -> object:
+        raise DBAPIError("SELECT", {}, _FakeSerializationFailure())
+
+    monkeypatch.setattr(budget_http, "move_category", _raise_40001)
+
+    resp = await async_client.patch(
+        f"/categories/{child_id}/parent", json={"parent_id": None}, headers=_bearer(user.id)
+    )
+
+    assert resp.status_code == 409, resp.text
+    assert await _audit_rows(auth_schema) == []
+
+
+async def test_move_unexpected_sqlstate_not_masked(
+    async_client: AsyncClient,
+    auth_schema: AsyncSession,
+    bound_user_factory: UserMaker,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An unexpected SQLSTATE under DBAPIError is an app bug → it must re-raise
+    # (→ 500), never collapse to 409/422 (gabarit invitation re-raise test).
+    user = await bound_user_factory(email="mv10@example.com")
+    child = await _seed(auth_schema, "Child")
+    child_id = child.id
+
+    async def _raise_unknown(*_args: object, **_kwargs: object) -> object:
+        raise DBAPIError("SELECT", {}, _FakeUnknownDbError())
+
+    monkeypatch.setattr(budget_http, "move_category", _raise_unknown)
+
+    with pytest.raises(DBAPIError):
+        await async_client.patch(
+            f"/categories/{child_id}/parent", json={"parent_id": None}, headers=_bearer(user.id)
+        )
 
 
 async def test_move_401_anonymous(async_client: AsyncClient, auth_schema: AsyncSession) -> None:

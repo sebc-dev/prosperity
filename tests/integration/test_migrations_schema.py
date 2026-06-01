@@ -183,3 +183,5 @@ def test_baseline_migration_round_trip(postgres_container: PostgresContainer) ->
         f"account_members table leaked after downgrade:\n{post}"
     )
     assert "table categories" not in post, f"categories table leaked after downgrade:\n{post}"
+    assert "table splits" not in post, f"splits table leaked after downgrade:\n{post}"
+    assert "table transactions" not in post, f"transactions table leaked after downgrade:\n{post}"

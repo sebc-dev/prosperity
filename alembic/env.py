@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 import backend.modules.accounts.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
 import backend.modules.auth.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
 import backend.modules.budget.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
+import backend.modules.transactions.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
 from alembic import context
 from backend.config import get_settings
 from backend.shared.models import Base

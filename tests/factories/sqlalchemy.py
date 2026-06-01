@@ -15,18 +15,28 @@ fed by `db_session`) is documented in Stratégie de tests §10.4.
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import cast
 
 from factory.alchemy import SQLAlchemyModelFactory
+from factory.declarations import LazyFunction
 from factory.faker import Faker
-from factory.helpers import lazy_attribute
+from factory.helpers import lazy_attribute, post_generation
 from pwdlib import PasswordHash
 
 from backend.modules.accounts.domain import AccountType
 from backend.modules.accounts.models import Account, AccountMember
 from backend.modules.auth.models import User
 from backend.modules.budget.models import Category
+from backend.modules.transactions.models import Split, Transaction
 
-__all__ = ["AccountFactory", "AccountMemberFactory", "CategoryFactory", "UserFactory"]
+__all__ = [
+    "AccountFactory",
+    "AccountMemberFactory",
+    "CategoryFactory",
+    "SplitFactory",
+    "TransactionFactory",
+    "UserFactory",
+]
 
 
 _password_hasher = PasswordHash.recommended()
@@ -117,3 +127,76 @@ class CategoryFactory(SQLAlchemyModelFactory):
 
     name = Faker("word")
     parent_id = None
+
+
+class SplitFactory(SQLAlchemyModelFactory):
+    """Persist a `Split`. Caller passes `transaction_id` + `account_id`.
+
+    `amount_cents`/`currency` default to a single positive EUR leg; pair two
+    explicit instances (`-N`/`+N`) for a balanced transaction, or use
+    `TransactionFactory` which builds the balanced pair automatically.
+    `category_id`/`savings_goal_id` left NULL by default.
+    """
+
+    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
+        model = Split
+        sqlalchemy_session_persistence = "flush"
+
+    amount_cents = 1000
+    currency = "EUR"
+    category_id = None
+    savings_goal_id = None
+
+
+class TransactionFactory(SQLAlchemyModelFactory):
+    """Persist a `Transaction`; by default attach a **zero-sum** pair of
+    splits (one debit `-N`, one credit `+N`, same currency, same account).
+
+    Caller passes the required FKs `account_id` + `created_by`.
+
+    - `TransactionFactory()` -> balanced (`sum(splits.amount_cents) == 0`).
+    - `TransactionFactory(splits__amount_cents=5000)` -> balanced at ±5000.
+    - `TransactionFactory(splits=False)` -> NO auto-splits (the test adds its
+      own, e.g. an unbalanced pair for a negative test).
+
+    `SplitFactory` shares this factory's session (bound together by
+    `bound_transaction_factories`), so the post-generation splits flush in the
+    same session as their transaction — `obj.id` is available post-flush.
+    """
+
+    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
+        model = Transaction
+        sqlalchemy_session_persistence = "flush"
+
+    date = Faker("date_object")
+    state = "draft"
+    payee = Faker("company")
+    description = None
+    category_id = None
+    tags = LazyFunction(list)
+    debt_generation_override = "default"
+
+    @post_generation
+    def splits(obj, create, extracted, **kwargs):  # type: ignore[no-untyped-def]  # noqa: N805
+        # `obj` is the persisted `Transaction` instance (factory-boy passes the
+        # built object as the first arg of a post_generation hook).
+        # `extracted is False` -> caller opts out of the auto balanced pair.
+        if not create or extracted is False:
+            return
+        amount = kwargs.get("amount_cents", 1000)
+        currency = kwargs.get("currency", "EUR")
+        transaction = cast(Transaction, obj)
+        # The debit/credit reference the transaction's own account by default;
+        # equal magnitudes with opposite signs keep the pair zero-sum.
+        SplitFactory(
+            transaction_id=transaction.id,
+            account_id=transaction.account_id,
+            amount_cents=-amount,
+            currency=currency,
+        )
+        SplitFactory(
+            transaction_id=transaction.id,
+            account_id=transaction.account_id,
+            amount_cents=amount,
+            currency=currency,
+        )

@@ -47,12 +47,18 @@ from backend.main import app
 from backend.modules.accounts.models import Household
 from backend.modules.auth.models import User
 from backend.modules.budget.models import Category
+
+# `transactions`/`splits` register on `Base.metadata` via the factory imports
+# below (`tests.factories.sqlalchemy`), so `auth_schema`'s `create_all`
+# materialises them — no separate side-effect import needed here.
 from backend.shared.db import get_db
 from backend.shared.models import Base
 from tests.factories.sqlalchemy import (
     AccountFactory,
     AccountMemberFactory,
     CategoryFactory,
+    SplitFactory,
+    TransactionFactory,
     UserFactory,
 )
 
@@ -180,6 +186,39 @@ async def bound_account_factories(
 
         await auth_schema.run_sync(_do)
         return UserFactory, AccountFactory, AccountMemberFactory
+
+    return _bind
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def bound_transaction_factories(
+    household_singleton: AsyncSession,
+) -> Callable[
+    [],
+    Awaitable[
+        tuple[type[UserFactory], type[AccountFactory], type[TransactionFactory], type[SplitFactory]]
+    ],
+]:
+    """Bind User/Account/Transaction/Split factories to the test's session.
+
+    Mirrors `bound_account_factories`: a transaction needs a `User`
+    (`created_by` RESTRICT) and an `Account` (`account_id` RESTRICT) as real
+    FK rows, and `TransactionFactory`'s post-generation splits persist via
+    `SplitFactory` — so all four must share one sync session / one flush
+    boundary, otherwise objects attach to divergent sessions and the flush
+    breaks. Depends on `household_singleton` (the account needs the singleton
+    row to exist for its `household_id` FK).
+    """
+
+    async def _bind() -> tuple[
+        type[UserFactory], type[AccountFactory], type[TransactionFactory], type[SplitFactory]
+    ]:
+        def _do(sync_session: Session) -> None:
+            for factory in (UserFactory, AccountFactory, TransactionFactory, SplitFactory):
+                factory._meta.sqlalchemy_session = sync_session  # type: ignore[attr-defined]
+
+        await household_singleton.run_sync(_do)
+        return UserFactory, AccountFactory, TransactionFactory, SplitFactory
 
     return _bind
 

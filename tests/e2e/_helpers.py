@@ -122,3 +122,58 @@ async def user_id_by_email(
         return (
             await session.execute(select(User.id).where(User.email == email))
         ).scalar_one_or_none()
+
+
+async def create_category(
+    client: AsyncClient,
+    access: str,
+    *,
+    name: str,
+    parent_id: str | None = None,
+) -> dict[str, Any]:
+    """POST /categories (Bearer) → full CategoryResponse body. Asserts 201.
+
+    Omits `parent_id` when None so the `extra="forbid"` schema sees only what the
+    caller meant to set. Multi-usage (the A/B/C tree + the member's tree); the
+    single-use GET / PATCH /parent / DELETE calls stay inline in the journey so
+    each state transition reads in place. `color`/`icon` are left to their
+    server defaults — no journey asserts them (those contracts are integration's).
+    """
+    body: dict[str, Any] = {"name": name}
+    if parent_id is not None:
+        body["parent_id"] = parent_id
+    resp = await client.post("/categories", json=body, headers=auth_headers(access))
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+async def fetch_audit_by_action(
+    sessionmaker: async_sessionmaker[AsyncSession],
+    *,
+    action: str,
+) -> list[tuple[object, object, dict[str, Any] | None]]:
+    """Side-channel (D3): `[(actor_user_id, target_user_id, event_metadata), …]`
+    for the rows whose `action` matches, ordered by `created_at`.
+
+    `fetch_audit_rows` is a *global, unfiltered* projection of `(action, actor,
+    target)` — relied on by Parcours 1/2. A category journey instead needs to
+    isolate its own `category_moved` rows (an `onboard_member` call interleaves
+    `invite_sent` / `invite_accepted` rows), and to read the JSONB `metadata`
+    column (Python attr `event_metadata`) holding `category_id` / `from_parent_id`
+    / `to_parent_id`. Filtering by action keeps the oracle robust to those
+    interleaved rows; projecting actor+target+metadata together lets one call
+    assert both *who* moved and *what* moved.
+    """
+    async with sessionmaker() as session:
+        rows = (
+            await session.execute(
+                select(
+                    AdminAuditLog.actor_user_id,
+                    AdminAuditLog.target_user_id,
+                    AdminAuditLog.event_metadata,
+                )
+                .where(AdminAuditLog.action == action)
+                .order_by(AdminAuditLog.created_at)
+            )
+        ).all()
+    return [(r[0], r[1], r[2]) for r in rows]

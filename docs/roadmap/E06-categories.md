@@ -64,6 +64,18 @@ Livrable agrégé : un user peut créer une hiérarchie de catégories aussi pro
 
 ---
 
+### S06.5 — Parcours E2E API : cycle de vie d'une hiérarchie de catégories
+
+**Livrable observable** : `tests/e2e/test_category_hierarchy_lifecycle.py` (Parcours 3 du tier E2E API, §6.3) vert en CI — une chaîne HTTP boîte-noire unique sur `committed_client` (FastAPI réel + Postgres testcontainers) du point de vue d'un client qui ne connaît que l'API publique.
+
+Ce parcours **anticipe au niveau API** la couverture E06 des 5 parcours Playwright finaux (§6.2). Comme les Parcours 1/2 existants (issue #90), il asserte des **transitions d'état et de la propagation inter-modules** (REST → domaine → audit), **jamais** les contrats d'endpoint déjà couverts par les tests d'intégration de S06.3 (garde-fou anti-duplication §12).
+
+| Phase | Description | Diff |
+|---|---|---|
+| **P06.5.1** | `tests/e2e/test_category_hierarchy_lifecycle.py` + helpers `create_category` et `fetch_audit_by_action` (projection side-channel `(actor, target, event_metadata)` filtrée par action — robuste aux rows `invite_*` qu'insère `onboard_member`) dans `tests/e2e/_helpers.py`. Chaîne : `bootstrap_admin` → construction d'un arbre `A › B › C` via `POST /categories` → **cycle indirect refusé** (`PATCH /categories/A/parent {parent_id: C}` → 4xx `CategoryCycleError`, arbre inchangé vérifié par `GET` **et** aucune row d'audit — moitié négative de l'oracle) → **archivage sans cascade** (`DELETE /categories/B` → 204 ; B a alors un parent A **et** un enfant C, tous deux restent actifs, C non re-parenté — non-cascade ascendante+descendante, vérifié bout-en-bout) → **filtre listing** (`GET /categories?include_archived=false` exclut B ; `=true` la réinclut avec `archived_at` non-null) → **déplacement légitime** (`PATCH /categories/C/parent {parent_id: A}` → 200) avec assertion **side-channel** (D3) de l'audit `CATEGORY_MOVED` (`from_parent_id=B`, `to_parent_id=A`, `by=admin`, `target NULL`) — la paire move+audit dans une **même transaction** (D5/D6) → **étanchéité household-scope** : un membre non-admin onboardé (`onboard_member`) crée/déplace aussi des catégories (pas de filtre personnel — distinct de l'étanchéité comptes F03), l'admin voit la catégorie du membre dans le listing, et le move du membre est audité sous son propre actor. Le hard-delete (`CategoryInUseError`) n'est **pas exposé en HTTP** (DELETE = archive) ⇒ hors périmètre, reste couvert au service/intégration (S06.3) | ~195 |
+
+---
+
 ## Récapitulatif
 
 | ID | Type | Diff | Cumul |
@@ -72,7 +84,8 @@ Livrable agrégé : un user peut créer une hiérarchie de catégories aussi pro
 | S06.2 (2 phases) | Cycle prevention | 270 | 450 |
 | S06.3 (3 phases) | Archive + routes | 380 | 830 |
 | S06.4 (1 phase) | Hypothesis | 120 | 950 |
-| **Total** | **4 stories / 8 phases** | **~950 lignes** | |
+| S06.5 (1 phase) | Parcours E2E API | 195 | 1145 |
+| **Total** | **5 stories / 9 phases** | **~1145 lignes** | |
 
 ---
 
@@ -86,6 +99,7 @@ Livrable agrégé : un user peut créer une hiérarchie de catégories aussi pro
 - [ ] Déplacement d'un sous-arbre laisse un audit log
 - [ ] Property Hypothesis : toute mutation acceptée laisse l'arbre acyclique
 - [ ] Coverage `budget/domain.py` ≥ 90% (partie CycleDetector)
+- [ ] Parcours E2E API (S06.5) vert en CI : cycle indirect refusé → déplacement audité (`CATEGORY_MOVED` side-channel) → archivage sans cascade → filtre `include_archived` → étanchéité household-scope (membre non-admin)
 
 ---
 

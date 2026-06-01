@@ -1,9 +1,15 @@
-"""Stratégies Hypothesis partagées pour les tests property-based (S05.5, S06.4, S07.1).
+"""Stratégies Hypothesis partagées pour les tests property-based (S05.5, S06.4, S07.1, S07.3).
 
 `money_strategy` (S07.1) génère un `Money` valide (devise tirée dans `CURRENCIES`,
 montant entier borné) ; `distinct_currency_pair` fournit deux devises garanties
 distinctes pour les properties cross-devise. Premier consommateur de `Money` en
 property-based ; calque `account_with_members_strategy`.
+
+`balanced_splits_strategy` / `confirmed_transaction_strategy` (S07.3) génèrent
+respectivement un tuple de `Split` zero-sum (même devise) et une `Transaction`
+`confirmed` valide (zero-sum garanti par construction) — réutilisent
+`money_strategy` (devise unique). Pensées pour réuse E07/E08/E09 (l'aggregate
+immutable est le socle des budgets et dettes adossés aux transactions).
 
 
 `category_tree_strategy` (S06.4) génère un arbre/forêt de catégories
@@ -45,6 +51,7 @@ from uuid import UUID, uuid4
 import hypothesis.strategies as st
 
 from backend.modules.accounts.domain import AccountType, MemberShare
+from backend.modules.transactions.domain import Split, Transaction, TransactionState
 from backend.shared.currency import CURRENCIES, Currency
 from backend.shared.money import Money
 
@@ -276,3 +283,85 @@ def distinct_currency_pair(draw: st.DrawFn) -> tuple[Currency, Currency]:
     a = draw(st.sampled_from(_CURRENCY_CHOICES))
     b = draw(st.sampled_from([c for c in _CURRENCY_CHOICES if c != a]))
     return a, b  # type: ignore[return-value]  # a != b ∈ Currency par construction
+
+
+# Borne réduite pour les splits (vs `_MONEY_BOUND` à ±10 M€) : la somme de
+# `_MAX_SPLITS - 1` montants ne doit pas produire un dernier split aberrant,
+# et des montants plus petits gardent les exemples lisibles sans masquer de cas
+# limite (zero-sum testé sur tout le spectre des signes).
+_SPLIT_AMOUNT_BOUND: Final[int] = 10**7
+_MIN_SPLITS: Final[int] = 2
+_MAX_SPLITS: Final[int] = 5
+
+
+@st.composite
+def balanced_splits_strategy(
+    draw: st.DrawFn,
+    *,
+    currency: Currency | None = None,
+    min_splits: int = _MIN_SPLITS,
+    max_splits: int = _MAX_SPLITS,
+    distinct_accounts: bool = True,
+) -> tuple[Split, ...]:
+    """Tuple de `Split` zero-sum (MÊME devise), prêt pour une `Transaction` `confirmed`.
+
+    Tire `n ∈ [min_splits, max_splits]` montants entiers ; les `n-1` premiers
+    sont libres, le dernier ferme la somme à 0 (`-Σ` des précédents) ⇒ zero-sum
+    EXACT par construction, jamais de rejet `assume`. Devise unique (réutilise
+    le code des montants de `money_strategy`) ⇒ pas d'`IncompatibleCurrencyError`.
+
+    `distinct_accounts=True` (défaut) ⇒ un `account_id` par split (forme
+    transfert structurelle, `is_transfer` vrai) ; `False` ⇒ tous les splits sur
+    le même compte (forme dépense/revenu canonique S07.2). `category_id` est
+    posé sur chaque jambe (transaction « catégorisée ») — neutre pour le
+    zero-sum, utile aux consommateurs aval.
+    """
+    cur = currency if currency is not None else draw(st.sampled_from(_CURRENCY_CHOICES))
+    n = draw(st.integers(min_value=min_splits, max_value=max_splits))
+    head = draw(
+        st.lists(
+            st.integers(min_value=-_SPLIT_AMOUNT_BOUND, max_value=_SPLIT_AMOUNT_BOUND),
+            min_size=n - 1,
+            max_size=n - 1,
+        )
+    )
+    amounts = [*head, -sum(head)]
+    shared_account = uuid4()
+    return tuple(
+        Split(
+            account_id=uuid4() if distinct_accounts else shared_account,
+            category_id=uuid4(),
+            amount=Money(a, cur),  # type: ignore[arg-type]  # cur ∈ Currency par construction
+        )
+        for a in amounts
+    )
+
+
+@st.composite
+def confirmed_transaction_strategy(
+    draw: st.DrawFn,
+    *,
+    currency: Currency | None = None,
+    distinct_accounts: bool = True,
+) -> Transaction:
+    """`Transaction` à l'état `confirmed`, zero-sum GARANTI (bâtie sur `balanced_splits_strategy`).
+
+    La construction réussit toujours (le `model_validator` zero-sum est
+    satisfait par les splits équilibrés) — c'est le point fixe sur lequel
+    s'appuient les properties d'immutabilité (S07.3, P07.3.2).
+    """
+    splits = draw(balanced_splits_strategy(currency=currency, distinct_accounts=distinct_accounts))
+    return Transaction(
+        id=uuid4(),
+        account_id=uuid4(),
+        date=draw(st.dates()),
+        state=TransactionState.CONFIRMED,
+        payee=draw(st.none() | st.text(max_size=20)),
+        created_by=uuid4(),
+        splits=splits,
+        category_id=draw(st.none() | st.uuids()),
+        description=draw(st.none() | st.text(max_size=20)),
+        tags=tuple(draw(st.lists(st.text(max_size=10), max_size=3))),
+        debt_generation_override="default",
+        share_request_id=draw(st.none() | st.uuids()),
+    )

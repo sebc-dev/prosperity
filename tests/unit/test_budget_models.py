@@ -63,9 +63,7 @@ def test_index_names_are_explicit_and_distinct() -> None:
 
 def test_active_index_is_partial() -> None:
     active = next(
-        ix
-        for ix in cast(Table, Category.__table__).indexes
-        if ix.name == "ix_categories_active"
+        ix for ix in cast(Table, Category.__table__).indexes if ix.name == "ix_categories_active"
     )
     where = active.dialect_options["postgresql"]["where"]
     # Assert the exact predicate, not just its presence: it must match the

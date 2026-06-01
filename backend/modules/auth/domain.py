@@ -53,6 +53,16 @@ class AdminAction(enum.StrEnum):
     `TWOFA_RESET_VIA_DB` cannot be spelled as a leading-digit Python
     identifier, hence the explicit member name for the `"2fa_reset_via_db"`
     value (ADR 0013: TOTP reset is performed by manual SQL).
+
+    `CATEGORY_MOVED` (S06.3) audits a category re-parenting. It is a member
+    action (any authenticated household member may move a category), not an
+    admin one — a deliberate smell: `admin_audit_logs` is de facto the
+    household's append-only audit journal, and S06.3 reuses it rather than
+    standing up a dedicated `category_audit_logs` table (model + migration +
+    helper = a separate phase). The actor goes in `by`, `target` stays NULL
+    (the moved thing is a category, not a user), and the business payload
+    (`category_id`, `from_parent_id`, `to_parent_id`) goes in `metadata`.
+    Code-only — `action` is a `String` column, so no migration.
     """
 
     INVITE_SENT = "invite_sent"
@@ -62,3 +72,4 @@ class AdminAction(enum.StrEnum):
     USER_PROMOTED = "user_promoted"
     USER_DISABLED = "user_disabled"
     TWOFA_RESET_VIA_DB = "2fa_reset_via_db"
+    CATEGORY_MOVED = "category_moved"

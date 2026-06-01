@@ -109,18 +109,21 @@ async def test_move_to_new_parent_accepted(auth_schema: AsyncSession) -> None:
     b = await create_category(auth_schema, name="B", parent_id=a.id)
     c = await create_category(auth_schema, name="C", parent_id=b.id)
 
-    moved = await move_category(auth_schema, category_id=c.id, new_parent_id=a.id)
+    # move_category returns (category, previous_parent_id) since S06.3 (P06.3.3).
+    moved, previous = await move_category(auth_schema, category_id=c.id, new_parent_id=a.id)
 
     assert moved.parent_id == a.id
+    assert previous == b.id
 
 
 async def test_move_to_root_accepted(auth_schema: AsyncSession) -> None:
     a = await create_category(auth_schema, name="A", parent_id=None)
     child = await create_category(auth_schema, name="Child", parent_id=a.id)
 
-    moved = await move_category(auth_schema, category_id=child.id, new_parent_id=None)
+    moved, previous = await move_category(auth_schema, category_id=child.id, new_parent_id=None)
 
     assert moved.parent_id is None
+    assert previous == a.id
 
 
 # ---------------------------------------------------------------------------

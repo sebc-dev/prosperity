@@ -30,21 +30,29 @@ from collections.abc import Sequence
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.exc import IntegrityError
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.modules.auth.public import User, get_current_user
-from backend.modules.budget.domain import CategoryCycleError
+from backend.modules.auth.public import (
+    AdminAction,
+    User,
+    get_current_user,
+    log_admin_action,
+)
+from backend.modules.budget.domain import CategoryCycleError, CategoryNotFoundError
 from backend.modules.budget.models import Category
 from backend.modules.budget.schemas import (
     CategoryCreate,
+    CategoryMove,
     CategoryResponse,
     CategoryUpdate,
 )
 from backend.modules.budget.service.categories import (
+    archive_category,
     create_category,
     list_categories,
+    move_category,
     update_category,
 )
 from backend.shared.db import get_db
@@ -60,6 +68,13 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 _CYCLE_DETAIL = "Category parent would create a cycle."
 _UNKNOWN_PARENT_DETAIL = "The parent category does not exist."
 _NOT_FOUND_DETAIL = "Category not found."
+_RETRY_DETAIL = "Concurrent category move, please retry."
+
+# serialization_failure + deadlock_detected: a concurrent mover lost the
+# REPEATABLE READ / advisory-lock race (D7). Mapped to 409 (retryable), never
+# a 500 — and distinct from IntegrityError, which Postgres raises as a sibling
+# of DBAPIError.
+_SERIALIZE_SQLSTATES = frozenset({"40001", "40P01"})
 
 
 @categories_router.post("", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
@@ -126,3 +141,83 @@ async def patch_category_route(
     if category is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL)
     return category
+
+
+@categories_router.patch("/{category_id}/parent", response_model=CategoryResponse)
+async def move_category_route(
+    category_id: UUID,
+    body: CategoryMove,
+    user: CurrentUser,
+    session: SessionDep,
+) -> Category:
+    """Re-parent a category and audit the move in the **same** transaction (D5/D6).
+
+    The cycle check runs *before* the write, so a rejected move (422) raises
+    before the audit call — no audit row, no mutation (critère #4). On success
+    `move_category` and `log_admin_action` share the transaction `get_db`
+    owns: if the audit INSERT fails, the move rolls back too (atomic pair).
+    A concurrent mover that loses the serialisation race surfaces as 40001 →
+    409 retry, never a 500 or a silently-created cycle (D7).
+    """
+    try:
+        category, from_parent = await move_category(
+            session, category_id=category_id, new_parent_id=body.parent_id
+        )
+    except CategoryNotFoundError as exc:
+        logger.info("category_move_rejected", extra={"error": type(exc).__name__})
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL) from exc
+    except CategoryCycleError as exc:  # raised BEFORE the write ⇒ no audit row (D6)
+        logger.info("category_move_rejected", extra={"error": type(exc).__name__})
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_CYCLE_DETAIL) from exc
+    except IntegrityError as exc:  # unknown new parent (FK 23503)
+        if getattr(exc.orig, "sqlstate", None) == "23503":
+            logger.info("category_move_rejected", extra={"error": "unknown_parent"})
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_UNKNOWN_PARENT_DETAIL
+            ) from exc
+        logger.error(
+            "category_move_failed", extra={"sqlstate": getattr(exc.orig, "sqlstate", None)}
+        )
+        raise
+    except DBAPIError as exc:
+        sqlstate = getattr(exc.orig, "sqlstate", None)
+        if sqlstate in _SERIALIZE_SQLSTATES:
+            logger.warning("category_move_serialize_retry", extra={"sqlstate": sqlstate})
+            raise HTTPException(status.HTTP_409_CONFLICT, detail=_RETRY_DETAIL) from exc
+        logger.error("category_move_failed", extra={"sqlstate": sqlstate})
+        raise
+
+    # Audit in the SAME transaction (D5/D6). UUID-string metadata only — none
+    # of these keys trips `log_admin_action`'s secret-key blacklist; `target`
+    # stays NULL (the moved thing is a category, not a user).
+    await log_admin_action(
+        session,
+        action=AdminAction.CATEGORY_MOVED,
+        by=user.id,
+        target=None,
+        metadata={
+            "category_id": str(category_id),
+            "from_parent_id": str(from_parent) if from_parent is not None else None,
+            "to_parent_id": str(body.parent_id) if body.parent_id is not None else None,
+        },
+    )
+    return category
+
+
+@categories_router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_category_route(
+    category_id: UUID,
+    user: CurrentUser,
+    session: SessionDep,
+) -> Response:
+    """Soft-delete (archive) a category; never a hard delete (D9).
+
+    The row is preserved with `archived_at` set, and drops out of the default
+    listing. A re-DELETE of an already-archived category → 404 (idempotent in
+    the "no corruption" sense, gabarit `accounts.archive`). The hard-delete
+    service (`delete_category`) is deliberately NOT routed (D8): a category
+    with children is archived here, never refused.
+    """
+    if not await archive_category(session, category_id=category_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

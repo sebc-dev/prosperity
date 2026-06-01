@@ -19,6 +19,7 @@ serialising guard (household-global advisory lock / `FOR UPDATE` / retry on
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -111,6 +112,41 @@ async def move_category(
         raise CategoryNotFoundError(f"category {category_id} not found")
     await _assert_no_cycle(session, node_id=category_id, new_parent_id=new_parent_id)
     category.parent_id = new_parent_id
+    await session.flush()
+    return category
+
+
+async def list_categories(session: AsyncSession, *, include_archived: bool) -> Sequence[Category]:
+    """Flat, household-global category list (D3/D11).
+
+    By default excludes archived rows (`archived_at IS NULL`, served by the
+    partial index `ix_categories_active`); `include_archived=True` returns
+    every row. Ordered by `(created_at, id)` — the `id` tie-breaker makes the
+    order deterministic for two rows sharing a `created_at` (stable shape
+    tests). No user filter: a category is visible to any household member.
+    """
+    stmt = select(Category)
+    if not include_archived:
+        stmt = stmt.where(Category.archived_at.is_(None))
+    stmt = stmt.order_by(Category.created_at, Category.id)
+    return (await session.execute(stmt)).scalars().all()
+
+
+async def update_category(
+    session: AsyncSession, *, category_id: UUID, fields: dict[str, object]
+) -> Category | None:
+    """Edit `name`/`color`/`icon` (partial). Returns `None` if unknown or archived.
+
+    An archived category is treated as absent (→ 404, D10): it is invisible in
+    the pickers, so it cannot be edited — symmetric with `move_category`, which
+    also 404s an archived node. `fields` carries only the keys the client sent
+    (`exclude_unset`). Flush-only (ADR 0015).
+    """
+    category = await session.get(Category, category_id)
+    if category is None or category.archived_at is not None:
+        return None
+    for key, value in fields.items():
+        setattr(category, key, value)
     await session.flush()
     return category
 

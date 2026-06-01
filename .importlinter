@@ -315,6 +315,27 @@ forbidden_modules =
     backend.modules.transactions.repository
     backend.modules.transactions.transports
     backend.modules.transactions.handlers
+# Edges that constitute the legitimate `budget → auth.public` surface
+# (S06.3 `/categories` routes): `budget.transports.http` imports `User` /
+# `get_current_user` (P06.3.2) and `log_admin_action` / `AdminAction`
+# (P06.3.3) from `auth.public`. `find_shortest_chains` would otherwise
+# surface `budget → auth.public → auth.{domain, models, service.*,
+# transports.dependencies}` as broken chains; ignoring the *second hop*
+# (auth.public → auth.X) makes those chains invisible without weakening the
+# direct-import protection (a hypothetical `budget.service.X → auth.models`
+# would still be flagged). Same block as contract `2-accounts`; all nine arcs
+# exist in `auth/public.py` independently of budget, so each is "matched".
+ignore_imports =
+    backend.modules.auth.public -> backend.modules.auth.domain
+    backend.modules.auth.public -> backend.modules.auth.models
+    backend.modules.auth.public -> backend.modules.auth.service.audit
+    backend.modules.auth.public -> backend.modules.auth.service.invitations
+    backend.modules.auth.public -> backend.modules.auth.service.jwt
+    backend.modules.auth.public -> backend.modules.auth.service.refresh_tokens
+    backend.modules.auth.public -> backend.modules.auth.service.roles
+    backend.modules.auth.public -> backend.modules.auth.service.users
+    backend.modules.auth.public -> backend.modules.auth.transports.dependencies
+unmatched_ignore_imports_alerting = error
 
 [importlinter:contract:3]
 name = shared imports nothing of modules

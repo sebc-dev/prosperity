@@ -24,8 +24,9 @@ from pwdlib import PasswordHash
 from backend.modules.accounts.domain import AccountType
 from backend.modules.accounts.models import Account, AccountMember
 from backend.modules.auth.models import User
+from backend.modules.budget.models import Category
 
-__all__ = ["AccountFactory", "AccountMemberFactory", "UserFactory"]
+__all__ = ["AccountFactory", "AccountMemberFactory", "CategoryFactory", "UserFactory"]
 
 
 _password_hasher = PasswordHash.recommended()
@@ -103,3 +104,16 @@ class AccountMemberFactory(SQLAlchemyModelFactory):
         sqlalchemy_session_persistence = "flush"
 
     default_share_ratio = Decimal("0.5000")  # 50/50 — 2 members only (see docstring)
+
+
+class CategoryFactory(SQLAlchemyModelFactory):
+    """Persist a `Category`. Caller passes `parent_id=<id>` for a child;
+    omit it for a root. `color`/`icon` left NULL by default (UI-assigned).
+    """
+
+    class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
+        model = Category
+        sqlalchemy_session_persistence = "flush"
+
+    name = Faker("word")
+    parent_id = None

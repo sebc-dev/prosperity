@@ -1,21 +1,23 @@
-"""Unit tests for `backend.shared.money` (S07.1, P07.1.2).
+"""Unit tests for `backend.shared.money` (S07.1, P07.1.2 + P07.1.3).
 
-Pure unit tier — no DB. Pins the `Money` value object: arithmetic, cross-currency
-refusal, ordering, immutability, strict integer cents, hashing. Properties are
-non-tautological (they relate `+` to `×`, exercise `-` involution and the
-additive inverse), and the cross-currency refusal is swept over genuinely
-distinct currency pairs.
+Pure unit tier — no DB. Pins the `Money` value object (arithmetic, cross-currency
+refusal, ordering, immutability, strict integer cents, hashing) and the French
+formatter / parser pair (`format_french` / `parse_french`). Properties are
+non-tautological (they relate `+` to `×`, exercise the format/parse round-trip
+and `-` involution), with `@example()` pins on the round-trip per the test
+strategy (§4.2).
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import FrozenInstanceError
 
 import pytest
-from hypothesis import given
+from hypothesis import example, given
 from pydantic import ValidationError
 
-from backend.shared.money import IncompatibleCurrencyError, Money
+from backend.shared.money import IncompatibleCurrencyError, Money, parse_french
 from tests.strategies import distinct_currency_pair, money_strategy
 
 # ---------------------------------------------------------------------------
@@ -176,3 +178,127 @@ def test_property_cross_currency_always_raises(pair: tuple[str, str], x: Money, 
         _ = left - right
     with pytest.raises(IncompatibleCurrencyError):
         _ = left < right
+
+
+# ---------------------------------------------------------------------------
+# P07.1.3 — format_french (example-based)
+# ---------------------------------------------------------------------------
+
+
+def test_format_thousands() -> None:
+    # Codepoints exacts : U+202F (milliers) et U+00A0 (avant symbole).
+    assert Money(123456, "EUR").format_french() == "1 234,56 €"
+
+
+def test_format_zero() -> None:
+    assert Money(0, "EUR").format_french() == "0,00 €"
+
+
+def test_format_sub_unit() -> None:
+    assert Money(56, "EUR").format_french() == "0,56 €"
+
+
+def test_format_negative() -> None:
+    assert Money(-123456, "EUR").format_french() == "-1 234,56 €"
+
+
+def test_format_millions() -> None:
+    assert Money(123456789, "EUR").format_french() == "1 234 567,89 €"
+
+
+def test_format_very_large() -> None:
+    # 4 groupes, au-delà de _MONEY_BOUND : _group_thousands tient ; round-trip OK.
+    m = Money(1234567890123, "EUR")
+    assert m.format_french() == "12 345 678 901,23 €"
+    assert parse_french(m.format_french()) == m
+
+
+@pytest.mark.parametrize(
+    ("currency", "symbol"),
+    [("EUR", "€"), ("USD", "$"), ("GBP", "£"), ("CHF", "CHF")],
+)
+def test_format_each_currency_symbol(currency: str, symbol: str) -> None:
+    out = Money(123456, currency).format_french()  # type: ignore[arg-type]
+    # Le gap U+00A0 doit précéder le symbole (pas un espace ASCII).
+    assert out.endswith(f" {symbol}")
+
+
+# ---------------------------------------------------------------------------
+# P07.1.3 — parse_french : nominal + laxiste sur le groupage
+# ---------------------------------------------------------------------------
+
+
+def test_parse_nominal() -> None:
+    assert parse_french("1 234,56 €") == Money(123456, "EUR")
+
+
+def test_parse_accepts_plain_space() -> None:
+    # Normalisation _SPACE_TRANSLATION : espaces ASCII ordinaires acceptés.
+    assert parse_french("1 234,56 €") == Money(123456, "EUR")
+
+
+def test_parse_accepts_ungrouped() -> None:
+    # Groupage non vérifié (décision laxiste assumée).
+    assert parse_french("1234,56 €") == Money(123456, "EUR")
+
+
+def test_parse_negative_zero() -> None:
+    assert parse_french("-0,00 €") == Money(0, "EUR")
+
+
+# ---------------------------------------------------------------------------
+# P07.1.3 — parse_french : entrées invalides
+# ---------------------------------------------------------------------------
+
+
+def test_parse_unknown_symbol_raises() -> None:
+    with pytest.raises(ValueError, match="Symbole de devise inconnu"):
+        parse_french("1 234,56 ¥")
+
+
+def test_parse_no_symbol_raises() -> None:
+    with pytest.raises(ValueError, match="Symbole de devise inconnu"):
+        parse_french("12,34")
+
+
+@pytest.mark.parametrize("text", ["", "   "])
+def test_parse_empty_raises(text: str) -> None:
+    with pytest.raises(ValueError, match="Symbole de devise inconnu"):
+        parse_french(text)
+
+
+def test_parse_no_decimal_separator_raises() -> None:
+    with pytest.raises(ValueError, match="Montant FR invalide"):
+        parse_french("1 234 €")
+
+
+@pytest.mark.parametrize("text", ["1 234,5 €", "1 234,567 €"])
+def test_parse_bad_decimals_raises(text: str) -> None:
+    with pytest.raises(ValueError, match="Montant FR invalide"):
+        parse_french(text)
+
+
+@pytest.mark.parametrize("text", ["１２,３４ €", "²²,²² €"])
+def test_parse_rejects_non_ascii_digits(text: str) -> None:
+    # Chiffres Unicode (fullwidth, exposants) rejetés avec message contrôlé.
+    with pytest.raises(ValueError, match="Montant FR invalide"):
+        parse_french(text)
+
+
+# ---------------------------------------------------------------------------
+# P07.1.3 — properties
+# ---------------------------------------------------------------------------
+
+
+@given(money_strategy())
+@example(Money(123456, "EUR"))  # cas pivot multi-séparateurs
+@example(Money(0, "EUR"))
+@example(Money(-123456, "USD"))
+def test_property_format_parse_roundtrip(m: Money) -> None:
+    assert parse_french(m.format_french()) == m
+
+
+@given(money_strategy())
+def test_property_format_has_two_decimals(m: Money) -> None:
+    # La sortie se termine toujours par `,DD<gap><symbole>` (non tautologique).
+    assert re.search(r",\d{2} \S+$", m.format_french()) is not None

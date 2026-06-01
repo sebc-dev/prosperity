@@ -14,11 +14,12 @@ n'importe RIEN de `backend.modules.*` (import-linter #3).
 from __future__ import annotations
 
 from functools import total_ordering
+from typing import Final
 
 from pydantic import ConfigDict
 from pydantic.dataclasses import dataclass
 
-from backend.shared.currency import Currency
+from backend.shared.currency import CURRENCY_SYMBOLS, Currency
 
 
 class IncompatibleCurrencyError(Exception):
@@ -82,3 +83,86 @@ class Money:
             return NotImplemented
         self._same_currency(other)
         return self.amount_cents < other.amount_cents
+
+    def format_french(self) -> str:
+        """`Money(123456, "EUR")` -> `"1 234,56 €"` (séparateurs typographiques FR).
+
+        Milliers = espace fine insécable `U+202F` ; séparateur décimal = virgule ;
+        espace insécable `U+00A0` avant le symbole de devise.
+        """
+        sign = "-" if self.amount_cents < 0 else ""
+        units, cents = divmod(abs(self.amount_cents), _CENTS_PER_UNIT)
+        symbol = CURRENCY_SYMBOLS[self.currency]
+        return f"{sign}{_group_thousands(units)}{_DECIMAL_SEP}{cents:02d}{_CURRENCY_GAP}{symbol}"
+
+
+_CENTS_PER_UNIT: Final[int] = 100
+_THOUSANDS_SEP: Final[str] = " "  # espace fine insécable (séparateur de milliers)
+_CURRENCY_GAP: Final[str] = " "  # espace insécable (avant le symbole)
+_DECIMAL_SEP: Final[str] = ","
+# Normalisation parse : toute variante d'espace est supprimée -> round-trip robuste.
+_SPACE_TRANSLATION: Final = {0x202F: None, 0x00A0: None, 0x20: None}
+_DECIMAL_DIGITS: Final[int] = 2
+_ASCII_DIGITS: Final = frozenset("0123456789")  # rejette les chiffres Unicode
+
+
+def _is_ascii_digits(s: str) -> bool:
+    """`True` ssi `s` est non vide et composé UNIQUEMENT de chiffres ASCII 0-9.
+
+    `str.isdigit()` accepte les chiffres Unicode (fullwidth, arabe-indic, exposants)
+    -> on s'en prémunit pour ne pas accepter silencieusement `"１２,３４ €"`.
+    """
+    return bool(s) and set(s) <= _ASCII_DIGITS
+
+
+def _group_thousands(units: int) -> str:
+    """`1234` -> `"1 234"` (groupes de 3, séparés par `U+202F`). `units >= 0`."""
+    s = str(units)
+    parts: list[str] = []
+    while len(s) > 3:  # noqa: PLR2004 — groupes de 3 chiffres (notation des milliers)
+        parts.insert(0, s[-3:])
+        s = s[:-3]
+    parts.insert(0, s)
+    return _THOUSANDS_SEP.join(parts)
+
+
+def parse_french(text: str) -> Money:
+    """Inverse de `format_french` : `"1 234,56 €"` -> `Money(123456, "EUR")`.
+
+    Politique de parsing (tranchée explicitement) :
+
+    - **Symbole de devise OBLIGATOIRE** en suffixe (sinon `ValueError`).
+    - **Partie décimale OBLIGATOIRE** : exactement le séparateur `,` + 2 chiffres
+      ASCII (sinon `ValueError` — pas de virgule, mauvais nb de décimales, chiffres
+      non-ASCII rejetés).
+    - **Groupage des milliers LAXISTE** : tout espace (`U+202F`/`U+00A0`/`U+0020`)
+      est normalisé/supprimé avant lecture ; le placement des séparateurs n'est PAS
+      vérifié (`"1234,56 €"` comme `"1 234,56 €"` sont acceptés). Choix assumé :
+      l'invariant contractuel est `parse_french(m.format_french()) == m`, pas
+      l'inverse ; un groupage utilisateur libre est toléré.
+
+    Garantit le round-trip : ∀ `m`, `parse_french(m.format_french()) == m`.
+    """
+    raw = text.strip()
+    for code, symbol in CURRENCY_SYMBOLS.items():
+        if raw.endswith(symbol):
+            body = raw[: -len(symbol)]
+            currency = code
+            break
+    else:
+        raise ValueError(f"Symbole de devise inconnu dans : {text!r}")
+    body = body.translate(_SPACE_TRANSLATION)
+    negative = body.startswith("-")
+    body = body.removeprefix("-")
+    units_str, sep, cents_str = body.partition(_DECIMAL_SEP)
+    if (
+        not sep
+        or len(cents_str) != _DECIMAL_DIGITS
+        or not _is_ascii_digits(units_str)
+        or not _is_ascii_digits(cents_str)
+    ):
+        raise ValueError(f"Montant FR invalide : {text!r}")
+    amount = int(units_str) * _CENTS_PER_UNIT + int(cents_str)
+    # `currency` est une clé de CURRENCY_SYMBOLS => déjà un `Currency` valide
+    # (pas de `validate_currency` redondant ici).
+    return Money(-amount if negative else amount, currency)

@@ -59,13 +59,16 @@ def test_adminaction_values_match_audit_column_strings() -> None:
         "user_promoted",
         "user_disabled",
         "2fa_reset_via_db",
+        "category_moved",
     }
 
 
-def test_adminaction_has_exactly_seven_members() -> None:
+def test_adminaction_has_exactly_eight_members() -> None:
     # Cardinality is part of the contract: adding an action is a
     # deliberate code change reviewed against the never-log blacklist.
-    assert len(list(AdminAction)) == 7
+    # `category_moved` (S06.3) reuses this audit catalogue for a member action
+    # (any household member may move a category) — see the AdminAction docstring.
+    assert len(list(AdminAction)) == 8
 
 
 def test_adminaction_twofa_member_value_is_leading_digit_string() -> None:

@@ -20,7 +20,7 @@ from uuid import UUID, uuid4
 
 import hypothesis.strategies as st
 import pytest
-from hypothesis import assume, event, given
+from hypothesis import assume, event, given, target
 
 from backend.modules.budget.domain import (
     CategoryCycleError,
@@ -232,19 +232,36 @@ def test_property_self_reference_always_rejected(node: UUID, tree: dict[UUID, UU
         CycleDetector.detect_cycle(node_id=node, new_parent_id=node, get_parent=tree.get)
 
 
-@given(
-    node=st.uuids(),
-    new_parent=st.uuids(),
-    edges=st.dictionaries(st.uuids(), st.uuids() | st.none(), max_size=12),
-)
-def test_property_walk_always_terminates(
-    node: UUID, new_parent: UUID, edges: dict[UUID, UUID | None]
-) -> None:
+@given(data=st.data())
+def test_property_walk_always_terminates(data: st.DataObject) -> None:
     # ∀ arbitrary (possibly cyclic) parent map: detect_cycle returns or raises
-    # in finite time — never loops (pins the visited-set guard independently of
-    # tree structure). assume node not reachable-from-itself-trivially is not
-    # needed: either outcome (raise / return) is acceptable here.
+    # in finite time — never loops, pinning the visited-set guard independently
+    # of tree structure. Drawing node / new_parent / edges from ONE small shared
+    # id pool forces real collisions, so the walk genuinely traverses several
+    # steps and hits corrupted cycles — instead of terminating at the first
+    # `None` (the earlier `st.uuids()` form never collided, making this property
+    # vacuous: Tests-F1). `event`/`target` below prove the walk actually bites.
+    pool = [uuid4() for _ in range(5)]
+    keys = data.draw(st.sets(st.sampled_from(pool)))
+    edges = {k: data.draw(st.sampled_from([None, *pool])) for k in keys}
+    node = data.draw(st.sampled_from(pool))
+    new_parent = data.draw(st.sampled_from(pool))
     assume(new_parent != node)  # exercise the walk, not the early self-ref branch
+
+    # Independently measure the walk this map induces (mirrors the detector's
+    # ancestor walk-up) to prove non-vacuity: count steps until we reach None,
+    # `node` (a real cycle), or a revisit (corrupted-tree guard would fire).
+    steps = 0
+    current: UUID | None = new_parent
+    seen: set[UUID] = set()
+    while current is not None and current != node and current not in seen:
+        seen.add(current)
+        current = edges.get(current)
+        steps += 1
+    event(f"walk length: {'0-1' if steps <= 1 else '2+'}")
+    event("cycle reaches node" if current == node else "walk ends at None/revisit")
+    target(float(steps), label="walk depth")  # push Hypothesis toward deep walks
+
     try:
         CycleDetector.detect_cycle(node_id=node, new_parent_id=new_parent, get_parent=edges.get)
     except CategoryCycleError:

@@ -42,6 +42,22 @@ class CategoryNotFoundError(CategoryError):
     """
 
 
+class CategoryInUseError(CategoryError):
+    """Hard-delete refused: the category is still referenced (S06.3, D8).
+
+    Raised by `delete_category` when the node has ≥ 1 non-archived
+    sub-category, or when the self-FK `RESTRICT` trips on an archived child
+    at flush (the DB-level twin is stricter than the service count, so the
+    service catches the 23503 and re-raises it here for a uniform contract).
+    In E07 the counter extends to `splits.category_id`.
+
+    Co-located with the family — like `CategoryNotFoundError`, it reports a
+    DB-state condition (not a pure rule violation), so the S06.3 boundary
+    maps the whole family with one `except CategoryError` while `domain.py`
+    stays stdlib-only.
+    """
+
+
 class CycleDetector:
     """Pure acyclicity guard for category re-parenting (CONTEXT.md §Catégorie).
 

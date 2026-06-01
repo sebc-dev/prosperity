@@ -19,7 +19,7 @@ Two tiers (gabarit `test_accounts_service.py`):
 
 from __future__ import annotations
 
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import func, select, text
@@ -39,7 +39,7 @@ async def _count(session: AsyncSession) -> int:
     return (await session.execute(select(func.count()).select_from(Category))).scalar_one()
 
 
-async def _parent_id_of(sm: async_sessionmaker[AsyncSession], category_id):
+async def _parent_id_of(sm: async_sessionmaker[AsyncSession], category_id: UUID) -> UUID | None:
     """Re-read `parent_id` from a fresh committed session (independent read)."""
     async with sm() as session:
         return (

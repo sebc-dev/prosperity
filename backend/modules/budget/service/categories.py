@@ -81,8 +81,8 @@ async def create_category(
     cycle is impossible by construction — the detector call is kept for
     symmetry with `move_category` (they share `_assert_no_cycle`) and as a
     guard against a future client-supplied id. Parent existence is enforced
-    by the FK `RESTRICT` at flush (clean 404/422 mapping is S06.3).
-    Flush-only (ADR 0015).
+    by the self-FK constraint at flush — an unknown `parent_id` raises
+    `IntegrityError` (clean 404/422 mapping is S06.3). Flush-only (ADR 0015).
     """
     new_id = uuid4()
     await _assert_no_cycle(session, node_id=new_id, new_parent_id=parent_id)

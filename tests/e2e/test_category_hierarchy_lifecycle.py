@@ -104,7 +104,8 @@ async def test_category_hierarchy_lifecycle(  # noqa: PLR0915 — E2E journey is
     moves = await fetch_audit_by_action(committed_sessionmaker, action="category_moved")
     assert len(moves) == 1
     actor, target, meta = moves[0]
-    assert actor == admin_id and target is None  # actor = admin, target NULL (moved thing ≠ user)
+    assert actor == admin_id  # actor = the admin who issued the move
+    assert target is None  # target NULL: the moved thing is a category, not a user
     assert meta == {"category_id": c["id"], "from_parent_id": b["id"], "to_parent_id": a["id"]}
 
     # 6. Household-scope: a non-admin member creates AND moves categories (no 403,
@@ -131,7 +132,8 @@ async def test_category_hierarchy_lifecycle(  # noqa: PLR0915 — E2E journey is
     moves = await fetch_audit_by_action(committed_sessionmaker, action="category_moved")
     assert len(moves) == 2  # admin's C→A, then the member's M-child→root
     actor, target, meta = moves[1]
-    assert actor == member_id and target is None
+    assert actor == member_id  # the member is imputed for their own move
+    assert target is None
     assert meta == {
         "category_id": m_child["id"],
         "from_parent_id": m_parent["id"],

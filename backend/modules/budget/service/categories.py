@@ -19,12 +19,18 @@ serialising guard (household-global advisory lock / `FOR UPDATE` / retry on
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.modules.budget.domain import CategoryNotFoundError, CycleDetector
+from backend.modules.budget.domain import (
+    CategoryInUseError,
+    CategoryNotFoundError,
+    CycleDetector,
+)
 from backend.modules.budget.models import Category
 
 
@@ -107,3 +113,61 @@ async def move_category(
     category.parent_id = new_parent_id
     await session.flush()
     return category
+
+
+async def archive_category(session: AsyncSession, *, category_id: UUID) -> bool:
+    """Soft-delete a category: set `archived_at = now()`, **no cascade** (D9).
+
+    Returns `False` if the category is unknown OR already archived (→ 404,
+    gabarit `accounts.archive`): a re-DELETE of an archived row finds it
+    already tombstoned and is idempotent in the "no corruption / row
+    preserved" sense, not a 204-replay. Children are deliberately untouched
+    (CONTEXT.md "pas de cascade") — a child of an archived parent stays
+    active. Household-global: no user filter (D3). Flush-only (ADR 0015).
+    """
+    category = await session.get(Category, category_id)
+    if category is None or category.archived_at is not None:
+        return False
+    category.archived_at = datetime.now(UTC)
+    await session.flush()
+    return True
+
+
+async def delete_category(session: AsyncSession, *, category_id: UUID) -> bool:
+    """Hard-delete a category — **not routed** (admin tooling, D8).
+
+    Returns `False` if unknown. Raises `CategoryInUseError` if the node has
+    ≥ 1 **non-archived** sub-category (in E07 the counter extends to
+    `splits.category_id`). Otherwise deletes the row and flushes.
+
+    The self-FK `RESTRICT` is the DB-level twin of this rule and is STRICTER
+    (it counts *any* child, archived included): a node whose only children
+    are archived passes the service count (0 active) yet trips 23503 at
+    flush. We catch that and re-raise `CategoryInUseError`, so the helper's
+    contract stays uniform ("refuses while in use") whichever rampart fires
+    — the residue is never an opaque `IntegrityError` (D8). Flush-only.
+    """
+    category = await session.get(Category, category_id)
+    if category is None:
+        return False
+    active_children = (
+        await session.execute(
+            select(func.count())
+            .select_from(Category)
+            .where(Category.parent_id == category_id, Category.archived_at.is_(None))
+        )
+    ).scalar_one()
+    if active_children > 0:
+        raise CategoryInUseError(
+            f"category {category_id} has {active_children} active sub-categories"
+        )
+    await session.delete(category)
+    try:
+        await session.flush()
+    except IntegrityError as exc:  # archived-only children → self-FK RESTRICT (23503)
+        if getattr(exc.orig, "sqlstate", None) == "23503":
+            raise CategoryInUseError(
+                f"category {category_id} still has archived sub-categories (FK RESTRICT)"
+            ) from exc
+        raise
+    return True

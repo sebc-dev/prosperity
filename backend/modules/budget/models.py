@@ -13,7 +13,8 @@ refused at the DB (defense-in-depth doubling the S06.3 service rule;
 CONTEXT.md "pas de cascade, pas de re-parentage automatique").
 
 Cross-module callers reach categories via `budget.public` — import-linter
-contract 2 forbids importing this module from outside `budget`.
+contract `2-budget` (and contract 2's globs for the other sources) forbids
+importing this module from outside `budget`.
 """
 
 from __future__ import annotations

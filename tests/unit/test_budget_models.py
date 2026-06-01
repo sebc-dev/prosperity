@@ -52,7 +52,11 @@ def test_parent_fk_is_self_ref_restrict() -> None:
     assert fk.ondelete == "RESTRICT"
 
 
-def test_index_names_match_naming_convention() -> None:
+def test_index_names_are_explicit_and_distinct() -> None:
+    # Both indexes are named explicitly in the model (not derived from the
+    # NAMING_CONVENTION): they both cover `parent_id`, so the convention's
+    # `column_0_N_label` token would collide on a single name. The literal
+    # names also pin the create_all/Alembic parity the snapshot checks.
     names = {ix.name for ix in cast(Table, Category.__table__).indexes}
     assert names == {"ix_categories_parent_id", "ix_categories_active"}
 
@@ -63,4 +67,8 @@ def test_active_index_is_partial() -> None:
         for ix in cast(Table, Category.__table__).indexes
         if ix.name == "ix_categories_active"
     )
-    assert active.dialect_options["postgresql"]["where"] is not None
+    where = active.dialect_options["postgresql"]["where"]
+    # Assert the exact predicate, not just its presence: it must match the
+    # migration's `postgresql_where` byte-for-byte (create_all/Alembic parity,
+    # same trap as `uq_invitations_pending_email`).
+    assert str(where) == "archived_at IS NULL"

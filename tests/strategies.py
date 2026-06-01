@@ -1,4 +1,12 @@
-"""Stratégies Hypothesis partagées pour les tests property-based (S05.5).
+"""Stratégies Hypothesis partagées pour les tests property-based (S05.5, S06.4).
+
+`category_tree_strategy` (S06.4) génère un arbre/forêt de catégories
+**acyclique par construction** (chaque nœud pointe vers un parent déjà émis ou
+``None``), paramétrable (nb de nœuds / profondeur / arité) pour réuse E07
+(transactions catégorisées) et E08 (budgets agrégeant la hiérarchie). Comme
+`account_with_members_strategy`, elle n'importe **aucun** module
+`backend.modules.budget` : ses valeurs sont pures (`UUID` + parent-map), donc
+le `CycleDetector` n'est lu que par les *tests*, jamais par la strategy.
 
 `account_with_members_strategy` génère des comptes **valides** (S05.2) selon
 deux axes ORTHOGONAUX :
@@ -131,3 +139,106 @@ def account_with_members_strategy(  # noqa: PLR0913  # paramétrable par concept
     ratios = draw(share_ratios(n=n))  # total=10000 ⇒ Σ=1 exact
     members = [MemberShare(user_id=ids[i], ratio=ratios[i]) for i in range(n)]
     return GeneratedAccount(type=acc_type, currency="EUR", owner_id=None, members=members)
+
+
+@dataclass(frozen=True, slots=True)
+class GeneratedCategoryTree:
+    """Arbre/forêt de catégories ACYCLIQUE par construction (S06.4).
+
+    `nodes` est en ordre TOPOLOGIQUE : le parent de tout nœud (s'il existe)
+    apparaît STRICTEMENT avant lui ⇒ INSERT direct sous la self-FK
+    `categories.parent_id` (property c, S06.4), et acyclicité prouvable par le
+    seul ordre (parent index < child index). Gabarit `GeneratedAccount`.
+    """
+
+    nodes: tuple[tuple[UUID, UUID | None], ...]
+
+    @property
+    def ids(self) -> list[UUID]:
+        """Les ids des nœuds, en ordre topologique (parents avant enfants)."""
+        return [nid for nid, _ in self.nodes]
+
+    @property
+    def parent_of(self) -> dict[UUID, UUID | None]:
+        """`{node: parent}` — INJECTABLE TEL QUEL comme `get_parent` (via `.get`).
+
+        Contrat verrouillé par les properties (a)/(b) de S06.4 : tant qu'il
+        renvoie ce dict, `CycleDetector.detect_cycle(get_parent=tree.parent_of.get)`
+        et l'oracle `_is_acyclic(mutated)` restent valides (jamais vacants).
+        """
+        return {nid: pid for nid, pid in self.nodes}
+
+    def descendants(self, root: UUID) -> set[UUID]:
+        """Tous les nœuds dont la chaîne d'ancêtres passe par `root` (root exclu).
+
+        IMPLÉMENTATION UNIQUE du calcul de descendants (S06.4) : les properties
+        (b) et (c) l'appellent. Purement structurel (remontée des `parent_of`),
+        INDÉPENDANT du service `archive_category` — sert d'oracle de non-cascade
+        en (c) et de sélecteur de candidats de move en (b). La garde `seen`
+        borne la remontée même sur une map corrompue (jamais utilisée ici, mais
+        rend le helper sûr pour les consommateurs aval E07/E08).
+        """
+        parent = self.parent_of
+        out: set[UUID] = set()
+        for nid in parent:
+            current, seen = parent.get(nid), {nid}
+            while current is not None and current not in seen:
+                if current == root:
+                    out.add(nid)
+                    break
+                seen.add(current)
+                current = parent.get(current)
+        return out
+
+
+@st.composite
+def category_tree_strategy(
+    draw: st.DrawFn,
+    *,
+    min_nodes: int = 1,
+    max_nodes: int = 12,
+    max_depth: int | None = None,
+    max_arity: int | None = None,
+) -> GeneratedCategoryTree:
+    """Arbre N-aire valide, ACYCLIQUE PAR CONSTRUCTION (gabarit `account_with_members_strategy`).
+
+    Émet `n` nœuds dans l'ordre ; le nœud 0 est une racine ; chaque nœud i>0
+    tire son parent dans `{None} ∪ {nœuds déjà émis éligibles}` — éligible ⇔
+    profondeur < `max_depth` ET nb d'enfants < `max_arity`. Aucun éligible ⇒
+    racine (`None`). Ne pointer que vers un nœud déjà émis rend tout cycle
+    impossible. Peut générer une **forêt** (plusieurs racines).
+
+    `max_depth` compte les **NIVEAUX, PAS les arêtes** (off-by-one volontaire) :
+
+      - racine seule = `depth 0` ;
+      - `max_depth=1` ⇒ UNIQUEMENT des racines (`depth[parent]+1 < 1` toujours faux) ;
+      - `max_depth=2` ⇒ racines + 1 niveau d'enfants (`depth ∈ {0, 1}`) ;
+      - profondeur maximale atteignable = `max_depth - 1`.
+
+    `max_arity` borne le nb d'enfants DIRECTS par nœud ; `max_arity=0` ⇒ aucun
+    nœud ne peut être parent ⇒ forêt de singletons (cas plat extrême).
+    ``None`` (défaut) sur l'un ou l'autre ⇒ borne illimitée.
+
+    Paramétrable (taille / profondeur / arité) pour réuse E07 / E08.
+    """
+    n = draw(st.integers(min_value=min_nodes, max_value=max_nodes))
+    ids = [uuid4() for _ in range(n)]
+    parent: dict[UUID, UUID | None] = {}
+    depth: dict[UUID, int] = {}
+    children: dict[UUID, int] = {}
+    for i, node in enumerate(ids):
+        if i == 0:
+            chosen: UUID | None = None
+        else:
+            eligible = [
+                ids[j]
+                for j in range(i)
+                if (max_depth is None or depth[ids[j]] + 1 < max_depth)
+                and (max_arity is None or children.get(ids[j], 0) < max_arity)
+            ]
+            chosen = draw(st.sampled_from([None, *eligible]))
+        parent[node] = chosen
+        depth[node] = 0 if chosen is None else depth[chosen] + 1
+        if chosen is not None:
+            children[chosen] = children.get(chosen, 0) + 1
+    return GeneratedCategoryTree(nodes=tuple((nid, parent[nid]) for nid in ids))

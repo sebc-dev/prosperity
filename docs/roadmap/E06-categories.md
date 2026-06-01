@@ -54,11 +54,13 @@ Livrable agrégé : un user peut créer une hiérarchie de catégories aussi pro
 
 ### S06.4 — Hypothesis : invariants hiérarchie
 
-**Livrable observable** : property tests sur l'absence de cycle, l'idempotence de l'archivage, la stabilité des agrégats lors d'un déplacement.
+**Livrable observable** : `tests/strategies.py` expose `category_tree_strategy` (arbre acyclique par construction, paramétrable — réuse E07/E08) ; les properties Hypothesis sur l'acyclicité post-mutation (domaine pur `CycleDetector`) et la non-cascade / non-re-parentage de l'archivage (`archive_category`, testcontainers) passent en CI et **échouent** si une règle S06.2/S06.3 régresse.
+
+> Périmètre réel (vs ébauche initiale) : l'**idempotence de l'archivage** est déjà verrouillée par l'example `test_archive_already_archived_returns_false` (S06.3) — re-property = doublon. La **stabilité des agrégats lors d'un déplacement** est reportée à E08 (aucun agrégat n'existe en E06 ; les `Budget` arrivent en E08).
 
 | Phase | Description | Diff |
 |---|---|---|
-| **P06.4.1** | Strategy `category_tree_strategy` : génère un arbre N-aire random valide (sans cycle). Property : toute mutation `parent_id` qui passe la validation produit toujours un arbre valide. Property : archiver une catégorie n'affecte pas ses enfants (pas de cascade) | ~120 |
+| **P06.4.1** | `category_tree_strategy` + `GeneratedCategoryTree` dans `tests/strategies.py` (acyclique par construction, paramétrable taille/profondeur/arité). Property (a) cohérence strategy↔`CycleDetector`. Property (b) acyclicité post-mutation (oracle DFS **indépendant**, rebranche l'inline S06.2). Property (c) archivage sans cascade **ni** re-parentage (service + testcontainers). Aucune Hypothesis sur HTTP | ~120 |
 
 ---
 

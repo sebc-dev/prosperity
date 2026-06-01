@@ -28,6 +28,7 @@ from backend.modules.budget.domain import (
     CategoryNotFoundError,
     CycleDetector,
 )
+from tests.strategies import GeneratedCategoryTree, category_tree_strategy
 
 ParentLookup = Callable[[UUID], "UUID | None"]
 
@@ -141,25 +142,15 @@ def test_leaf_errors_subclass_base() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Property-based (Hypothesis, inline strategies — shared strategy lands S06.4)
+# Property-based (Hypothesis) — shared `category_tree_strategy` (S06.4)
+#
+# The inline `_acyclic_tree` / `_descendants` helpers (S06.2) are gone: the tree
+# generator now lives in `tests.strategies.category_tree_strategy` (acyclic by
+# construction, parametrable, reused by E07/E08) and descendant selection in
+# `GeneratedCategoryTree.descendants()`. Only `_is_acyclic` stays local — it is
+# the INDEPENDENT acyclicity oracle (a three-colour DFS), and must never be
+# replaced by `CycleDetector` (anti-pattern Stratégie §12).
 # ---------------------------------------------------------------------------
-
-
-@st.composite
-def _acyclic_tree(draw: st.DrawFn, *, max_nodes: int = 8) -> dict[UUID, UUID | None]:
-    """Generate `{node: parent}` for an acyclic forest, by construction.
-
-    Emit `n` node ids in order; each node points to `None` (a root) or to an
-    **already-emitted** id. Pointing only backwards makes a cycle impossible
-    (gabarit « parent ∈ {None} ∪ ids déjà émis », note issue).
-    """
-    n = draw(st.integers(min_value=1, max_value=max_nodes))
-    ids = [uuid4() for _ in range(n)]
-    mapping: dict[UUID, UUID | None] = {}
-    for i, node in enumerate(ids):
-        parent = draw(st.sampled_from([None, *ids[:i]])) if i else None
-        mapping[node] = parent
-    return mapping
 
 
 def _is_acyclic(mapping: dict[UUID, UUID | None]) -> bool:
@@ -187,49 +178,36 @@ def _is_acyclic(mapping: dict[UUID, UUID | None]) -> bool:
     return all(colour[node] != WHITE or visit(node) for node in mapping)
 
 
-def _descendants(mapping: dict[UUID, UUID | None], root: UUID) -> set[UUID]:
-    """All nodes whose ancestor chain passes through `root` (root excluded)."""
-    out: set[UUID] = set()
-    for node in mapping:
-        current = mapping.get(node)
-        seen: set[UUID] = set()
-        while current is not None and current not in seen:
-            if current == root:
-                out.add(node)
-                break
-            seen.add(current)
-            current = mapping.get(current)
-    return out
-
-
 @given(data=st.data())
 def test_property_accepted_mutation_keeps_tree_acyclic(data: st.DataObject) -> None:
     # ∀ valid tree + ∀ accepted mutation (node, new_parent): applying it keeps
     # the tree acyclic, verified by the INDEPENDENT DFS checker. Bias toward
     # non-trivial accepted moves: pick new_parent among non-descendants of node
     # (excluding node itself), so the "accepted → applied → re-checked" branch
-    # actually bites (Tests-F2 anti-vacuity).
-    mapping = data.draw(_acyclic_tree())
-    nodes = list(mapping)
+    # actually bites (Tests-F2 anti-vacuity, biais PRÉSERVÉ depuis l'inline S06.2).
+    tree = data.draw(category_tree_strategy(max_nodes=8))
+    mapping = tree.parent_of  # {node: parent} injectable comme get_parent
+    nodes = tree.ids
     node = data.draw(st.sampled_from(nodes))
-    forbidden = _descendants(mapping, node) | {node}
+    forbidden = tree.descendants(node) | {node}  # impl. UNIQUE (dé-duplication S06.4)
     candidates = [None, *[n for n in nodes if n not in forbidden]]
     new_parent = data.draw(st.sampled_from(candidates))
 
     # The detector must accept this move (new_parent is None or a non-descendant).
     CycleDetector.detect_cycle(node_id=node, new_parent_id=new_parent, get_parent=mapping.get)
+    target(float(len(forbidden)), label="taille du sous-arbre déplacé")  # vers nœuds profonds
     event("applied non-root move" if new_parent is not None else "applied root move")
 
     mutated = dict(mapping)
     mutated[node] = new_parent
-    assert _is_acyclic(mutated)
+    assert _is_acyclic(mutated)  # oracle DFS local, JAMAIS detect_cycle
 
 
-@given(node=st.uuids(), tree=_acyclic_tree())
-def test_property_self_reference_always_rejected(node: UUID, tree: dict[UUID, UUID | None]) -> None:
+@given(node=st.uuids(), tree=category_tree_strategy())
+def test_property_self_reference_always_rejected(node: UUID, tree: GeneratedCategoryTree) -> None:
     # ∀ node, ∀ tree: setting a node as its own parent is always a cycle.
     with pytest.raises(CategoryCycleError):
-        CycleDetector.detect_cycle(node_id=node, new_parent_id=node, get_parent=tree.get)
+        CycleDetector.detect_cycle(node_id=node, new_parent_id=node, get_parent=tree.parent_of.get)
 
 
 @given(data=st.data())

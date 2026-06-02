@@ -5,11 +5,14 @@ montant entier borné) ; `distinct_currency_pair` fournit deux devises garanties
 distinctes pour les properties cross-devise. Premier consommateur de `Money` en
 property-based ; calque `account_with_members_strategy`.
 
-`balanced_splits_strategy` / `confirmed_transaction_strategy` (S07.3) génèrent
-respectivement un tuple de `Split` zero-sum (même devise) et une `Transaction`
-`confirmed` valide (zero-sum garanti par construction) — réutilisent
-`money_strategy` (devise unique). Pensées pour réuse E07/E08/E09 (l'aggregate
-immutable est le socle des budgets et dettes adossés aux transactions).
+`balanced_splits_strategy` / `transaction_confirmed_strategy` /
+`transaction_draft_strategy` (S07.3, complétées S07.6) génèrent respectivement un
+tuple de `Split` zero-sum (même devise), une `Transaction` `confirmed` valide
+(zero-sum garanti par construction) et une `Transaction` `draft` (splits libres
+par défaut, « confirmable » sur demande) — réutilisent `money_strategy` (devise
+unique). `balanced_splits_strategy` accepte `n_splits` pour fixer la cardinalité.
+Pensées pour réuse E07/E08/E09/E10 (l'aggregate immutable est le socle des
+budgets, dettes et règlements adossés aux transactions).
 
 
 `category_tree_strategy` (S06.4) génère un arbre/forêt de catégories
@@ -295,10 +298,11 @@ _MAX_SPLITS: Final[int] = 5
 
 
 @st.composite
-def balanced_splits_strategy(
+def balanced_splits_strategy(  # noqa: PLR0913 — paramétrable par conception (réutilisé E09/E10)
     draw: st.DrawFn,
     *,
     currency: Currency | None = None,
+    n_splits: int | None = None,
     min_splits: int = _MIN_SPLITS,
     max_splits: int = _MAX_SPLITS,
     distinct_accounts: bool = True,
@@ -310,6 +314,11 @@ def balanced_splits_strategy(
     EXACT par construction, jamais de rejet `assume`. Devise unique (réutilise
     le code des montants de `money_strategy`) ⇒ pas d'`IncompatibleCurrencyError`.
 
+    `n_splits` (optionnel) FIXE la cardinalité exacte (`min == max == n_splits`),
+    convenance pour les consommateurs qui veulent un nombre de jambes déterminé
+    (signature de l'AC #117) ; `min_splits`/`max_splits` (plus expressifs) sont
+    ignorés quand `n_splits` est fourni.
+
     `distinct_accounts=True` (défaut) ⇒ un `account_id` par split (forme
     transfert structurelle, `is_transfer` vrai) ; `False` ⇒ tous les splits sur
     le même compte (forme dépense/revenu canonique S07.2). `category_id` est
@@ -317,7 +326,8 @@ def balanced_splits_strategy(
     zero-sum, utile aux consommateurs aval.
     """
     cur = currency if currency is not None else draw(st.sampled_from(_CURRENCY_CHOICES))
-    n = draw(st.integers(min_value=min_splits, max_value=max_splits))
+    lo, hi = (n_splits, n_splits) if n_splits is not None else (min_splits, max_splits)
+    n = draw(st.integers(min_value=lo, max_value=hi))
     head = draw(
         st.lists(
             st.integers(min_value=-_SPLIT_AMOUNT_BOUND, max_value=_SPLIT_AMOUNT_BOUND),
@@ -338,7 +348,7 @@ def balanced_splits_strategy(
 
 
 @st.composite
-def confirmed_transaction_strategy(
+def transaction_confirmed_strategy(
     draw: st.DrawFn,
     *,
     currency: Currency | None = None,
@@ -348,7 +358,8 @@ def confirmed_transaction_strategy(
 
     La construction réussit toujours (le `model_validator` zero-sum est
     satisfait par les splits équilibrés) — c'est le point fixe sur lequel
-    s'appuient les properties d'immutabilité (S07.3, P07.3.2).
+    s'appuient les properties d'immutabilité (S07.3, P07.3.2) et les invariants
+    service (S07.6). Nomenclature parallèle à `transaction_draft_strategy`.
     """
     splits = draw(balanced_splits_strategy(currency=currency, distinct_accounts=distinct_accounts))
     return Transaction(
@@ -356,6 +367,53 @@ def confirmed_transaction_strategy(
         account_id=uuid4(),
         date=draw(st.dates()),
         state=TransactionState.CONFIRMED,
+        payee=draw(st.none() | st.text(max_size=20)),
+        created_by=uuid4(),
+        splits=splits,
+        category_id=draw(st.none() | st.uuids()),
+        description=draw(st.none() | st.text(max_size=20)),
+        tags=tuple(draw(st.lists(st.text(max_size=10), max_size=3))),
+        debt_generation_override="default",
+        share_request_id=draw(st.none() | st.uuids()),
+    )
+
+
+@st.composite
+def transaction_draft_strategy(
+    draw: st.DrawFn,
+    *,
+    currency: Currency | None = None,
+    balanced: bool = False,
+) -> Transaction:
+    """`Transaction` à l'état `draft`, devise unique (gabarit `transaction_confirmed_strategy`).
+
+    `balanced=False` (défaut) ⇒ splits LIBRES (le `draft` tolère `sum != 0`,
+    S07.3 `domain.py`) : le `model_validator` zero-sum n'est pas actif hors
+    `confirmed`, donc la construction réussit même déséquilibrée. `balanced=True`
+    ⇒ réutilise `balanced_splits_strategy` (un `draft` « confirmable », somme
+    nulle par construction). Réutilisable E09/E10 (signature paramétrable).
+    """
+    # cur ∈ Currency par construction (`_CURRENCY_CHOICES` dérive du Literal).
+    cur: Currency = (
+        currency if currency is not None else draw(st.sampled_from(_CURRENCY_CHOICES))  # type: ignore[assignment]
+    )
+    if balanced:
+        splits = draw(balanced_splits_strategy(currency=cur))
+    else:
+        n = draw(st.integers(min_value=_MIN_SPLITS, max_value=_MAX_SPLITS))
+        splits = tuple(
+            Split(
+                account_id=uuid4(),
+                category_id=draw(st.none() | st.uuids()),
+                amount=draw(money_strategy(currency=cur)),
+            )
+            for _ in range(n)
+        )
+    return Transaction(
+        id=uuid4(),
+        account_id=uuid4(),
+        date=draw(st.dates()),
+        state=TransactionState.DRAFT,
         payee=draw(st.none() | st.text(max_size=20)),
         created_by=uuid4(),
         splits=splits,

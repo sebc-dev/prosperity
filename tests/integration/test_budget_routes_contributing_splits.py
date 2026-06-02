@@ -385,6 +385,7 @@ async def test_pagination_same_date_tiebreak_by_id(
         headers=_bearer(owner_id),
     )
     b1 = page1.json()
+    assert b1["next_cursor"] is not None
     page2 = await async_client.get(
         f"/budgets/{budget_id}/contributing-splits",
         params={"as_of": _AS_OF, "limit": 2, "cursor": b1["next_cursor"]},
@@ -498,7 +499,9 @@ async def test_cursor_from_other_budget_does_not_widen(
     )
     assert y_page.status_code == 200, y_page.text
     returned = set(_ids(y_page.json()))
-    assert returned <= {str(UUID(int=201)), str(UUID(int=202))}  # only Y's splits
+    # Exact set: the cursor neither widens (no X split) nor shrinks (both Y splits
+    # predate X's cursor date, so the keyset keeps them) the perimeter.
+    assert returned == {str(UUID(int=201)), str(UUID(int=202))}  # only Y's splits
 
 
 # ---------------------------------------------------------------------------

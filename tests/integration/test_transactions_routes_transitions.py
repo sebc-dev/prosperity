@@ -266,6 +266,48 @@ async def test_void_no_body_succeeds(
     assert resp.json()["state"] == "void"
 
 
+async def test_void_succeeds_from_planned(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # void is allowed from every non-terminal state (ADR 0001), not just draft.
+    user_factory, account_factory, tx_factory, _ = await bound_transaction_factories()
+
+    def _seed(_s: Session) -> tuple[UUID, UUID]:
+        owner = user_factory(email="v5@example.com")
+        acc = account_factory(owner_id=owner.id, name="Perso")
+        tx = tx_factory(account_id=acc.id, created_by=owner.id, state="planned")
+        return owner.id, tx.id
+
+    owner_id, tx_id = await household_singleton.run_sync(_seed)
+
+    resp = await async_client.post(f"/transactions/{tx_id}/void", headers=_bearer(owner_id))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["state"] == "void"
+
+
+async def test_void_succeeds_from_confirmed(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # Voiding a confirmed transaction is the reversal path (ADR 0001): allowed.
+    user_factory, account_factory, tx_factory, _ = await bound_transaction_factories()
+
+    def _seed(_s: Session) -> tuple[UUID, UUID]:
+        owner = user_factory(email="v6@example.com")
+        acc = account_factory(owner_id=owner.id, name="Perso")
+        tx = tx_factory(account_id=acc.id, created_by=owner.id, state="confirmed")
+        return owner.id, tx.id
+
+    owner_id, tx_id = await household_singleton.run_sync(_seed)
+
+    resp = await async_client.post(f"/transactions/{tx_id}/void", headers=_bearer(owner_id))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["state"] == "void"
+
+
 async def test_void_terminal_revoid_409(
     async_client: AsyncClient,
     household_singleton: AsyncSession,
@@ -370,5 +412,7 @@ async def test_transition_401_anonymous(
     async_client: AsyncClient,
     household_singleton: AsyncSession,
 ) -> None:
-    resp = await async_client.post(f"/transactions/{uuid4()}/confirm")
-    assert resp.status_code == 401
+    # Each verb is guarded by `Depends(get_current_user)` → 401 without a bearer.
+    for verb in ("confirm", "plan", "void"):
+        resp = await async_client.post(f"/transactions/{uuid4()}/{verb}")
+        assert resp.status_code == 401, (verb, resp.text)

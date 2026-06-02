@@ -111,6 +111,11 @@ async def test_patch_allowed_fields_on_confirmed(
     assert resp.json()["description"] == "ajustée"
     assert resp.json()["debt_generation_override"] == "force_full_debt"
 
+    row = await _read_tx(household_singleton, tx_id)
+    assert row.description == "ajustée"
+    assert row.debt_generation_override == "force_full_debt"
+    assert row.state == "confirmed"  # editing a confirmed tx does not change its state
+
 
 async def test_patch_frozen_field_422(
     async_client: AsyncClient,
@@ -186,6 +191,52 @@ async def test_patch_description_too_long_422(
     assert resp.status_code == 422, resp.text
 
 
+async def test_patch_too_many_tags_422(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # Same anti-DoS bounds as the create route (tags cardinality ≤ 32).
+    user_factory, account_factory, tx_factory, _ = await bound_transaction_factories()
+
+    def _seed(_s: Session) -> tuple[UUID, UUID]:
+        owner = user_factory(email="f4@example.com")
+        acc = account_factory(owner_id=owner.id, name="Perso")
+        tx = tx_factory(account_id=acc.id, created_by=owner.id, state="draft")
+        return owner.id, tx.id
+
+    owner_id, tx_id = await household_singleton.run_sync(_seed)
+
+    resp = await async_client.patch(
+        f"/transactions/{tx_id}",
+        json={"tags": [f"t{i}" for i in range(33)]},
+        headers=_bearer(owner_id),
+    )
+    assert resp.status_code == 422, resp.text
+
+
+async def test_patch_tag_too_long_422(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # Per-item bound on a tag (≤ 64 chars), not only the cardinality.
+    user_factory, account_factory, tx_factory, _ = await bound_transaction_factories()
+
+    def _seed(_s: Session) -> tuple[UUID, UUID]:
+        owner = user_factory(email="f5@example.com")
+        acc = account_factory(owner_id=owner.id, name="Perso")
+        tx = tx_factory(account_id=acc.id, created_by=owner.id, state="draft")
+        return owner.id, tx.id
+
+    owner_id, tx_id = await household_singleton.run_sync(_seed)
+
+    resp = await async_client.patch(
+        f"/transactions/{tx_id}", json={"tags": ["x" * 65]}, headers=_bearer(owner_id)
+    )
+    assert resp.status_code == 422, resp.text
+
+
 async def test_patch_empty_body_noop_200(
     async_client: AsyncClient,
     household_singleton: AsyncSession,
@@ -245,6 +296,11 @@ async def test_patch_clears_fields(
     assert payload["category_id"] is None
     assert payload["description"] is None
     assert payload["tags"] == []
+
+    row = await _read_tx(household_singleton, tx_id)
+    assert row.category_id is None
+    assert row.description is None
+    assert row.tags == []
 
 
 async def test_patch_non_member_404(

@@ -13,6 +13,7 @@ Transactions are seeded via the bound factories; the route never calls
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Awaitable, Callable
 from datetime import date
 from uuid import UUID, uuid4
@@ -32,6 +33,15 @@ TxFactoryBundle = Callable[[], Awaitable[tuple[type, type, type, type]]]
 
 def _bearer(user_id: UUID) -> dict[str, str]:
     return {"Authorization": f"Bearer {issue_access_token(user_id, settings=_settings)}"}
+
+
+def _make_cursor(cursor_date: date, tx_id: UUID) -> str:
+    """Build an opaque cursor in the same `b64(date|id)` format the route emits.
+
+    Replicated black-box (not imported from the route) so the test stays a client
+    of the public HTTP contract rather than the private encoder.
+    """
+    return base64.urlsafe_b64encode(f"{cursor_date.isoformat()}|{tx_id}".encode()).decode()
 
 
 def _ids(payload: dict[str, object]) -> list[str]:
@@ -174,19 +184,28 @@ async def test_list_date_filters(
     household_singleton: AsyncSession,
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
+    # `from`/`to` are inclusive: a tx falling exactly on either bound is returned.
+    # Seeding a tx ON each bound pins `>=`/`<=` (a `>`/`<` regression would drop them).
     user_factory, account_factory, tx_factory, _ = await bound_transaction_factories()
 
-    def _seed(_s: Session) -> tuple[UUID, UUID]:
+    def _seed(_s: Session) -> tuple[UUID, list[str]]:
         owner = user_factory(email="l5@example.com")
         acc = account_factory(owner_id=owner.id, name="Mine")
         tx_factory(account_id=acc.id, created_by=owner.id, state="draft", date=date(2026, 1, 1))
+        low = tx_factory(
+            account_id=acc.id, created_by=owner.id, state="draft", date=date(2026, 3, 1)
+        )
         mid = tx_factory(
             account_id=acc.id, created_by=owner.id, state="draft", date=date(2026, 6, 15)
         )
+        high = tx_factory(
+            account_id=acc.id, created_by=owner.id, state="draft", date=date(2026, 9, 1)
+        )
         tx_factory(account_id=acc.id, created_by=owner.id, state="draft", date=date(2026, 12, 31))
-        return owner.id, mid.id
+        # Expected (date DESC): high (== to), mid, low (== from).
+        return owner.id, [str(high.id), str(mid.id), str(low.id)]
 
-    owner_id, mid_id = await household_singleton.run_sync(_seed)
+    owner_id, expected = await household_singleton.run_sync(_seed)
 
     resp = await async_client.get(
         "/transactions",
@@ -194,7 +213,65 @@ async def test_list_date_filters(
         headers=_bearer(owner_id),
     )
     assert resp.status_code == 200, resp.text
-    assert _ids(resp.json()) == [str(mid_id)]
+    assert _ids(resp.json()) == expected
+
+
+async def test_list_combined_filters(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+    bound_category_factory: Callable[..., Awaitable[object]],
+) -> None:
+    # account_id + from/to + state applied together narrow to a single tx.
+    user_factory, account_factory, tx_factory, split_factory = await bound_transaction_factories()
+    category = await bound_category_factory(name="X")
+    cat_id = category.id  # type: ignore[attr-defined]
+
+    def _seed(_s: Session) -> tuple[UUID, UUID, UUID]:
+        owner = user_factory(email="lc@example.com")
+        a = account_factory(owner_id=owner.id, name="A")
+        b = account_factory(owner_id=owner.id, name="B")
+
+        def _confirmed(account_id: UUID, when: date) -> object:
+            tx = tx_factory(
+                account_id=account_id,
+                created_by=owner.id,
+                state="confirmed",
+                splits=False,
+                date=when,
+            )
+            split_factory(
+                transaction_id=tx.id, account_id=account_id, amount_cents=-1000, category_id=cat_id
+            )
+            split_factory(
+                transaction_id=tx.id, account_id=account_id, amount_cents=1000, category_id=cat_id
+            )
+            return tx
+
+        # The target: account A, in range, confirmed.
+        target = _confirmed(a.id, date(2026, 6, 1))
+        # Decoys, each violating exactly one filter.
+        _confirmed(b.id, date(2026, 6, 1))  # wrong account
+        _confirmed(a.id, date(2026, 1, 1))  # out of range
+        tx_factory(
+            account_id=a.id, created_by=owner.id, state="draft", date=date(2026, 6, 2)
+        )  # state
+        return owner.id, a.id, target.id  # type: ignore[attr-defined]
+
+    owner_id, a_id, target_id = await household_singleton.run_sync(_seed)
+
+    resp = await async_client.get(
+        "/transactions",
+        params={
+            "account_id": str(a_id),
+            "from": "2026-03-01",
+            "to": "2026-09-01",
+            "state": "confirmed",
+        },
+        headers=_bearer(owner_id),
+    )
+    assert resp.status_code == 200, resp.text
+    assert _ids(resp.json()) == [str(target_id)]
 
 
 async def test_list_state_filter(
@@ -273,6 +350,39 @@ async def test_list_cursor_pagination(
 
     assert collected == expected_order
     assert len(collected) == 5
+
+
+async def test_list_cursor_does_not_widen_perimeter(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # A well-formed cursor only moves the keyset offset; it never bypasses the
+    # membership filter. A cursor pointing at a far-future row (with a random id)
+    # still yields ONLY the caller's transactions, never a stranger's.
+    user_factory, account_factory, tx_factory, _ = await bound_transaction_factories()
+
+    def _seed(_s: Session) -> tuple[UUID, UUID]:
+        owner = user_factory(email="lcs@example.com")
+        stranger = user_factory(email="scs@example.com")
+        mine = account_factory(owner_id=owner.id, name="Mine")
+        theirs = account_factory(owner_id=stranger.id, name="Theirs")
+        my_tx = tx_factory(
+            account_id=mine.id, created_by=owner.id, state="draft", date=date(2026, 1, 1)
+        )
+        tx_factory(
+            account_id=theirs.id, created_by=stranger.id, state="draft", date=date(2026, 1, 1)
+        )
+        return owner.id, my_tx.id
+
+    owner_id, my_tx_id = await household_singleton.run_sync(_seed)
+
+    cursor = _make_cursor(date(2030, 1, 1), uuid4())
+    resp = await async_client.get(
+        "/transactions", params={"cursor": cursor}, headers=_bearer(owner_id)
+    )
+    assert resp.status_code == 200, resp.text
+    assert _ids(resp.json()) == [str(my_tx_id)]
 
 
 async def test_list_malformed_cursor_422(

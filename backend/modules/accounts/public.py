@@ -30,9 +30,9 @@ from backend.modules.accounts.service.household import (
 from backend.modules.accounts.service.setup import bootstrap_initial_admin_from_env
 
 __all__ = [
-    "HOUSEHOLD_ID",
     "AccountMemberAdded",
     "AccountMemberRemoved",
+    "HOUSEHOLD_ID",
     "HouseholdNotInitializedError",
     "ShareRatioUpdated",
     "accessible_account_ids",

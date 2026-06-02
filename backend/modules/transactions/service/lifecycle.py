@@ -14,16 +14,20 @@ security-critical side effect: ADR 0015's commit-inside-service derogation
 deliberately does **not** apply (the criterion "the client must not be able to
 undo the side effect by triggering an exception" is not met). On the contrary we
 *want* the whole request to roll back if any step — including a future event
-subscriber that raises — fails.
+subscriber that raises — fails. The transition, the event `publish`, and the
+persistence all share the **same** transaction opened by the request dependency,
+so atomicity is free.
+
+`publish` is the S05.4 in-process mini-bus, dispatched **synchronously inside the
+caller's transaction, before `get_db` commits**; in V1 there is **no** subscriber
+(no-op). The concrete event types live in `transactions.events` (never in
+`shared`, which only owns the `DomainEvent` base — import-linter contract #3).
 
 Internal to the transactions module (import-linter contract `2-transactions`);
 cross-module callers go through `backend.modules.transactions.public`. No
 cross-module import is added in S07.4 (the transfer predicate is structural,
 D6): validating that each `account_id` belongs to the household is deferred to
 the route boundary S07.5 (D13).
-
-P07.4.1 lays the draft-creation + split-editing surface; transitions/events
-(P07.4.2) and post-confirmed editing (P07.4.3) extend this same module.
 """
 
 from __future__ import annotations
@@ -37,9 +41,10 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.modules.transactions import domain
+from backend.modules.transactions import domain, events
 from backend.modules.transactions.models import Split as SplitModel
 from backend.modules.transactions.models import Transaction as TxModel
+from backend.shared.events import publish
 from backend.shared.money import Money
 
 
@@ -215,3 +220,65 @@ async def remove_split(session: AsyncSession, *, tx_id: UUID, split_id: UUID) ->
     await session.delete(target)
     await session.flush()
     return _to_domain(tx, [s for s in splits if s.id != split_id])
+
+
+# --- Transitions + events (P07.4.2) -----------------------------------------
+
+
+async def transition_to_planned(session: AsyncSession, *, tx_id: UUID) -> domain.Transaction:
+    """`draft → planned`, refusing an unbalanced transaction (AC).
+
+    `assert_transition` runs **before** the zero-sum check (the state-machine
+    guard is the first gate). Flush-only (ADR 0015).
+    """
+    tx, splits = await _load_aggregate(session, tx_id)
+    agg = _to_domain(tx, splits)
+    domain.assert_transition(agg.state, domain.TransactionState.PLANNED)
+    domain.assert_zero_sum(agg)  # AC: refuse if sum(splits) != 0
+    tx.state = domain.TransactionState.PLANNED.value
+    await session.flush()
+    return _to_domain(tx, splits)
+
+
+async def transition_to_confirmed(session: AsyncSession, *, tx_id: UUID) -> domain.Transaction:
+    """`planned → confirmed`: zero-sum + every expense split categorised (D4).
+
+    `model_copy(update={"state": CONFIRMED})` would bypass the validator (domain
+    contract), so the service calls the standalone helpers explicitly. A mixed
+    currency surfaces `IncompatibleCurrencyError` (outside `TransactionError`),
+    propagated to the S07.5 boundary which catches both families. `publish` runs
+    **after** the flush but **before** `get_db` commits → same transaction (a
+    subscriber that raises rolls everything back; V1 no-op). Flush-only.
+    """
+    tx, splits = await _load_aggregate(session, tx_id)
+    agg = _to_domain(tx, splits)
+    domain.assert_transition(agg.state, domain.TransactionState.CONFIRMED)
+    domain.assert_zero_sum(agg)
+    domain.assert_expenses_categorized(agg)
+    tx.state = domain.TransactionState.CONFIRMED.value
+    tx.confirmed_at = datetime.now(UTC)
+    await session.flush()
+    publish(events.TransactionConfirmedEvent(transaction_id=tx.id, account_id=tx.account_id))
+    return _to_domain(tx, splits)
+
+
+async def void(session: AsyncSession, *, tx_id: UUID, reason: str) -> domain.Transaction:
+    """`* → void` (terminal): mark voided and emit `TransactionVoidedEvent` (D7).
+
+    `void` is reachable from any non-`void` state (ADR 0001). `reason` is carried
+    by the event payload only — there is no `void_reason` column in V1; the audit
+    trail follow-up rides on the first bus subscriber (E08), which must bound /
+    sanitise `reason` (PII / log-injection) before logging or persisting it.
+    `publish` runs after the flush, before `get_db` commits (same transaction).
+    Flush-only (ADR 0015).
+    """
+    tx, splits = await _load_aggregate(session, tx_id)
+    agg = _to_domain(tx, splits)
+    domain.assert_transition(agg.state, domain.TransactionState.VOID)
+    tx.state = domain.TransactionState.VOID.value
+    tx.voided_at = datetime.now(UTC)
+    await session.flush()
+    publish(
+        events.TransactionVoidedEvent(transaction_id=tx.id, account_id=tx.account_id, reason=reason)
+    )
+    return _to_domain(tx, splits)

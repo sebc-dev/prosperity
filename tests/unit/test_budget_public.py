@@ -10,20 +10,26 @@ from __future__ import annotations
 
 import backend.modules.budget.public as budget_public
 from backend.modules.budget import domain as _domain
+from backend.modules.budget import events as _events
 from backend.modules.budget.public import (
     BudgetConsumption,
+    BudgetThresholdEvent,
     BudgetWithConsumption,
     compute_consumption,
     list_active_budgets_for_user,
+    on_transaction_confirmed,
 )
 from backend.modules.budget.service import budgets as _budgets
 from backend.modules.budget.service import consumption as _consumption
+from backend.modules.budget.service import threshold_detector as _threshold_detector
 
 _EXPECTED = {
     "BudgetConsumption",
+    "BudgetThresholdEvent",
     "BudgetWithConsumption",
     "compute_consumption",
     "list_active_budgets_for_user",
+    "on_transaction_confirmed",
 }
 
 
@@ -39,3 +45,5 @@ def test_public_names_are_identical_re_exports() -> None:
     assert compute_consumption is _consumption.compute_consumption
     assert list_active_budgets_for_user is _budgets.list_active_budgets_for_user
     assert BudgetWithConsumption is _budgets.BudgetWithConsumption
+    assert BudgetThresholdEvent is _events.BudgetThresholdEvent
+    assert on_transaction_confirmed is _threshold_detector.on_transaction_confirmed

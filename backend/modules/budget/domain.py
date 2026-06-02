@@ -168,6 +168,32 @@ def consumption_from_totals(
     )
 
 
+# --- Threshold crossing (S08.3) --------------------------------------------
+#
+# Pure detector of which alert thresholds the *current* consumption reaches.
+# No "before/after" state — idempotence (one alert per crossing) lives in the
+# `budget_threshold_alerts` table at the service, not here. So the function is
+# a pure function of the current state, hence MONOTONE in `consumed`.
+
+THRESHOLD_PERCENTS: Final[tuple[int, ...]] = (80, 100, 120)
+
+
+def crossed_thresholds(consumed_cents: int, amount_cents: int) -> list[int]:
+    """Alert thresholds (%) REACHED by the current consumption, ascending (S08.3).
+
+    INTEGER comparison `consumed*100 >= pct*amount` (no float/Decimal, no
+    rounding; **equality counts as reached**, e.g. `amount=5, consumed=4 → [80]`).
+    `amount_cents <= 0 → []` (ratio undefined; mirrors the `consumption_from_totals`
+    guard). `consumed_cents <= 0 → []` (a net refund crosses nothing). Pure: no
+    "before/after" notion (idempotence lives in the `budget_threshold_alerts`
+    table), so the returned set is MONOTONE in `consumed` and always a PREFIX of
+    `THRESHOLD_PERCENTS`.
+    """
+    if amount_cents <= 0 or consumed_cents <= 0:
+        return []
+    return [pct for pct in THRESHOLD_PERCENTS if consumed_cents * 100 >= pct * amount_cents]
+
+
 def _add_months(anchor: date, months: int) -> date:
     """`anchor` décalé de `months`, jour **clampé** à la longueur du mois cible.
 

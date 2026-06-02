@@ -22,12 +22,32 @@ from backend.modules.auth.transports.http import (
 from backend.modules.auth.transports.http import (
     router as auth_router,
 )
+from backend.modules.budget.public import on_transaction_confirmed
 from backend.modules.budget.transports.http import categories_router
+from backend.modules.transactions.public import TransactionConfirmedEvent
 from backend.modules.transactions.transports.http import (
     account_tx_router,
     transactions_router,
 )
 from backend.shared.db import lifespan as db_lifespan
+from backend.shared.events import subscribe_async
+
+
+def _register_event_subscribers() -> None:
+    """Wire the mini-bus subscribers at the composition root (idempotent).
+
+    Lives here, NOT in `budget.public`: `budget ⊥ transactions` (peer modules,
+    contract 1), so `budget` cannot import `TransactionConfirmedEvent`. `main`
+    sits above every module → it imports both `.public` surfaces freely and
+    connects them.
+
+    Called from the `lifespan` BEFORE `yield` (symmetry with
+    `bootstrap_initial_admin_from_env`), NOT at module top-level: a top-level
+    call would run at IMPORT time, and a cross-import in tests (testcontainers
+    re-imports `main`) would re-register the handler. `subscribe_async` is
+    idempotent, so even a re-run of the lifespan (a test app) stays safe.
+    """
+    subscribe_async(TransactionConfirmedEvent, on_transaction_confirmed)
 
 
 @asynccontextmanager
@@ -49,9 +69,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     always completes cleanly. A persistent DB error logs an error and
     the app starts without an admin — operators can then `/setup`
     manually once the DB recovers.
+
+    3. `_register_event_subscribers` wires the mini-bus subscribers
+       (idempotent) before `yield` — see its docstring for why this
+       lives at the composition root and not at module top-level.
     """
     async with db_lifespan(app):
         await bootstrap_initial_admin_from_env(app.state.sessionmaker, get_settings())
+        _register_event_subscribers()
         yield
 
 

@@ -91,8 +91,10 @@ def _bearer(user_id: UUID) -> dict[str, str]:
     return {"Authorization": f"Bearer {issue_access_token(user_id, settings=_settings)}"}
 
 
-def _payload(*, category_id: UUID, contributor_ids: list[UUID], **over: object) -> dict:
-    payload: dict = {
+def _payload(
+    *, category_id: UUID, contributor_ids: list[UUID], **over: object
+) -> dict[str, object]:
+    payload: dict[str, object] = {
         "category_id": str(category_id),
         "period_kind": "monthly",
         "period_start": _PERIOD_START,
@@ -769,7 +771,7 @@ async def test_patch_replaces_contributor_set(
         s.flush()
         return a.id, b.id, c.id, budget.id
 
-    a_id, b_id, c_id, budget_id = await initialized_household.run_sync(_seed)
+    a_id, _b_id, c_id, budget_id = await initialized_household.run_sync(_seed)
 
     resp = await async_client.patch(
         f"/budgets/{budget_id}",

@@ -19,6 +19,7 @@ from __future__ import annotations
 import base64
 from collections.abc import Awaitable, Callable, Iterator
 from datetime import UTC, date, datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -143,7 +144,7 @@ async def _make_outsider(session: AsyncSession, email: str) -> UUID:
     return await session.run_sync(_make)
 
 
-def _ids(resp_json: dict) -> list[str]:
+def _ids(resp_json: dict[str, Any]) -> list[str]:
     return [it["id"] for it in resp_json["items"]]
 
 

@@ -28,6 +28,7 @@ from sqlalchemy import (
     ARRAY,
     UUID,
     BigInteger,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -117,16 +118,28 @@ class Transaction(Base):
         nullable=True,
     )
     tags: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
-    # `default`/`force_full_debt`/`force_no_debt` (domain Literal). Plain
-    # `String` without a CHECK, like `state` — the value lock lives at the
-    # domain boundary (S07.3). Unlike `currency`/`state` (open sets kept ENUM-
-    # free for V2 evolution), this is a *closed* 3-value set driving a
-    # sensitive budget mechanic, so S07.3 should weigh a defense-in-depth
-    # CHECK here specifically when it adds the domain lock.
+    # `default`/`force_full_debt`/`force_no_debt` (domain Literal). The value
+    # lock lives at the domain boundary (S07.3), backed by a defense-in-depth
+    # `CheckConstraint` below (added S07.4/D14): unlike `currency`/`state`
+    # (open sets kept ENUM/CHECK-free for V2 evolution), this is a *closed*
+    # 3-value set driving a sensitive budget mechanic, and `update_editable_fields`
+    # can write it post-confirmed via a `model_copy` path that bypasses Pydantic
+    # — so the DB CHECK is the fail-closed backstop.
     debt_generation_override: Mapped[str] = mapped_column(
         String,
         nullable=False,
         default="default",
+    )
+    # Dormant column: nullable UUID WITHOUT a `ForeignKey` (the
+    # `share_requests` table lives in `debts`/E09 and does not exist yet —
+    # same pattern as `Split.savings_goal_id`). Mutable after `confirmed`
+    # (ADR 0001 allowed set, domain `EDITABLE_AFTER_CONFIRMED`). E09 will add
+    # the FK + the `ShareRequest` entity in its own migration; S07.4 only lays
+    # the nullable substrate so this migration is never replayed. No index yet
+    # (no active FK to protect).
+    share_request_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
     )
 
     __table_args__ = (
@@ -139,6 +152,21 @@ class Transaction(Base):
         Index("ix_transactions_account_id", "account_id"),
         Index("ix_transactions_category_id", "category_id"),
         Index("ix_transactions_created_by", "created_by"),
+        # Closed 3-value set (domain `DebtGenerationOverride` Literal) →
+        # defense-in-depth CHECK (D14). Unlike `state`/`currency` (open sets
+        # kept ENUM/CHECK-free for V2), this drives a sensitive debt mechanic
+        # (ADR 0011) and is editable post-confirmed via `update_editable_fields`
+        # (whose `model_copy` path bypasses Pydantic) — so the DB is the
+        # fail-closed backstop. Mirrors the domain Literal exactly.
+        # `name="debt_generation_override"` (not the full `ck_transactions_…`):
+        # the `NAMING_CONVENTION` `ck_%(table_name)s_%(constraint_name)s` prefixes
+        # it to `ck_transactions_debt_generation_override`, matching the
+        # `op.f("ck_transactions_debt_generation_override")` in migration 0010
+        # (gabarit `ck_household_singleton`).
+        CheckConstraint(
+            "debt_generation_override IN ('default', 'force_full_debt', 'force_no_debt')",
+            name="debt_generation_override",
+        ),
     )
 
 

@@ -52,6 +52,7 @@ def test_expected_columns_and_nullability() -> None:
     assert cols["category_id"].nullable is True
     assert cols["confirmed_at"].nullable is True
     assert cols["voided_at"].nullable is True
+    assert cols["share_request_id"].nullable is True  # dormant column (S07.4/D1)
 
 
 def test_created_at_has_server_default() -> None:
@@ -69,7 +70,9 @@ def test_uuid_columns_are_uuid_type() -> None:
     # nullability/FK tests). `savings_goal_id` is listed too: the dormant
     # column must stay a UUID so the future FK activation matches.
     tx_cols = cast(Table, Transaction.__table__).c
-    for name in ("id", "account_id", "category_id", "created_by"):
+    # `share_request_id` is the dormant column (S07.4/D1): like `savings_goal_id`
+    # it must stay a UUID so the future FK activation (E09) matches.
+    for name in ("id", "account_id", "category_id", "created_by", "share_request_id"):
         assert isinstance(tx_cols[name].type, UUID), name
     split_cols = cast(Table, Split.__table__).c
     for name in ("id", "transaction_id", "account_id", "category_id", "savings_goal_id"):
@@ -90,7 +93,24 @@ def test_state_is_plain_string_without_check() -> None:
     state_type = table.c["state"].type
     assert isinstance(state_type, String)
     assert not isinstance(state_type, Enum)  # not a PG ENUM
-    assert not any(isinstance(c, CheckConstraint) for c in table.constraints)
+    # `state` is an OPEN set kept CHECK-free for V2 evolution: no CHECK references
+    # it. The only CHECK on the table is the closed-set guard on
+    # `debt_generation_override` (D14, S07.4), asserted separately below.
+    checks = [c for c in table.constraints if isinstance(c, CheckConstraint)]
+    assert all("state" not in str(c.sqltext) for c in checks)
+
+
+def test_debt_generation_override_has_closed_set_check() -> None:
+    # D14: a defense-in-depth CHECK on the closed 3-value set, the fail-closed
+    # backstop for `update_editable_fields`' `model_copy` path (which bypasses
+    # the Pydantic Literal). Mirrors the domain `DebtGenerationOverride`.
+    table = cast(Table, Transaction.__table__)
+    checks = [c for c in table.constraints if isinstance(c, CheckConstraint)]
+    debt_checks = [c for c in checks if "debt_generation_override" in str(c.sqltext)]
+    assert len(debt_checks) == 1
+    body = str(debt_checks[0].sqltext)
+    for value in ("default", "force_full_debt", "force_no_debt"):
+        assert value in body
 
 
 def test_debt_generation_override_default_is_default() -> None:
@@ -135,6 +155,15 @@ def test_transaction_fk_ondelete_actions_and_names() -> None:
     )
     assert fks["fk_transactions_created_by_users"].ondelete == "RESTRICT"
     assert fks["fk_transactions_created_by_users"].elements[0].column.table.name == "users"
+
+
+def test_share_request_id_has_no_foreign_key() -> None:
+    # Dormant column (S07.4/D1): nullable UUID without an active FK, so the
+    # `share_requests` table (debts/E09) can be created later without replaying
+    # migration 0010 (same pattern as `Split.savings_goal_id`).
+    col = cast(Table, Transaction.__table__).c["share_request_id"]
+    assert not col.foreign_keys
+    assert col.nullable is True
 
 
 def test_fk_to_categories_is_by_string_no_budget_import() -> None:

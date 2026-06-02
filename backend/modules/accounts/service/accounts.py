@@ -158,6 +158,32 @@ async def get_accessible(
     return (await session.execute(stmt)).scalar_one_or_none()
 
 
+async def account_is_accessible(session: AsyncSession, *, account_id: UUID, user_id: UUID) -> bool:
+    """`True` iff `user_id` may access `account_id` (owner ∪ live member).
+
+    Collapses the three indistinguishable cases (unknown / inaccessible /
+    archived) into a single `False` — the S07.5 route boundary turns it into a
+    uniform 404 (non-disclosure, F03). Selects only `Account.id`, never the ORM
+    row: a cross-module caller (transactions) has no business handling an
+    `accounts` row, only the boolean verdict (D1). The admin is NOT exempt
+    (`_accessible` is role-blind).
+    """
+    stmt = select(Account.id).where(Account.id == account_id, *_accessible(user_id))
+    return (await session.execute(stmt)).scalar_one_or_none() is not None
+
+
+async def accessible_account_ids(session: AsyncSession, *, user_id: UUID) -> set[UUID]:
+    """Ids of the accounts visible to `user_id` (owned ∪ shared-member, live).
+
+    Selects ONLY `Account.id` (not full ORM rows): that is exactly what the
+    S07.5 list-route filter consumes (`Transaction.account_id IN (...)`) and what
+    the create/list boundaries cross-check split `account_id`s against (D1/D5).
+    Empty set for a user with no account; archived excluded (`_accessible`).
+    """
+    stmt = select(Account.id).where(*_accessible(user_id))
+    return set((await session.execute(stmt)).scalars().all())
+
+
 async def rename(
     session: AsyncSession, *, account_id: UUID, user_id: UUID, name: str
 ) -> Account | None:

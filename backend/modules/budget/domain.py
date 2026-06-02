@@ -16,8 +16,14 @@ peer modules; it imports only the stdlib, so it creates no cross-module arc.
 
 from __future__ import annotations
 
+from calendar import monthrange
 from collections.abc import Callable
+from datetime import date
+from decimal import Decimal
+from typing import Final, Literal
 from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict
 
 
 class CategoryError(Exception):
@@ -102,3 +108,111 @@ class CycleDetector:
                 break  # corrupted-tree guard: terminate, never loop
             visited.add(current)
             current = get_parent(current)
+
+
+# --- Budget consumption (S08.2) --------------------------------------------
+#
+# The aggregation core of E08: how much of a budget has been spent over the
+# period window containing `as_of`. `BudgetConsumption` and the period-window
+# arithmetic are pure (no SQLAlchemy / session / clock); the SUM over the
+# category subtree, the contributor filter and the `force_full_debt` exclusion
+# live at the service (`budget.service.consumption`, CONTEXT.md §Budget « les
+# budgets agrègent à la lecture, pas à l'écriture »).
+
+PeriodKind = Literal["monthly", "quarterly", "yearly"]
+
+# Number of calendar months spanned by one window of each kind. Used to step
+# the window anchor forward/backward in `compute_period_window`.
+_MONTHS_PER_PERIOD: Final[dict[str, int]] = {"monthly": 1, "quarterly": 3, "yearly": 12}
+
+
+class BudgetConsumption(BaseModel):
+    """Consommation d'un budget sur une fenêtre de période (CONTEXT.md §Budget).
+
+    `consumed_cents` = SUM des legs « catégorie » (forme canonique E15) des
+    splits comptés ; positif pour une dépense, réduit par un remboursement.
+    `remaining_cents = amount_cents − consumed_cents` (négatif en dépassement).
+    `percent` = ratio Decimal `consumed/amount` (`0.80` = 80 %), non arrondi —
+    le formatage `×100`/`%` est une décision d'affichage (S08.4).
+    `splits_count` = nombre de splits comptés (drill-down UI S08.4.3).
+
+    Pas de champ `currency` : mono-devise V1 (ADR 0008) — `remaining` impose
+    déjà l'unicité de devise. `frozen=True, strict=True` : valeur immuable, pas
+    de coercition implicite (gabarit domaine pur).
+    """
+
+    model_config = ConfigDict(frozen=True, strict=True)
+
+    consumed_cents: int
+    remaining_cents: int
+    percent: Decimal
+    splits_count: int
+
+
+def consumption_from_totals(
+    *, consumed_cents: int, amount_cents: int, splits_count: int
+) -> BudgetConsumption:
+    """Factory pure : dérive `remaining`/`percent` des totaux (testable sans DB).
+
+    `percent = consumed/amount` (ratio Decimal non arrondi). `amount_cents <= 0`
+    → `percent = Decimal("0")` (garde-fou anti `ZeroDivisionError` ; un budget
+    bien formé a `amount > 0`, garanti au boundary S08.4). `remaining` peut être
+    négatif (dépassement).
+    """
+    percent = Decimal(consumed_cents) / Decimal(amount_cents) if amount_cents > 0 else Decimal("0")
+    return BudgetConsumption(
+        consumed_cents=consumed_cents,
+        remaining_cents=amount_cents - consumed_cents,
+        percent=percent,
+        splits_count=splits_count,
+    )
+
+
+def _add_months(anchor: date, months: int) -> date:
+    """`anchor` décalé de `months`, jour **clampé** à la longueur du mois cible.
+
+    Ancre le 31 → fév : 28/29 (clamp). `months` peut être négatif (recul). La
+    séquence `k ↦ _add_months(anchor, k·step)` est monotone non décroissante en
+    `k`, propriété sur laquelle s'appuie la recherche de fenêtre de
+    `compute_period_window`.
+    """
+    total = anchor.month - 1 + months
+    year = anchor.year + total // 12
+    month = total % 12 + 1
+    last_day = monthrange(year, month)[1]
+    return date(year, month, min(anchor.day, last_day))
+
+
+def compute_period_window(
+    period_kind: PeriodKind, period_start: date, as_of: date
+) -> tuple[date, date]:
+    """Fenêtre `[start, end)` du genre `period_kind` contenant `as_of`, ancrée
+    sur `period_start`.
+
+    Pure (aucune session/DB/horloge). `period_start` est l'**ancre** récurrente
+    (S08.1) : un mensuel ancré le 15 ouvre `[15, 15 du mois suivant)`. On
+    avance/recule par pas de `_MONTHS_PER_PERIOD[period_kind]` mois jusqu'à
+    encadrer `as_of`.
+
+    Invariants (property Hypothesis P08.2.1) : `start ≤ as_of < end` ; fenêtres
+    adjacentes contiguës (`window(as_of).end == window(end).start`) et
+    disjointes ; idempotence (tout `as_of'` dans `[start, end)` → même fenêtre).
+
+    La recherche linéaire est bornée par l'écart `as_of − period_start` (quelques
+    périodes pour des budgets posés à l'usage, V1) ; un calcul `O(1)` (division
+    entière de l'écart en mois) la remplacerait si un `as_of` lointain devenait
+    réel — YAGNI ici (note roadmap).
+    """
+    step = _MONTHS_PER_PERIOD[period_kind]
+    k = 0
+    if as_of >= period_start:
+        # Avance tant que la borne haute de la fenêtre k reste ≤ as_of.
+        while _add_months(period_start, (k + 1) * step) <= as_of:
+            k += 1
+    else:
+        # Recule tant que la borne basse de la fenêtre k dépasse as_of.
+        while _add_months(period_start, k * step) > as_of:
+            k -= 1
+    start = _add_months(period_start, k * step)
+    end = _add_months(period_start, (k + 1) * step)
+    return start, end

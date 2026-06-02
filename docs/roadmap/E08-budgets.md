@@ -25,7 +25,7 @@ Livrable agrégé : un user crée un budget "Courses, 400€/mois, commun, contr
 | Phase | Description | Diff |
 |---|---|---|
 | **P08.1.1** | Modèles : `Budget` (`id`, `category_id` FK, `period_kind` Literal['monthly','quarterly','yearly'], `period_start` date, `amount_cents`, `scope` Literal['personal','shared'], `created_by`, `archived_at` NULL, `carry_over_remainder` bool default false) + `BudgetContributor` (`budget_id` FK, `user_id` FK) — unique `(budget_id, user_id)`. Note : pour `scope=personal`, un seul contributor (owner) ; pour `scope=shared`, ≥ 2 | ~100 |
-| **P08.1.2** | Migration `0010_budgets.py`. Test niveau 1 schema check | ~70 |
+| **P08.1.2** | Migration `0011_budgets.py` (`down_revision` = `0010_transaction_share_request_id` — `0010` est déjà pris par S07.4). Test niveau 1 schema check | ~70 |
 
 ---
 
@@ -47,9 +47,9 @@ Livrable agrégé : un user crée un budget "Courses, 400€/mois, commun, contr
 
 | Phase | Description | Diff |
 |---|---|---|
-| **P08.3.1** | `shared/events.py` (créé en E01 vide) : ajouter classe `BudgetThresholdEvent(budget_id, threshold_pct, consumed_cents, period)`. Helpers dispatcher minimalistes (subscribe/publish synchrones). Tests unitaires du bus | ~120 |
-| **P08.3.2** | `budget/service/threshold_detector.py` : à chaque event `TransactionConfirmedEvent` (E07), recalcule consumption pour les budgets concernés, compare avant/après seuils ; si franchissement, publish `BudgetThresholdEvent`. Souscription au bus dans `modules/budget/public.py` au boot. Tests intégration | ~200 |
-| **P08.3.3** | Tests : transaction confirmée qui pousse à 79% → pas d'event ; à 81% → 1 event "80%" ; à 105% → event "100%". Double-confirmation idempotente : pas de duplication d'event si franchissement déjà détecté (table `budget_threshold_alerts (budget_id, period, threshold)` unique → ON CONFLICT DO NOTHING) | ~150 |
+| **P08.3.1** | Migration `0012_budget_threshold_alerts.py` : table `budget_threshold_alerts (budget_id FK CASCADE, period_start, threshold_pct)` unique. **Server-only** (hors sync rules). Test niveau 1 schema check | ~70 |
+| **P08.3.2** | `budget/events.py` : classe `BudgetThresholdEvent(budget_id, threshold_pct, consumed_cents, period_start)` (le mini-bus + `subscribe`/`publish` existent déjà — livrés en S05.4 ; le type concret vit dans le module, **pas** dans `shared/events.py` — contrat #3). `domain.py` : fonction pure `crossed_thresholds(consumed, amount)` (TDD). `budget/service/threshold_detector.py` : handler `on_transaction_confirmed(event)` qui recalcule consumption pour les budgets concernés, tente l'INSERT `ON CONFLICT DO NOTHING` par seuil franchi, publish si nouveau. Câblage `subscribe(TransactionConfirmedEvent, …)` **au composition root** (`backend/main.py`), pas dans `budget/public.py` (cf. Notes : `budget` ⊥ `transactions`). Tests intégration | ~250 |
+| **P08.3.3** | Tests scénarios : transaction confirmée qui pousse à 79% → pas d'event ; à 81% → 1 event "80%" ; à 105% → event "100%". Double-confirmation / rejeu idempotent : pas de duplication d'event (idempotence par la table `budget_threshold_alerts`, source de vérité des seuils déjà notifiés) | ~120 |
 
 ---
 
@@ -71,9 +71,9 @@ Livrable agrégé : un user crée un budget "Courses, 400€/mois, commun, contr
 |---|---|---|---|
 | S08.1 (2 phases) | Modèles + migration | 170 | 170 |
 | S08.2 (3 phases) | Service agrégation hiérarchique | 520 | 690 |
-| S08.3 (3 phases) | Alertes seuils + bus events | 470 | 1160 |
-| S08.4 (3 phases) | Routes | 450 | 1610 |
-| **Total** | **4 stories / 11 phases** | **~1610 lignes** | |
+| S08.3 (3 phases) | Alertes seuils (event module + détecteur + idempotence) | 440 | 1130 |
+| S08.4 (3 phases) | Routes | 450 | 1580 |
+| **Total** | **4 stories / 11 phases** | **~1580 lignes** | |
 
 ---
 
@@ -90,6 +90,9 @@ Livrable agrégé : un user crée un budget "Courses, 400€/mois, commun, contr
 
 ## Notes pour l'implémenteur
 
+- 🔒 **`budget` ⊥ `transactions` (modules pairs, même layer).** Le graphe directionnel (`.importlinter` contrat 1, CONTEXT.md §211) place `transactions`, `budget`, `banking` sur le **même** niveau : `budget` **ne peut pas importer** `transactions` (ni `transactions.public`). Conséquences : (1) la consommation lit les tables `transactions`/`splits` via **SQLAlchemy Core / `text()`**, jamais via `transactions.models` (lecture sanctionnée par CONTEXT.md §Splits « agrégation budget » ; seule la *mutation* cross-module est interdite) ; (2) le câblage `subscribe(TransactionConfirmedEvent, …)` vit au **composition root** (`backend/main.py`), `budget.public` n'exposant que le handler `on_transaction_confirmed`. La docstring de `transactions/events.py` annonce ce souscripteur.
+- ⚠️ **Le mini-bus `shared/events.py` existe déjà** (livré en S05.4) — on réutilise `subscribe`/`publish`. Les types d'events concrets vivent dans le module publiant (`budget/events.py` pour `BudgetThresholdEvent`), jamais dans `shared` (contrat import-linter #3).
+- ⚠️ **Numérotation migrations** : `0010` est pris par S07.4 (`0010_transaction_share_request_id`) → budgets = `0011`, table d'alertes = `0012`.
 - La CTE récursive PostgreSQL pour les sous-catégories est performante jusqu'à plusieurs milliers de catégories. Si on observe un ralentissement, on cachera l'arbre côté Python.
 - `budget_threshold_alerts` table d'idempotence est server-only (pas dans sync rules). Évite la duplication d'events sur restart serveur.
 - `carry_over_remainder` n'est pas implémenté dans le calcul de consumption en E08 — c'est un flag stocké mais ignoré. Implémentation = E11 ou plus tard si besoin observé. Documenter le TODO.

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -32,7 +32,7 @@ async def test_is_accessible_owner_of_personal(
 ) -> None:
     user_factory, account_factory, _ = await bound_account_factories()
 
-    def _seed(_s: Session) -> tuple:
+    def _seed(_s: Session) -> tuple[UUID, UUID]:
         owner = user_factory(email="owner@example.com")
         acc = account_factory(owner_id=owner.id, name="Perso")
         return owner.id, acc.id
@@ -48,7 +48,7 @@ async def test_is_accessible_non_owner_false(
 ) -> None:
     user_factory, account_factory, _ = await bound_account_factories()
 
-    def _seed(_s: Session) -> tuple:
+    def _seed(_s: Session) -> tuple[UUID, UUID]:
         owner = user_factory(email="owner2@example.com")
         other = user_factory(email="other2@example.com")
         acc = account_factory(owner_id=owner.id, name="Perso")
@@ -65,7 +65,7 @@ async def test_is_accessible_member_of_shared(
 ) -> None:
     user_factory, account_factory, member_factory = await bound_account_factories()
 
-    def _seed(_s: Session) -> tuple:
+    def _seed(_s: Session) -> tuple[UUID, UUID]:
         u1 = user_factory(email="m1@example.com")
         u2 = user_factory(email="m2@example.com")
         shared = account_factory(owner_id=None, name="Commun")
@@ -84,7 +84,7 @@ async def test_is_accessible_non_member_of_shared_false(
 ) -> None:
     user_factory, account_factory, member_factory = await bound_account_factories()
 
-    def _seed(_s: Session) -> tuple:
+    def _seed(_s: Session) -> tuple[UUID, UUID]:
         u1 = user_factory(email="in1@example.com")
         u2 = user_factory(email="in2@example.com")
         outsider = user_factory(email="out@example.com")
@@ -106,7 +106,7 @@ async def test_is_accessible_archived_false(
 ) -> None:
     user_factory, account_factory, _ = await bound_account_factories()
 
-    def _seed(_s: Session) -> tuple:
+    def _seed(_s: Session) -> tuple[UUID, UUID]:
         owner = user_factory(email="arch@example.com")
         acc = account_factory(owner_id=owner.id, name="Archived", archived_at=datetime.now(tz=UTC))
         return owner.id, acc.id
@@ -124,7 +124,7 @@ async def test_is_accessible_admin_not_exempt(
     # personal account through the membership predicate.
     user_factory, account_factory, _ = await bound_account_factories()
 
-    def _seed(_s: Session) -> tuple:
+    def _seed(_s: Session) -> tuple[UUID, UUID]:
         admin = user_factory(email="admin@example.com", role=UserRole.ADMIN)
         member = user_factory(email="member@example.com")
         acc = account_factory(owner_id=member.id, name="Member perso")
@@ -141,7 +141,7 @@ async def test_is_accessible_unknown_id_false(
 ) -> None:
     user_factory, _, _ = await bound_account_factories()
 
-    def _seed(_s: Session) -> object:
+    def _seed(_s: Session) -> UUID:
         return user_factory(email="ghost@example.com").id
 
     user_id = await household_singleton.run_sync(_seed)
@@ -155,7 +155,7 @@ async def test_accessible_ids_owned_and_shared_excludes_archived(
 ) -> None:
     user_factory, account_factory, member_factory = await bound_account_factories()
 
-    def _seed(_s: Session) -> tuple:
+    def _seed(_s: Session) -> tuple[UUID, UUID, UUID]:
         user = user_factory(email="multi@example.com")
         other = user_factory(email="stranger@example.com")
         owned = account_factory(owner_id=user.id, name="Owned")
@@ -181,7 +181,7 @@ async def test_accessible_ids_admin_not_exempt(
 ) -> None:
     user_factory, account_factory, _ = await bound_account_factories()
 
-    def _seed(_s: Session) -> object:
+    def _seed(_s: Session) -> UUID:
         admin = user_factory(email="admin2@example.com", role=UserRole.ADMIN)
         member = user_factory(email="member2@example.com")
         account_factory(owner_id=member.id, name="Member perso")
@@ -198,7 +198,7 @@ async def test_accessible_ids_empty_for_new_user(
 ) -> None:
     user_factory, _, _ = await bound_account_factories()
 
-    def _seed(_s: Session) -> object:
+    def _seed(_s: Session) -> UUID:
         return user_factory(email="newbie@example.com").id
 
     user_id = await household_singleton.run_sync(_seed)

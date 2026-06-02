@@ -45,11 +45,14 @@ Livrable agrégé : un user crée un budget "Courses, 400€/mois, commun, contr
 
 **Livrable observable** : à chaque write de transaction confirmée, si un budget concerné franchit un seuil (80%/100%/120%), un `BudgetThresholdEvent` est publié.
 
+> **Delta livré (#127) : 3 → 4 phases.** Le handler doit faire de l'I/O DB (`await`) dans la transaction du request, or le mini-bus S05.4 est **synchrone**. On ajoute un **chemin de dispatch asynchrone** additif à `shared/events.py` (`subscribe_async` idempotent + `dispatch`), scindé en une phase d'infra dédiée (P08.3.2) **avant** son dépendant (analogue à la règle « nouvel ADR = phase dédiée »). Le câblage `subscribe_async(...)` vit dans le **`lifespan`** de `backend/main.py` (pas au top-level : l'idempotence + le lifespan honorent le contrat « registers once at application startup »).
+
 | Phase | Description | Diff |
 |---|---|---|
-| **P08.3.1** | Migration `0012_budget_threshold_alerts.py` : table `budget_threshold_alerts (budget_id FK CASCADE, period_start, threshold_pct)` unique. **Server-only** (hors sync rules). Test niveau 1 schema check | ~70 |
-| **P08.3.2** | `budget/events.py` : classe `BudgetThresholdEvent(budget_id, threshold_pct, consumed_cents, period_start)` (le mini-bus + `subscribe`/`publish` existent déjà — livrés en S05.4 ; le type concret vit dans le module, **pas** dans `shared/events.py` — contrat #3). `domain.py` : fonction pure `crossed_thresholds(consumed, amount)` (TDD). `budget/service/threshold_detector.py` : handler `on_transaction_confirmed(event)` qui recalcule consumption pour les budgets concernés, tente l'INSERT `ON CONFLICT DO NOTHING` par seuil franchi, publish si nouveau. Câblage `subscribe(TransactionConfirmedEvent, …)` **au composition root** (`backend/main.py`), pas dans `budget/public.py` (cf. Notes : `budget` ⊥ `transactions`). Tests intégration | ~250 |
-| **P08.3.3** | Tests scénarios : transaction confirmée qui pousse à 79% → pas d'event ; à 81% → 1 event "80%" ; à 105% → event "100%". Double-confirmation / rejeu idempotent : pas de duplication d'event (idempotence par la table `budget_threshold_alerts`, source de vérité des seuils déjà notifiés) | ~120 |
+| **P08.3.1** | Migration `0012_budget_threshold_alerts.py` : table `budget_threshold_alerts (budget_id FK CASCADE, period_start, threshold_pct)` unique nommée `uq_budget_threshold_alerts_dedup` (cible `ON CONFLICT ON CONSTRAINT`). **Server-only** (hors sync rules). Modèle ORM + test niveau 1 schema check | ~70 |
+| **P08.3.2** | Infra bus : chemin de dispatch **asynchrone** additif dans `shared/events.py` — `subscribe_async(event_type, handler)` (idempotent, registre séparé) + `async def dispatch(session, event)` (souscripteurs sync via `publish` PUIS async `await`, dans la transaction). Bascule du site confirm (`transactions.service.lifecycle.transition_to_confirmed`) de `publish` → `await dispatch(session, …)`. `void` reste sur `publish`. Tests unit (ordre sync-puis-async observable, idempotence) + intégration (handler async en transaction, rollback) | ~100 |
+| **P08.3.3** | `budget/events.py` : `BudgetThresholdEvent(budget_id, threshold_pct, consumed_cents, period_start)` (le type concret vit dans le module, **pas** dans `shared/events.py` — contrat #3). `domain.py` : fonction pure `crossed_thresholds(consumed, amount)` (TDD, monotone). `budget/service/threshold_detector.py` : handler `on_transaction_confirmed(session, event)` qui résout les budgets concernés (CTE montante), recalcule consumption (S08.2), tente l'INSERT `ON CONFLICT DO NOTHING RETURNING` par seuil franchi, `publish` si la ligne est neuve. Re-exports `budget.public` + câblage `subscribe_async` au **`lifespan`** de `backend/main.py`. Tests unit | ~140 |
+| **P08.3.4** | Tests scénarios (intégration testcontainers + spy bus, via le flux confirm réel) : 79% → 0 event ; 81% → 1 event `80` ; 105% (80 déjà notifié) → `100` ; 125% → `120` ; multi-seuils `80/100/120` en un write ; double-confirmation / rejeu idempotent ; `force_full_debt` hors budget ; budget hiérarchique (parent) ; transfert/non catégorisé → 0 ; scope `shared` non-contributeur → 0 (garde non-fuite) ; **wiring load-bearing** (détecteur débranché → 0 event) ; **couplage rollback** (détecteur réel lève → confirm rollback, D13) | ~120 |
 
 ---
 
@@ -71,9 +74,9 @@ Livrable agrégé : un user crée un budget "Courses, 400€/mois, commun, contr
 |---|---|---|---|
 | S08.1 (2 phases) | Modèles + migration | 170 | 170 |
 | S08.2 (3 phases) | Service agrégation hiérarchique | 520 | 690 |
-| S08.3 (3 phases) | Alertes seuils (event module + détecteur + idempotence) | 440 | 1130 |
-| S08.4 (3 phases) | Routes | 450 | 1580 |
-| **Total** | **4 stories / 11 phases** | **~1580 lignes** | |
+| S08.3 (4 phases) | Alertes seuils (chemin async bus + event module + détecteur + idempotence) | 430 | 1120 |
+| S08.4 (3 phases) | Routes | 450 | 1570 |
+| **Total** | **4 stories / 12 phases** | **~1570 lignes** | |
 
 ---
 
@@ -91,9 +94,11 @@ Livrable agrégé : un user crée un budget "Courses, 400€/mois, commun, contr
 ## Notes pour l'implémenteur
 
 - 🔒 **`budget` ⊥ `transactions` (modules pairs, même layer).** Le graphe directionnel (`.importlinter` contrat 1, CONTEXT.md §211) place `transactions`, `budget`, `banking` sur le **même** niveau : `budget` **ne peut pas importer** `transactions` (ni `transactions.public`). Conséquences : (1) la consommation lit les tables `transactions`/`splits` via **SQLAlchemy Core / `text()`**, jamais via `transactions.models` (lecture sanctionnée par CONTEXT.md §Splits « agrégation budget » ; seule la *mutation* cross-module est interdite) ; (2) le câblage `subscribe(TransactionConfirmedEvent, …)` vit au **composition root** (`backend/main.py`), `budget.public` n'exposant que le handler `on_transaction_confirmed`. La docstring de `transactions/events.py` annonce ce souscripteur.
-- ⚠️ **Le mini-bus `shared/events.py` existe déjà** (livré en S05.4) — on réutilise `subscribe`/`publish`. Les types d'events concrets vivent dans le module publiant (`budget/events.py` pour `BudgetThresholdEvent`), jamais dans `shared` (contrat import-linter #3).
+- ⚠️ **Le mini-bus `shared/events.py` existe déjà** (livré en S05.4) — on réutilise `subscribe`/`publish` (canal sync) et on **ajoute** un canal **async** (`subscribe_async`/`dispatch`) pour que le détecteur fasse de l'I/O DB `await` dans la transaction (#127, P08.3.2). Les types d'events concrets vivent dans le module publiant (`budget/events.py` pour `BudgetThresholdEvent`), jamais dans `shared` (contrat import-linter #3).
+- 🔒 **Couplage rollback assumé (D13, #127).** Le détecteur souscrit sur le canal async → il s'exécute dans la transaction du request de confirmation. Une exception du détecteur **fait échouer la confirmation** (régression de disponibilité vs S07.4 où `publish` était no-op), assumée en V1 mono-foyer : l'atomicité de l'INSERT idempotent avec le confirm est requise (exactly-once au rejeu E13), et le fail-hard rend tout bug visible. À rouvrir en multi-foyer/gros volume (déport post-commit avec idempotence préservée). Le retry `40001` non géré relève de la **disponibilité**, pas de l'intégrité (l'unicité garantit l'absence de doublon).
+- ⚠️ **`TransactionVoidedEvent` non traité en E08** : un void après confirmation baisserait la consommation, mais V1 n'annule pas une alerte déjà émise. Aucune souscription au void (non-objectif documenté).
 - ⚠️ **Numérotation migrations** : `0010` est pris par S07.4 (`0010_transaction_share_request_id`) → budgets = `0011`, table d'alertes = `0012`.
 - La CTE récursive PostgreSQL pour les sous-catégories est performante jusqu'à plusieurs milliers de catégories. Si on observe un ralentissement, on cachera l'arbre côté Python.
 - `budget_threshold_alerts` table d'idempotence est server-only (pas dans sync rules). Évite la duplication d'events sur restart serveur.
 - `carry_over_remainder` n'est pas implémenté dans le calcul de consumption en E08 — c'est un flag stocké mais ignoré. Implémentation = E11 ou plus tard si besoin observé. Documenter le TODO.
-- L'event bus `shared/events.py` est synchrone — pas de async/await dans les subscribers. Pour `notifications` (V1) qui voudra envoyer email/push : le subscriber lance un `BackgroundTasks` FastAPI plutôt que bloquer.
+- Le canal **sync** de `shared/events.py` reste synchrone (pas d'`await`) ; le canal **async** (`dispatch`) autorise l'I/O DB `await` mais **dans** la transaction (jamais réseau/blocking). Pour `notifications` (V1) qui voudra envoyer email/push : le subscriber lance un `BackgroundTasks` FastAPI **post-commit** plutôt que bloquer. ⚠️ Limite connue : la ligne `budget_threshold_alerts` est committée avec le confirm alors que l'email sortirait post-commit — un crash entre commit et tâche perdrait l'alerte ; la phase `notifications` devra adresser cette fenêtre (outbox/relance).

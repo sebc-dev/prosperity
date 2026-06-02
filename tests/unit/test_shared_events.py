@@ -217,6 +217,21 @@ async def test_dispatch_async_is_by_exact_type() -> None:
     assert calls == []
 
 
+async def test_dispatch_async_no_fanout_to_subtypes() -> None:
+    # Symmetric to the sync `test_no_fanout_to_subtypes`: the async registry is
+    # keyed on `type(event)` exactly, so a parent-type subscriber stays silent on
+    # a subtype event.
+    calls: list[DomainEvent] = []
+
+    async def _h(_s: object, e: _EvtA) -> None:
+        calls.append(e)
+
+    subscribe_async(_EvtA, _h)
+    await dispatch(_SESSION, _SubEvtA())  # type: ignore[arg-type]
+
+    assert calls == []
+
+
 async def test_dispatch_propagates_raising_async_handler() -> None:
     sync_calls: list[str] = []
     subscribe(_EvtA, lambda _e: sync_calls.append("sync"))

@@ -248,9 +248,11 @@ async def transition_to_confirmed(session: AsyncSession, *, tx_id: UUID) -> doma
     `model_copy(update={"state": CONFIRMED})` would bypass the validator (domain
     contract), so the service calls the standalone helpers explicitly. A mixed
     currency surfaces `IncompatibleCurrencyError` (outside `TransactionError`),
-    propagated to the S07.5 boundary which catches both families. `publish` runs
-    **after** the flush but **before** `get_db` commits → same transaction (a
-    subscriber that raises rolls everything back; V1 no-op). Flush-only.
+    propagated to the S07.5 boundary which catches both families. `dispatch` runs
+    **after** the flush but **before** `get_db` commits → same transaction: it
+    replays the sync subscribers (spies) *and* awaits the async ones (the E08
+    budget threshold detector), so a subscriber that raises rolls everything back.
+    Flush-only.
     """
     tx, splits = await _load_aggregate(session, tx_id)
     agg = _to_domain(tx, splits)

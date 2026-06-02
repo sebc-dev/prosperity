@@ -32,7 +32,7 @@ from uuid import UUID
 
 import pytest
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session
 
 from backend.modules.accounts.domain import AccountType
@@ -552,6 +552,52 @@ async def test_shared_scope_non_contributor_account_no_leak(
     assert await _alert_count(household_singleton, budget_id) == 0
 
 
+async def test_shared_scope_account_with_foreign_member_no_leak(
+    household_singleton: AsyncSession,
+    bound_account_factories: FactoryBundle,
+    _wire_threshold_detector: list[BudgetThresholdEvent],
+) -> None:
+    # Defensive sibling of the personal-account guard above, exercising the OTHER
+    # exclusion branch: a COMMON account (owner_id=None) is eligible for a `shared`
+    # budget only if its members ⊆ the contributor set. A common account with a
+    # FOREIGN member (c ∉ {a,b}) is excluded (the members-subset branch of
+    # compute_consumption's eligible set) → consumption 0 → no event, despite a
+    # high raw spend.
+    user_factory, account_factory, member_factory = await bound_account_factories()
+
+    def _seed(s: Session) -> tuple[UUID, UUID]:
+        a = user_factory(email="fm-a@example.com")
+        b = user_factory(email="fm-b@example.com")
+        c = user_factory(email="fm-c@example.com")  # foreign member, NOT a contributor
+        abc = account_factory(owner_id=None, name="ABC commun")
+        member_factory(account_id=abc.id, user_id=a.id, default_share_ratio="0.3333")
+        member_factory(account_id=abc.id, user_id=b.id, default_share_ratio="0.3333")
+        member_factory(account_id=abc.id, user_id=c.id, default_share_ratio="0.3334")
+        cat = Category(name="Courses")
+        s.add(cat)
+        s.flush()
+        _add_confirmed_expense(
+            s, account_id=abc.id, category_id=cat.id, amount=9000, created_by=a.id
+        )
+        budget_id = _make_budget(
+            s,
+            category_id=cat.id,
+            created_by=a.id,
+            amount_cents=10000,
+            scope="shared",
+            contributor_ids=(a.id, b.id),
+        )
+        return _add_planned_trigger(
+            s, account_id=abc.id, category_id=cat.id, created_by=a.id
+        ), budget_id
+
+    tx_id, budget_id = await household_singleton.run_sync(_seed)
+    await transition_to_confirmed(household_singleton, tx_id=tx_id)
+
+    assert _wire_threshold_detector == []
+    assert await _alert_count(household_singleton, budget_id) == 0
+
+
 async def test_wiring_is_load_bearing(
     household_singleton: AsyncSession,
     bound_account_factories: FactoryBundle,
@@ -625,12 +671,12 @@ async def _seed_committed_budget_scenario(sm: async_sessionmaker[AsyncSession]) 
 
 @pytest.mark.usefixtures("_clean_committed_db")
 async def test_detector_failure_rolls_back_confirmation(
-    committed_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
+    committed_sessionmaker: async_sessionmaker[AsyncSession], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # D13 arbitrage: the detector is on the critical path. If it raises (here we
     # force `compute_consumption` to blow up), the WHOLE confirmation rolls back —
     # the transaction stays `planned` and no alert row is committed.
-    sm = async_sessionmaker(committed_engine, expire_on_commit=False)
+    sm = committed_sessionmaker
     tx_id = await _seed_committed_budget_scenario(sm)
 
     async def _boom(*_args: object, **_kwargs: object) -> None:

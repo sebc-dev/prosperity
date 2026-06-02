@@ -18,7 +18,7 @@ from decimal import Decimal
 
 import hypothesis.strategies as st
 import pytest
-from hypothesis import given, settings
+from hypothesis import given
 
 from backend.modules.budget.domain import (
     THRESHOLD_PERCENTS,
@@ -55,7 +55,6 @@ _consumed = st.integers(min_value=0, max_value=20_000_000)
 
 
 @given(c1=_consumed, c2=_consumed, amount=_amounts)
-@settings(max_examples=200)
 def test_crossed_thresholds_monotone_and_prefix(c1: int, c2: int, amount: int) -> None:
     lo, hi = sorted((c1, c2))
     set_lo = set(crossed_thresholds(lo, amount))
@@ -68,7 +67,6 @@ def test_crossed_thresholds_monotone_and_prefix(c1: int, c2: int, amount: int) -
 
 
 @given(consumed=_consumed, amount=_amounts)
-@settings(max_examples=200)
 def test_crossed_thresholds_consistent_with_percent(consumed: int, amount: int) -> None:
     # Tie the integer detector to the Decimal `percent` of the consumption domain
     # (S08.4 display) so the two never drift: a threshold is crossed iff the

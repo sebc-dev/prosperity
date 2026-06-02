@@ -195,6 +195,26 @@ async def test_shared_subset_excludes_archived(
     assert result == set()
 
 
+async def test_shared_subset_excludes_account_without_members(
+    household_singleton: AsyncSession,
+    bound_account_factories: FactoryBundle,
+) -> None:
+    # Compte commun **orphelin** (0 member) : exclu, malgré la vacuité de la
+    # clause `notin_`. L'invariant `shared ⇒ ≥2 members` est garanti au service,
+    # pas par un CHECK DB → le helper ne doit pas l'inclure (fail-closed, D7).
+    user_factory, account_factory, _ = await bound_account_factories()
+
+    def _seed(_s: Session) -> UUID:
+        a = user_factory(email="orphan-a@example.com")
+        account_factory(owner_id=None, name="Orphelin")  # aucun AccountMember
+        return a.id
+
+    a_id = await household_singleton.run_sync(_seed)
+
+    result = await shared_account_ids_with_members_subset(household_singleton, member_ids={a_id})
+    assert result == set()
+
+
 async def test_shared_subset_excludes_personal(
     household_singleton: AsyncSession,
     bound_account_factories: FactoryBundle,

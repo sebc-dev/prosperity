@@ -198,21 +198,23 @@ def compute_period_window(
     adjacentes contiguës (`window(as_of).end == window(end).start`) et
     disjointes ; idempotence (tout `as_of'` dans `[start, end)` → même fenêtre).
 
-    La recherche linéaire est bornée par l'écart `as_of − period_start` (quelques
-    périodes pour des budgets posés à l'usage, V1) ; un calcul `O(1)` (division
-    entière de l'écart en mois) la remplacerait si un `as_of` lointain devenait
-    réel — YAGNI ici (note roadmap).
+    L'indice de fenêtre `k` est calculé en **`O(1)`** par le delta en mois entre
+    `as_of` et l'ancre (division entière), puis corrigé d'**au plus un pas** pour
+    absorber le clamp de fin de mois : le coût est constant quel que soit
+    l'éloignement de `as_of` (pas de recherche linéaire non bornée).
     """
     step = _MONTHS_PER_PERIOD[period_kind]
-    k = 0
-    if as_of >= period_start:
-        # Avance tant que la borne haute de la fenêtre k reste ≤ as_of.
-        while _add_months(period_start, (k + 1) * step) <= as_of:
-            k += 1
-    else:
-        # Recule tant que la borne basse de la fenêtre k dépasse as_of.
-        while _add_months(period_start, k * step) > as_of:
-            k -= 1
+    # `as_of` est dans le mois `period_start + months_delta` → la fenêtre qui le
+    # contient a pour indice `k = months_delta // step` (`//` arrondit vers −∞,
+    # correct aussi pour `as_of` antérieur à l'ancre). Par construction la borne
+    # *haute* (mois `(k+1)·step`) est dans un mois strictement après `as_of` →
+    # elle lui est toujours > (aucune avance nécessaire). Seul le clamp de fin de
+    # mois peut rendre la borne basse > `as_of` (ex. ancre 31, `as_of` le 27 fév) :
+    # un unique pas arrière suffit alors.
+    months_delta = (as_of.year - period_start.year) * 12 + (as_of.month - period_start.month)
+    k = months_delta // step
+    if _add_months(period_start, k * step) > as_of:
+        k -= 1
     start = _add_months(period_start, k * step)
     end = _add_months(period_start, (k + 1) * step)
     return start, end

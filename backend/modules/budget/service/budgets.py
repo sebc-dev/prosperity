@@ -57,6 +57,9 @@ async def list_active_budgets_for_user(
     result: list[BudgetWithConsumption] = []
     for budget in budgets:
         consumption = await compute_consumption(session, budget_id=budget.id, as_of=as_of)
-        if consumption is not None:  # budget chargé → jamais None ; garde défensive
-            result.append(BudgetWithConsumption(budget=budget, consumption=consumption))
+        # `budget` vient d'un SELECT → `compute_consumption` ne peut pas renvoyer
+        # `None` (il ne le fait que pour un id inconnu). Un `assert` narrow le type
+        # `BudgetConsumption | None` sans introduire de branche morte non couverte.
+        assert consumption is not None
+        result.append(BudgetWithConsumption(budget=budget, consumption=consumption))
     return result

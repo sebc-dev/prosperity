@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from typing import get_args
 
 import hypothesis.strategies as st
 from hypothesis import given, settings
@@ -21,6 +22,15 @@ from hypothesis import given, settings
 from backend.modules.budget.domain import PeriodKind, compute_period_window
 
 _KINDS: tuple[PeriodKind, ...] = ("monthly", "quarterly", "yearly")
+
+
+def test_kinds_match_period_kind_literal() -> None:
+    # Garde-fou anti-dérive : la stratégie Hypothesis (`_KINDS`) doit couvrir
+    # exactement le type public `PeriodKind`. Un genre supporté par le Literal
+    # mais absent de `_MONTHS_PER_PERIOD` ferait `KeyError` dans les properties
+    # ci-dessous (qui échantillonnent `_KINDS`) → drift transitivement attrapé.
+    assert set(_KINDS) == set(get_args(PeriodKind))
+
 
 # Bound the date strategy so the linear window search stays cheap while still
 # covering several periods either side of the anchor.
@@ -65,6 +75,19 @@ def test_monthly_window_anchor_31_clamps_february() -> None:
     )
 
 
+def test_monthly_window_anchor_31_clamps_leap_february() -> None:
+    # Ancre le 31 → fév 2024 (bissextile) clampé à 29 ; contiguïté préservée
+    # malgré le clamp variable (28 vs 29 selon l'année).
+    assert compute_period_window("monthly", date(2024, 1, 31), date(2024, 2, 15)) == (
+        date(2024, 1, 31),
+        date(2024, 2, 29),
+    )
+    assert compute_period_window("monthly", date(2024, 1, 31), date(2024, 3, 5)) == (
+        date(2024, 2, 29),
+        date(2024, 3, 31),
+    )
+
+
 def test_quarterly_window() -> None:
     assert compute_period_window("quarterly", date(2026, 1, 1), date(2026, 5, 10)) == (
         date(2026, 4, 1),
@@ -72,10 +95,27 @@ def test_quarterly_window() -> None:
     )
 
 
+def test_quarterly_window_spanning_year() -> None:
+    # Trimestre ancré le 1er nov 2025 : as_of en fév 2026 → fenêtre à cheval sur
+    # l'année [2026-02-01, 2026-05-01).
+    assert compute_period_window("quarterly", date(2025, 11, 1), date(2026, 2, 10)) == (
+        date(2026, 2, 1),
+        date(2026, 5, 1),
+    )
+
+
 def test_yearly_window() -> None:
     assert compute_period_window("yearly", date(2026, 1, 1), date(2027, 3, 1)) == (
         date(2027, 1, 1),
         date(2028, 1, 1),
+    )
+
+
+def test_yearly_window_anchored_mid_year_spans_two_calendar_years() -> None:
+    # Annuel ancré le 1er juil : la fenêtre couvre [juil N, juil N+1).
+    assert compute_period_window("yearly", date(2026, 7, 1), date(2027, 2, 1)) == (
+        date(2026, 7, 1),
+        date(2027, 7, 1),
     )
 
 

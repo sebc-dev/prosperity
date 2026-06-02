@@ -600,16 +600,24 @@ async def test_unexpected_scope_fail_closed(
     # éligible → consommation 0, jamais une fuite cross-scope (D7).
     user_factory, account_factory, _ = await bound_account_factories()
 
-    def _seed(s: Session) -> UUID:
+    def _seed(s: Session) -> tuple[UUID, UUID]:
         owner = user_factory(email="scope@example.com")
         acc = account_factory(owner_id=owner.id, name="Perso")
         cat = Category(name="Courses")
         s.add(cat)
         s.flush()
         _add_expense(s, account_id=acc.id, category_id=cat.id, amount=5000, created_by=owner.id)
-        return _make_budget(s, category_id=cat.id, created_by=owner.id, scope="weird")
+        budget_id = _make_budget(s, category_id=cat.id, created_by=owner.id, scope="weird")
+        return budget_id, cat.id
 
-    budget_id = await household_singleton.run_sync(_seed)
+    budget_id, cat_id = await household_singleton.run_sync(_seed)
+
+    # La dépense existe bien en base : le 0 vient du fail-closed (scope inconnu →
+    # aucun compte éligible), pas d'une base vide.
+    category_leg_count = await household_singleton.scalar(
+        select(func.count()).select_from(Split).where(Split.category_id == cat_id)
+    )
+    assert category_leg_count == 1
 
     c = await compute_consumption(household_singleton, budget_id=budget_id, as_of=_AS_OF)
     assert c is not None

@@ -35,6 +35,7 @@ def _make_budget(  # noqa: PLR0913 — helper paramétrable de seed (scope/contr
     contributor_ids: tuple[UUID, ...],
     scope: str = "personal",
     archived: bool = False,
+    created_at: datetime | None = None,
 ) -> UUID:
     budget = Budget(
         category_id=category_id,
@@ -46,6 +47,8 @@ def _make_budget(  # noqa: PLR0913 — helper paramétrable de seed (scope/contr
         created_by=created_by,
         archived_at=datetime.now(tz=UTC) if archived else None,
     )
+    if created_at is not None:
+        budget.created_at = created_at
     session.add(budget)
     session.flush()
     for uid in contributor_ids:
@@ -167,28 +170,69 @@ async def test_consumption_attached_is_correct(
     assert rows[0].consumption.consumed_cents == 5000
 
 
-async def test_deterministic_order(
+async def test_orders_by_created_at_then_id(
     household_singleton: AsyncSession, bound_account_factories: FactoryBundle
 ) -> None:
+    # Ordre `(created_at, id)` : un budget plus ancien passe devant, et deux
+    # budgets au **même** `created_at` sont départagés par `id` (tie-break). On
+    # contrôle `created_at` pour que l'attendu soit déterministe (et non dépendant
+    # de l'ordre d'insertion).
     user_factory, _account_factory, _ = await bound_account_factories()
+
+    older = datetime(2026, 1, 1, tzinfo=UTC)
+    newer = datetime(2026, 2, 1, tzinfo=UTC)
 
     def _seed(s: Session) -> tuple[UUID, list[UUID]]:
         a = user_factory(email="order@example.com")
         cat = Category(name="Courses")
         s.add(cat)
         s.flush()
-        ids = [
-            _make_budget(s, category_id=cat.id, created_by=a.id, contributor_ids=(a.id,))
-            for _ in range(3)
-        ]
-        return a.id, ids
+        # Deux budgets au même created_at (départage par id) + un plus ancien,
+        # inséré en dernier pour dissocier ordre d'insertion et ordre attendu.
+        late_1 = _make_budget(
+            s, category_id=cat.id, created_by=a.id, contributor_ids=(a.id,), created_at=newer
+        )
+        late_2 = _make_budget(
+            s, category_id=cat.id, created_by=a.id, contributor_ids=(a.id,), created_at=newer
+        )
+        early = _make_budget(
+            s, category_id=cat.id, created_by=a.id, contributor_ids=(a.id,), created_at=older
+        )
+        expected = [early, *sorted((late_1, late_2))]
+        return a.id, expected
 
-    user_id, _ids = await household_singleton.run_sync(_seed)
+    user_id, expected = await household_singleton.run_sync(_seed)
 
-    first = await list_active_budgets_for_user(household_singleton, user_id=user_id, as_of=_AS_OF)
-    second = await list_active_budgets_for_user(household_singleton, user_id=user_id, as_of=_AS_OF)
-    assert [r.budget.id for r in first] == [r.budget.id for r in second]
-    assert len(first) == 3
+    rows = await list_active_budgets_for_user(household_singleton, user_id=user_id, as_of=_AS_OF)
+    assert [r.budget.id for r in rows] == expected
+
+
+async def test_includes_shared_budget_when_contributor_not_creator(
+    household_singleton: AsyncSession, bound_account_factories: FactoryBundle
+) -> None:
+    # Le filtre porte sur `BudgetContributor`, pas sur `created_by` : un user
+    # contributeur d'un budget shared créé par quelqu'un d'autre le voit.
+    user_factory, _account_factory, _ = await bound_account_factories()
+
+    def _seed(s: Session) -> tuple[UUID, UUID]:
+        creator = user_factory(email="creator@example.com")
+        member = user_factory(email="member@example.com")
+        cat = Category(name="Courses")
+        s.add(cat)
+        s.flush()
+        shared = _make_budget(
+            s,
+            category_id=cat.id,
+            created_by=creator.id,
+            scope="shared",
+            contributor_ids=(creator.id, member.id),
+        )
+        return member.id, shared
+
+    member_id, shared_id = await household_singleton.run_sync(_seed)
+
+    rows = await list_active_budgets_for_user(household_singleton, user_id=member_id, as_of=_AS_OF)
+    assert [r.budget.id for r in rows] == [shared_id]
 
 
 async def test_empty_when_no_budget(

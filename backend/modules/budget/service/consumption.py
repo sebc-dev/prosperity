@@ -27,6 +27,7 @@ supplies the default, keeping the service deterministic and testable.
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from uuid import UUID
 
@@ -43,6 +44,8 @@ from backend.modules.budget.domain import (
     consumption_from_totals,
 )
 from backend.modules.budget.models import Budget, BudgetContributor, Category
+
+logger = logging.getLogger(__name__)
 
 # Lightweight Core handles on a PEER module's tables (`transactions ⊥ budget`,
 # contract 1). NO import of `transactions.models` — read-only access only
@@ -103,7 +106,15 @@ async def _eligible_account_ids(session: AsyncSession, budget: Budget) -> set[UU
             .all()
         )
         return await shared_account_ids_with_members_subset(session, member_ids=contributor_ids)
-    return set()  # scope inattendu → fail-closed (aucun compte → consommation 0)
+    # Scope inattendu → fail-closed (aucun compte → consommation 0). On trace
+    # l'anomalie : un budget mal formé afficherait 0 au lieu d'alerter, ce qui
+    # doit rester visible côté exploitation (pas de PII : id + scope bruts).
+    logger.warning(
+        "budget %s has unexpected scope %r; fail-closed to an empty account set",
+        budget.id,
+        budget.scope,
+    )
+    return set()
 
 
 async def compute_consumption(

@@ -32,14 +32,10 @@ def test_public_exports_exact_set() -> None:
 
 
 def test_public_names_are_identical_re_exports() -> None:
+    # L'identité `is` garantit déjà la nature (type/callable) des symboles
+    # ré-exportés : un test `callable()`/`isinstance(..., type)` séparé serait
+    # tautologique, on ne le double pas.
     assert BudgetConsumption is _domain.BudgetConsumption
     assert compute_consumption is _consumption.compute_consumption
     assert list_active_budgets_for_user is _budgets.list_active_budgets_for_user
     assert BudgetWithConsumption is _budgets.BudgetWithConsumption
-
-
-def test_public_symbols_are_callable_or_types() -> None:
-    assert callable(compute_consumption)
-    assert callable(list_active_budgets_for_user)
-    assert isinstance(BudgetConsumption, type)
-    assert isinstance(BudgetWithConsumption, type)

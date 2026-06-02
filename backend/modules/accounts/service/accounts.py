@@ -215,15 +215,22 @@ async def shared_account_ids_with_members_subset(
     est contributeur du budget (D7 : sous-ensemble, pas égalité stricte) — un
     compte {A,B,C} ne pollue pas un budget contribué par {A,B} seulement. Vide
     si `member_ids` est vide. Comptes archivés exclus.
+
+    Un compte commun **sans aucun member** (état orphelin) est exclu : la clause
+    `notin_` l'inclurait sinon par vacuité (aucun member « étranger »), et
+    l'invariant `shared ⇒ ≥2 members` n'est garanti qu'au service (S05.2), pas
+    par un CHECK DB — on ne s'y fie donc pas ici (fail-closed, D7).
     """
     if not member_ids:
         return set()
+    has_member = select(AccountMember.account_id)
     # Comptes communs vivants SANS aucun member hors `member_ids` : on exclut
     # tout compte qui possède au moins un membre « étranger » à l'ensemble.
     offending = select(AccountMember.account_id).where(AccountMember.user_id.notin_(member_ids))
     stmt = select(Account.id).where(
         Account.owner_id.is_(None),
         Account.archived_at.is_(None),
+        Account.id.in_(has_member),
         Account.id.notin_(offending),
     )
     return set((await session.execute(stmt)).scalars().all())

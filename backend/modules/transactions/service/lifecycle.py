@@ -282,3 +282,40 @@ async def void(session: AsyncSession, *, tx_id: UUID, reason: str) -> domain.Tra
         events.TransactionVoidedEvent(transaction_id=tx.id, account_id=tx.account_id, reason=reason)
     )
     return _to_domain(tx, splits)
+
+
+# --- Post-confirmed editing (P07.4.3) ---------------------------------------
+
+
+async def update_editable_fields(
+    session: AsyncSession, *, tx_id: UUID, **fields: object
+) -> domain.Transaction:
+    """Edit allowed fields of a transaction; freeze the rest once `confirmed`.
+
+    `check_mutation_allowed` is a no-op below `confirmed` (free editing in
+    `draft`/`planned`); on a `confirmed` transaction any divergence on a field ∉
+    `EDITABLE_AFTER_CONFIRMED` (including `splits`, compared by value) raises
+    `ImmutableFieldViolation(field)`. Only the editable scalars are written back
+    (so on a non-`confirmed` transaction a frozen field passed here is a silent
+    no-op — neither error nor effect, consistent with the function's name).
+
+    ⚠️ `model_copy(update=...)` bypasses Pydantic validation (the `Literal` of
+    `debt_generation_override` included): an out-of-enum value is not rejected
+    here. The route schema (S07.5) is the primary guard (422); the DB
+    `CHECK ck_transactions_debt_generation_override` (migration 0010) is the
+    fail-closed backstop — a flush with a bad value raises `IntegrityError`.
+    Flush-only (ADR 0015).
+    """
+    tx, splits = await _load_aggregate(session, tx_id)
+    old = _to_domain(tx, splits)
+    unknown = set(fields) - set(domain.Transaction.model_fields)
+    if unknown:
+        raise ValueError(f"champs inconnus : {sorted(unknown)}")
+    new = old.model_copy(update=fields)  # bypasses the validator (OK, D11)
+    domain.check_mutation_allowed(old, new)  # raises ImmutableFieldViolation if frozen
+    for key, raw in fields.items():
+        if key in domain.EDITABLE_AFTER_CONFIRMED:  # write ONLY the editable scalars
+            value = list(raw) if key == "tags" else raw  # type: ignore[call-overload]  # tags: tuple→list(ORM ARRAY)
+            setattr(tx, key, value)
+    await session.flush()
+    return _to_domain(tx, splits)

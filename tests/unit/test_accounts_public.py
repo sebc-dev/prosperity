@@ -15,6 +15,8 @@ from backend.modules.accounts.public import (
     account_is_accessible,
     bootstrap_initial_admin_from_env,
     get_household,
+    owned_personal_account_ids,
+    shared_account_ids_with_members_subset,
 )
 from backend.modules.accounts.service import accounts as _accounts_service
 from backend.modules.accounts.service import household as _household_service
@@ -33,6 +35,8 @@ def test_public_exports_exact_set() -> None:
         "account_is_accessible",
         "bootstrap_initial_admin_from_env",
         "get_household",
+        "owned_personal_account_ids",
+        "shared_account_ids_with_members_subset",
     }
 
 
@@ -41,6 +45,8 @@ def test_public_symbols_are_callable_or_exceptions() -> None:
     assert callable(bootstrap_initial_admin_from_env)
     assert callable(account_is_accessible)
     assert callable(accessible_account_ids)
+    assert callable(owned_personal_account_ids)
+    assert callable(shared_account_ids_with_members_subset)
     assert issubclass(HouseholdNotInitializedError, Exception)
 
 
@@ -65,6 +71,14 @@ def test_public_names_are_identical_objects_to_internals() -> None:
     # `accounts.service.accounts` (not a stub re-implemented in `public.py`).
     assert accounts_public.account_is_accessible is _accounts_service.account_is_accessible
     assert accounts_public.accessible_account_ids is _accounts_service.accessible_account_ids
+    # The S08.2 budget-consumption membership helpers re-export the real symbols.
+    assert (
+        accounts_public.owned_personal_account_ids is _accounts_service.owned_personal_account_ids
+    )
+    assert (
+        accounts_public.shared_account_ids_with_members_subset
+        is _accounts_service.shared_account_ids_with_members_subset
+    )
     # The S05.4 events re-export the concrete types defined in `accounts.events`.
     assert accounts_public.AccountMemberAdded is _events.AccountMemberAdded
     assert accounts_public.AccountMemberRemoved is _events.AccountMemberRemoved

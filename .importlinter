@@ -322,8 +322,15 @@ forbidden_modules =
 # transports.dependencies}` as broken chains; ignoring the *second hop*
 # (auth.public → auth.X) makes those chains invisible without weakening the
 # direct-import protection (a hypothetical `budget.service.X → auth.models`
-# would still be flagged). Same block as contract `2-accounts`; all nine arcs
-# exist in `auth/public.py` independently of budget, so each is "matched".
+# would still be flagged). The nine `auth.public → auth.X` arcs are the same
+# block as contract `2-accounts`. The four `accounts.public → accounts.X` arcs
+# (S08.2, mirror of `2-transactions`) cover the consumption service:
+# `budget.service.consumption` / `budget.service.budgets` import
+# `owned_personal_account_ids` / `shared_account_ids_with_members_subset` from
+# `accounts.public` (D7 contributor filter — `accounts` sits *below* budget in
+# contract 1, so this is the legitimate arc; `transactions`, a peer, is read via
+# SQLAlchemy Core instead, never imported). All thirteen arcs exist in the
+# `.public` modules independently of budget, so each is "matched".
 ignore_imports =
     backend.modules.auth.public -> backend.modules.auth.domain
     backend.modules.auth.public -> backend.modules.auth.models
@@ -334,6 +341,10 @@ ignore_imports =
     backend.modules.auth.public -> backend.modules.auth.service.roles
     backend.modules.auth.public -> backend.modules.auth.service.users
     backend.modules.auth.public -> backend.modules.auth.transports.dependencies
+    backend.modules.accounts.public -> backend.modules.accounts.models
+    backend.modules.accounts.public -> backend.modules.accounts.service.accounts
+    backend.modules.accounts.public -> backend.modules.accounts.service.household
+    backend.modules.accounts.public -> backend.modules.accounts.service.setup
 unmatched_ignore_imports_alerting = error
 
 [importlinter:contract:2-transactions]

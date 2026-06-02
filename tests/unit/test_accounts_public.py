@@ -17,6 +17,7 @@ from backend.modules.accounts.public import (
     get_household,
     owned_personal_account_ids,
     shared_account_ids_with_members_subset,
+    shared_account_member_ids,
 )
 from backend.modules.accounts.service import accounts as _accounts_service
 from backend.modules.accounts.service import household as _household_service
@@ -37,6 +38,7 @@ def test_public_exports_exact_set() -> None:
         "get_household",
         "owned_personal_account_ids",
         "shared_account_ids_with_members_subset",
+        "shared_account_member_ids",
     }
 
 
@@ -47,6 +49,7 @@ def test_public_symbols_are_callable_or_exceptions() -> None:
     assert callable(accessible_account_ids)
     assert callable(owned_personal_account_ids)
     assert callable(shared_account_ids_with_members_subset)
+    assert callable(shared_account_member_ids)
     assert issubclass(HouseholdNotInitializedError, Exception)
 
 
@@ -79,6 +82,8 @@ def test_public_names_are_identical_objects_to_internals() -> None:
         accounts_public.shared_account_ids_with_members_subset
         is _accounts_service.shared_account_ids_with_members_subset
     )
+    # The S08.4 budget-contributor validation helper re-exports the real symbol.
+    assert accounts_public.shared_account_member_ids is _accounts_service.shared_account_member_ids
     # The S05.4 events re-export the concrete types defined in `accounts.events`.
     assert accounts_public.AccountMemberAdded is _events.AccountMemberAdded
     assert accounts_public.AccountMemberRemoved is _events.AccountMemberRemoved

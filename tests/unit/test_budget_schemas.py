@@ -16,7 +16,12 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from backend.modules.budget.schemas import CategoryCreate, CategoryUpdate
+from backend.modules.budget.schemas import (
+    BudgetCreate,
+    BudgetUpdate,
+    CategoryCreate,
+    CategoryUpdate,
+)
 
 
 @pytest.mark.parametrize("color", ["#ffffff", "#000000", "#0A1b2C", "#FFFFFF"])
@@ -75,3 +80,77 @@ def test_name_bounds() -> None:
         CategoryCreate(name="")
     with pytest.raises(ValidationError):
         CategoryCreate(name="a" * 121)
+
+
+# ---------------------------------------------------------------------------
+# BudgetCreate / BudgetUpdate (S08.4)
+# ---------------------------------------------------------------------------
+
+
+def _budget_create_payload(**overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "category_id": str(uuid4()),
+        "period_kind": "monthly",
+        "period_start": "2026-06-01",
+        "amount_cents": 40000,
+        "scope": "personal",
+        "contributor_ids": [str(uuid4())],
+    }
+    payload.update(overrides)
+    return payload
+
+
+def test_budget_create_valid() -> None:
+    model = BudgetCreate.model_validate(_budget_create_payload())
+    assert model.amount_cents == 40000
+    assert model.carry_over_remainder is False  # defaulted
+
+
+@pytest.mark.parametrize("field", ["id", "created_by", "currency"])
+def test_budget_create_forbids_server_derived_field(field: str) -> None:
+    # `id`/`created_by` server-side (D5); `currency` derived from household (D6).
+    with pytest.raises(ValidationError):
+        BudgetCreate.model_validate(_budget_create_payload(**{field: str(uuid4())}))
+
+
+@pytest.mark.parametrize("amount", [0, -1])
+def test_budget_create_amount_must_be_positive(amount: int) -> None:
+    with pytest.raises(ValidationError):
+        BudgetCreate.model_validate(_budget_create_payload(amount_cents=amount))
+
+
+def test_budget_create_period_kind_closed_set() -> None:
+    with pytest.raises(ValidationError):
+        BudgetCreate.model_validate(_budget_create_payload(period_kind="weekly"))
+
+
+def test_budget_create_scope_closed_set() -> None:
+    with pytest.raises(ValidationError):
+        BudgetCreate.model_validate(_budget_create_payload(scope="team"))
+
+
+def test_budget_create_contributor_ids_non_empty() -> None:
+    with pytest.raises(ValidationError):
+        BudgetCreate.model_validate(_budget_create_payload(contributor_ids=[]))
+
+
+def test_budget_update_all_fields_optional_noop() -> None:
+    assert BudgetUpdate().model_dump(exclude_unset=True) == {}
+
+
+@pytest.mark.parametrize(
+    "field", ["scope", "category_id", "period_start", "period_kind", "currency"]
+)
+def test_budget_update_forbids_frozen_field(field: str) -> None:
+    with pytest.raises(ValidationError):
+        BudgetUpdate.model_validate({field: "personal"})
+
+
+def test_budget_update_amount_must_be_positive() -> None:
+    with pytest.raises(ValidationError):
+        BudgetUpdate.model_validate({"amount_cents": 0})
+
+
+def test_budget_update_contributor_ids_non_empty() -> None:
+    with pytest.raises(ValidationError):
+        BudgetUpdate.model_validate({"contributor_ids": []})

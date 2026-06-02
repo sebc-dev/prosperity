@@ -236,6 +236,27 @@ async def shared_account_ids_with_members_subset(
     return set((await session.execute(stmt)).scalars().all())
 
 
+async def shared_account_member_ids(session: AsyncSession) -> set[UUID]:
+    """Ids des users membres d'un compte **commun** (owner NULL) vivant (S08.4).
+
+    Union des `account_members.user_id` des comptes communs non archivés.
+    Consommé par la validation des contributeurs d'un budget `shared` (chaque
+    contributeur doit être membre d'un compte commun, Note implémenteur #128).
+    Sélectionne uniquement `user_id` (jamais une ligne ORM, gabarit D1).
+
+    NB prédicat : sémantique **« membre d'au moins un compte commun »**,
+    distincte de `shared_account_ids_with_members_subset` (« comptes dont *tous*
+    les members ⊆ contributeurs ») utilisé par le filtre de consommation. La
+    divergence est assumée (D4) et verrouillée par un test d'invariant croisé.
+    """
+    stmt = (
+        select(AccountMember.user_id)
+        .join(Account, Account.id == AccountMember.account_id)
+        .where(Account.owner_id.is_(None), Account.archived_at.is_(None))
+    )
+    return set((await session.execute(stmt)).scalars().all())
+
+
 async def rename(
     session: AsyncSession, *, account_id: UUID, user_id: UUID, name: str
 ) -> Account | None:

@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from backend.modules.accounts.public import (
     owned_personal_account_ids,
     shared_account_ids_with_members_subset,
+    shared_account_member_ids,
 )
 
 FactoryBundle = Callable[[], Awaitable[tuple[type, type, type]]]
@@ -233,3 +234,88 @@ async def test_shared_subset_excludes_personal(
         household_singleton, member_ids={owner_id}
     )
     assert result == set()
+
+
+# ---------------------------------------------------------------------------
+# shared_account_member_ids (S08.4 — contributor validation)
+# ---------------------------------------------------------------------------
+
+
+async def test_member_ids_no_common_account_empty(
+    household_singleton: AsyncSession,
+    bound_account_factories: FactoryBundle,
+) -> None:
+    # Aucun compte commun → set vide (un compte personnel ne compte pas).
+    user_factory, account_factory, _ = await bound_account_factories()
+
+    def _seed(_s: Session) -> None:
+        owner = user_factory(email="mem-none@example.com")
+        account_factory(owner_id=owner.id, name="Perso")
+
+    await household_singleton.run_sync(_seed)
+
+    assert await shared_account_member_ids(household_singleton) == set()
+
+
+async def test_member_ids_common_account_returns_members(
+    household_singleton: AsyncSession,
+    bound_account_factories: FactoryBundle,
+) -> None:
+    # Compte commun {A,B} → {A,B} ; le compte perso de C (owner non NULL) exclu.
+    user_factory, account_factory, member_factory = await bound_account_factories()
+
+    def _seed(_s: Session) -> tuple[UUID, UUID]:
+        a = user_factory(email="mem-a@example.com")
+        b = user_factory(email="mem-b@example.com")
+        c = user_factory(email="mem-c@example.com")
+        account_factory(owner_id=c.id, name="C perso")
+        shared = account_factory(owner_id=None, name="AB")
+        member_factory(account_id=shared.id, user_id=a.id)
+        member_factory(account_id=shared.id, user_id=b.id)
+        return a.id, b.id
+
+    a_id, b_id = await household_singleton.run_sync(_seed)
+
+    assert await shared_account_member_ids(household_singleton) == {a_id, b_id}
+
+
+async def test_member_ids_excludes_archived_common_account(
+    household_singleton: AsyncSession,
+    bound_account_factories: FactoryBundle,
+) -> None:
+    user_factory, account_factory, member_factory = await bound_account_factories()
+
+    def _seed(_s: Session) -> None:
+        a = user_factory(email="mem-arch-a@example.com")
+        b = user_factory(email="mem-arch-b@example.com")
+        shared = account_factory(owner_id=None, name="AB", archived_at=datetime.now(tz=UTC))
+        member_factory(account_id=shared.id, user_id=a.id)
+        member_factory(account_id=shared.id, user_id=b.id)
+
+    await household_singleton.run_sync(_seed)
+
+    assert await shared_account_member_ids(household_singleton) == set()
+
+
+async def test_member_ids_unions_across_common_accounts(
+    household_singleton: AsyncSession,
+    bound_account_factories: FactoryBundle,
+) -> None:
+    # Deux comptes communs {A,B} + {B,C} → {A,B,C} (union dédupliquée).
+    user_factory, account_factory, member_factory = await bound_account_factories()
+
+    def _seed(_s: Session) -> tuple[UUID, UUID, UUID]:
+        a = user_factory(email="mem-u-a@example.com")
+        b = user_factory(email="mem-u-b@example.com")
+        c = user_factory(email="mem-u-c@example.com")
+        ab = account_factory(owner_id=None, name="AB")
+        member_factory(account_id=ab.id, user_id=a.id)
+        member_factory(account_id=ab.id, user_id=b.id)
+        bc = account_factory(owner_id=None, name="BC")
+        member_factory(account_id=bc.id, user_id=b.id)
+        member_factory(account_id=bc.id, user_id=c.id)
+        return a.id, b.id, c.id
+
+    a_id, b_id, c_id = await household_singleton.run_sync(_seed)
+
+    assert await shared_account_member_ids(household_singleton) == {a_id, b_id, c_id}

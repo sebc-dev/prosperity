@@ -22,6 +22,8 @@ from backend.modules.accounts.models import HOUSEHOLD_SINGLETON_UUID as HOUSEHOL
 from backend.modules.accounts.service.accounts import (
     accessible_account_ids,
     account_is_accessible,
+    owned_personal_account_ids,
+    shared_account_ids_with_members_subset,
 )
 from backend.modules.accounts.service.household import (
     HouseholdNotInitializedError,
@@ -39,4 +41,6 @@ __all__ = [
     "account_is_accessible",
     "bootstrap_initial_admin_from_env",
     "get_household",
+    "owned_personal_account_ids",
+    "shared_account_ids_with_members_subset",
 ]

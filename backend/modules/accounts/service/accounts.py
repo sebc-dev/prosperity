@@ -184,6 +184,51 @@ async def accessible_account_ids(session: AsyncSession, *, user_id: UUID) -> set
     return set((await session.execute(stmt)).scalars().all())
 
 
+# --- Membership queries for budget consumption (S08.2) ----------------------
+#
+# Two id-only helpers the budget module's consumption service consumes through
+# `accounts.public` to bound which splits a budget counts (D7). `accounts` sits
+# *below* `budget` in the directional graph (contract 1), so the `budget →
+# accounts.public` import is legitimate — unlike `transactions`, a peer module,
+# whose tables budget reads via SQLAlchemy Core. Both select ONLY `Account.id`
+# (a cross-module caller has no business handling an `accounts` ORM row) and
+# exclude archived accounts (a dead account carries no live activity).
+
+
+async def owned_personal_account_ids(session: AsyncSession, *, owner_id: UUID) -> set[UUID]:
+    """Ids des comptes **personnels** (owner défini) appartenant à `owner_id`, vivants.
+
+    Personnel ⇔ `owner_id IS NOT NULL` (invariant XOR S05.2). Comptes archivés
+    exclus. Consommé par les budgets `personal` (S08.2) : borne les splits
+    comptés aux comptes du seul contributeur (l'owner).
+    """
+    stmt = select(Account.id).where(Account.owner_id == owner_id, Account.archived_at.is_(None))
+    return set((await session.execute(stmt)).scalars().all())
+
+
+async def shared_account_ids_with_members_subset(
+    session: AsyncSession, *, member_ids: set[UUID]
+) -> set[UUID]:
+    """Ids des comptes **communs** (owner NULL) dont **tous** les members ∈ `member_ids`, vivants.
+
+    Un compte commun compte pour un budget `shared` ssi *chacun* de ses members
+    est contributeur du budget (D7 : sous-ensemble, pas égalité stricte) — un
+    compte {A,B,C} ne pollue pas un budget contribué par {A,B} seulement. Vide
+    si `member_ids` est vide. Comptes archivés exclus.
+    """
+    if not member_ids:
+        return set()
+    # Comptes communs vivants SANS aucun member hors `member_ids` : on exclut
+    # tout compte qui possède au moins un membre « étranger » à l'ensemble.
+    offending = select(AccountMember.account_id).where(AccountMember.user_id.notin_(member_ids))
+    stmt = select(Account.id).where(
+        Account.owner_id.is_(None),
+        Account.archived_at.is_(None),
+        Account.id.notin_(offending),
+    )
+    return set((await session.execute(stmt)).scalars().all())
+
+
 async def rename(
     session: AsyncSession, *, account_id: UUID, user_id: UUID, name: str
 ) -> Account | None:

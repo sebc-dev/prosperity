@@ -53,6 +53,7 @@ from backend.modules.transactions.public import (
 )
 from backend.modules.transactions.schemas import (
     TransactionCreate,
+    TransactionPatch,
     TransactionResponse,
     VoidRequest,
 )
@@ -254,6 +255,47 @@ async def void_transaction(
     reason = body.reason if body is not None else ""
     try:
         tx = await void(session, tx_id=tx_id, reason=reason)
+    except (TransactionError, IncompatibleCurrencyError) as exc:
+        raise _map_domain_exc(exc) from exc
+    return TransactionResponse.from_domain(tx)
+
+
+@transactions_router.patch("/{tx_id}", response_model=TransactionResponse)
+async def patch_transaction(
+    tx_id: UUID,
+    body: TransactionPatch,
+    user: CurrentUser,
+    session: SessionDep,
+) -> TransactionResponse:
+    """Edit only the allowed fields `{category_id, tags, description,
+    debt_generation_override}` (P07.5.3).
+
+    `extra="forbid"` makes any frozen field (`amount_cents`, `account_id`, `date`,
+    `payee`, `splits`, `state`) a 422 at the schema — never a silent no-op (the
+    AC). `exclude_unset` passes only the fields actually present, so a `{}` body
+    is a no-op (no wipe-to-None). On a `confirmed` transaction the service runs
+    `check_mutation_allowed`; since all four allowed fields are editable, an
+    `ImmutableFieldViolation` cannot fire via this route — the 409 mapping stays
+    a defensive guard. The `23514` backstop is unreachable via the body (the
+    `Literal` pre-empts it) but kept fail-closed, never a 500.
+    """
+    await _require_accessible_tx(session, tx_id, user)
+    fields = body.model_dump(exclude_unset=True)
+    if "tags" in fields:
+        fields["tags"] = tuple(fields["tags"])
+    try:
+        tx = await update_editable_fields(session, tx_id=tx_id, **fields)
+    except IntegrityError as exc:
+        if getattr(exc.orig, "sqlstate", None) == "23514":
+            logger.info("tx_patch_rejected", extra={"error": "bad_debt_override"})
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_BAD_DEBT_OVERRIDE_DETAIL
+            ) from exc
+        logger.error(
+            "tx_patch_unexpected_integrity",
+            extra={"sqlstate": getattr(exc.orig, "sqlstate", None)},
+        )
+        raise
     except (TransactionError, IncompatibleCurrencyError) as exc:
         raise _map_domain_exc(exc) from exc
     return TransactionResponse.from_domain(tx)

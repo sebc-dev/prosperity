@@ -76,6 +76,23 @@ class TransactionCreate(BaseModel):
     debt_generation_override: DebtGenerationOverride = "default"
 
 
+class TransactionPatch(BaseModel):
+    """`PATCH /transactions/{id}`: only the post-confirmed editable fields.
+
+    The exposed subset of `EDITABLE_AFTER_CONFIRMED` (D9: `share_request_id` is
+    out of the V1 API). `extra="forbid"` turns any other field (a frozen
+    `amount_cents`/`account_id`/`date`/`payee`/`splits`/`state`) into a **422** —
+    not a silent no-op (the AC). Every field optional (partial PATCH); the route
+    uses `exclude_unset` so a `{}` body is a no-op rather than a wipe-to-None.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    category_id: UUID | None = None
+    tags: list[Tag] | None = Field(default=None, max_length=_MAX_TAGS)
+    description: str | None = Field(default=None, max_length=_MAX_DESC_LEN)
+    debt_generation_override: DebtGenerationOverride | None = None
+
+
 class VoidRequest(BaseModel):
     """Optional body for `POST /transactions/{id}/void`.
 

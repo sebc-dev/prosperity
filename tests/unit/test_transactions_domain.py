@@ -35,6 +35,7 @@ from backend.modules.transactions.domain import (
     UncategorizedExpenseError,
     assert_expenses_categorized,
     assert_transition,
+    assert_zero_sum,
     check_mutation_allowed,
     is_transfer,
 )
@@ -177,6 +178,65 @@ class TestZeroSum:
         unbalanced = (bumped, *splits[1:])
         with pytest.raises(UnbalancedTransactionError):
             _tx(state=TransactionState.CONFIRMED, splits=unbalanced)
+
+
+class TestAssertZeroSum:
+    """`assert_zero_sum` standalone (D3) — vérifie le solde à `planned` ET `confirmed`.
+
+    Le `model_validator` n'enforce le zero-sum qu'à `confirmed` ; le helper extrait
+    est appelé par le service aux deux transitions. Indépendant de l'état (il prend
+    une `Transaction` quelconque), donc testé sur un `draft` jetable.
+    """
+
+    def test_balanced_ok(self) -> None:
+        tx = _tx(
+            state=TransactionState.DRAFT,
+            splits=(_split(Money(-1000, "EUR")), _split(Money(1000, "EUR"))),
+        )
+        assert_zero_sum(tx)  # no raise
+
+    def test_unbalanced_raises(self) -> None:
+        tx = _tx(
+            state=TransactionState.DRAFT,
+            splits=(_split(Money(-1000, "EUR")), _split(Money(500, "EUR"))),
+        )
+        with pytest.raises(UnbalancedTransactionError):
+            assert_zero_sum(tx)
+
+    def test_empty_splits_raises(self) -> None:
+        tx = _tx(state=TransactionState.DRAFT, splits=())
+        with pytest.raises(UnbalancedTransactionError):
+            assert_zero_sum(tx)
+
+    def test_mixed_currency_propagates_incompatible(self) -> None:
+        # Devise mixte → IncompatibleCurrencyError (HORS taxonomie, bordé S07.4).
+        tx = _tx(
+            state=TransactionState.DRAFT,
+            splits=(_split(Money(-1000, "EUR")), _split(Money(1000, "USD"))),
+        )
+        with pytest.raises(IncompatibleCurrencyError):
+            assert_zero_sum(tx)
+
+    @given(data=st.data(), splits=balanced_splits_strategy())
+    def test_property_balanced_permuted_never_raises(
+        self, data: st.DataObject, splits: tuple[Split, ...]
+    ) -> None:
+        # ∀ tirage équilibré (même devise) ET toute permutation de l'ordre des
+        # splits → `assert_zero_sum` ne lève JAMAIS (la somme est invariante par
+        # permutation). Cible le helper standalone que D3 extrait.
+        permuted = tuple(data.draw(st.permutations(splits)))
+        assert_zero_sum(_tx(state=TransactionState.DRAFT, splits=permuted))
+
+    @given(splits=balanced_splits_strategy(), delta=st.integers(min_value=1, max_value=10**6))
+    def test_property_unbalanced_always_raises(self, splits: tuple[Split, ...], delta: int) -> None:
+        # ∀ déséquilibre injecté (delta non nul, devise unique) → lève TOUJOURS
+        # UnbalancedTransactionError.
+        first = splits[0]
+        bumped = first.model_copy(
+            update={"amount": Money(first.amount.amount_cents + delta, first.amount.currency)}
+        )
+        with pytest.raises(UnbalancedTransactionError):
+            assert_zero_sum(_tx(state=TransactionState.DRAFT, splits=(bumped, *splits[1:])))
 
 
 class TestStateTransitionsConst:

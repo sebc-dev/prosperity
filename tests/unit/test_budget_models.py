@@ -161,9 +161,12 @@ def test_budgets_active_index_is_partial() -> None:
     # `postgresql_where` byte-for-byte (create_all/Alembic parity).
     assert str(where) == "archived_at IS NULL"
     # `ix_budgets_category_id` (full) and `ix_budgets_active` (partial) both
-    # cover `category_id` but play distinct roles — both must exist.
+    # cover `category_id` but play distinct roles — both must exist. Exact set
+    # (== not <=) doubles as the anti-surnumerary guard: the three explicit
+    # names are required and no extra index sneaks in. The literal names also
+    # pin the create_all/Alembic parity the snapshot checks.
     names = {ix.name for ix in cast(Table, Budget.__table__).indexes}
-    assert {"ix_budgets_category_id", "ix_budgets_created_by", "ix_budgets_active"} <= names
+    assert names == {"ix_budgets_category_id", "ix_budgets_created_by", "ix_budgets_active"}
 
 
 def test_carry_over_default_false() -> None:
@@ -173,11 +176,3 @@ def test_carry_over_default_false() -> None:
     server_default = cast(Table, Budget.__table__).c.carry_over_remainder.server_default
     assert server_default is not None
     assert server_default.arg.text == "false"  # type: ignore[union-attr]
-
-
-def test_budget_indexes_are_named() -> None:
-    # The three index names are explicit in the model (two share `category_id`,
-    # so the NAMING_CONVENTION token would collide). The literal names also pin
-    # the create_all/Alembic parity the snapshot checks.
-    names = {ix.name for ix in cast(Table, Budget.__table__).indexes}
-    assert names == {"ix_budgets_category_id", "ix_budgets_created_by", "ix_budgets_active"}

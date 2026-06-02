@@ -23,6 +23,10 @@ from backend.modules.auth.transports.http import (
     router as auth_router,
 )
 from backend.modules.budget.transports.http import categories_router
+from backend.modules.transactions.transports.http import (
+    account_tx_router,
+    transactions_router,
+)
 from backend.shared.db import lifespan as db_lifespan
 
 
@@ -58,6 +62,8 @@ app.include_router(accept_invite_router)
 app.include_router(setup_router)
 app.include_router(accounts_router)
 app.include_router(categories_router)
+app.include_router(account_tx_router)
+app.include_router(transactions_router)
 
 
 @app.get("/healthz")

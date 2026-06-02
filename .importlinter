@@ -348,10 +348,14 @@ type = forbidden
 # internals are enumerated explicitly so transactions' own never appear here.
 # auth/accounts are below transactions in the layer graph, so transactions may
 # import their `.public` freely — reaching into their internals stays
-# forbidden. No `ignore_imports` block yet: `transactions.models` imports only
-# `backend.shared.models`, so there is no `transactions → X.public → X.internal`
-# second-hop chain to whitelist (S07.5 will add one when the routes import
-# `auth.public`).
+# forbidden. The `ignore_imports` block below was added in S07.5 when the routes
+# (`transactions.transports.http`) first import `auth.public` (`get_current_user`)
+# and `accounts.public` (`account_is_accessible` / `accessible_account_ids`):
+# `find_shortest_chains` would otherwise surface
+# `transactions → auth.public → auth.X` and `transactions → accounts.public →
+# accounts.X` as broken chains. Ignoring the *second hop* (X.public → X.internal)
+# makes those invisible without weakening the direct-import protection (a
+# hypothetical `transactions.service.Y → auth.models` would still be flagged).
 source_modules =
     backend.modules.transactions
 forbidden_modules =
@@ -421,6 +425,30 @@ forbidden_modules =
     backend.modules.sync.repository
     backend.modules.sync.transports
     backend.modules.sync.handlers
+# Legitimate `transactions → {auth,accounts}.public` surface (S07.5 routes):
+# `transactions.transports.http` imports `User`/`get_current_user` from
+# `auth.public` and `account_is_accessible`/`accessible_account_ids` from
+# `accounts.public`. The nine `auth.public → auth.X` arcs are the same block as
+# `2-accounts`/`2-budget`; the four `accounts.public → accounts.X` arcs cover the
+# re-exports `accounts.public` makes (events import only `shared.events`, so
+# `accounts.events` is not forbidden and stays out of this block). All thirteen
+# arcs exist in the `.public` modules independently of transactions → each is
+# "matched" (`unmatched_ignore_imports_alerting = error`).
+ignore_imports =
+    backend.modules.auth.public -> backend.modules.auth.domain
+    backend.modules.auth.public -> backend.modules.auth.models
+    backend.modules.auth.public -> backend.modules.auth.service.audit
+    backend.modules.auth.public -> backend.modules.auth.service.invitations
+    backend.modules.auth.public -> backend.modules.auth.service.jwt
+    backend.modules.auth.public -> backend.modules.auth.service.refresh_tokens
+    backend.modules.auth.public -> backend.modules.auth.service.roles
+    backend.modules.auth.public -> backend.modules.auth.service.users
+    backend.modules.auth.public -> backend.modules.auth.transports.dependencies
+    backend.modules.accounts.public -> backend.modules.accounts.models
+    backend.modules.accounts.public -> backend.modules.accounts.service.accounts
+    backend.modules.accounts.public -> backend.modules.accounts.service.household
+    backend.modules.accounts.public -> backend.modules.accounts.service.setup
+unmatched_ignore_imports_alerting = error
 
 [importlinter:contract:3]
 name = shared imports nothing of modules

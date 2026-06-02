@@ -202,6 +202,10 @@ def test_baseline_migration_round_trip(postgres_container: PostgresContainer) ->
     assert "table categories" not in post, f"categories table leaked after downgrade:\n{post}"
     assert "table splits" not in post, f"splits table leaked after downgrade:\n{post}"
     assert "table transactions" not in post, f"transactions table leaked after downgrade:\n{post}"
+    assert "table budgets" not in post, f"budgets table leaked after downgrade:\n{post}"
+    assert "table budget_contributors" not in post, (
+        f"budget_contributors table leaked after downgrade:\n{post}"
+    )
 
 
 def test_create_all_matches_alembic_head(postgres_container: PostgresContainer) -> None:

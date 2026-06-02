@@ -47,6 +47,35 @@ table alembic_version
   col version_num: VARCHAR(32) NOT NULL
   pk alembic_version_pkc(version_num)
 
+table budget_contributors
+  col budget_id: UUID NOT NULL
+  col id: UUID NOT NULL
+  col user_id: UUID NOT NULL
+  pk pk_budget_contributors(id)
+  fk fk_budget_contributors_budget_id_budgets: (budget_id) -> budgets(id) ON DELETE CASCADE
+  fk fk_budget_contributors_user_id_users: (user_id) -> users(id) ON DELETE RESTRICT
+  idx ix_budget_contributors_user_id INDEX: user_id
+  idx uq_budget_contributors_budget_id_user_id UNIQUE: budget_id, user_id
+
+table budgets
+  col amount_cents: BIGINT NOT NULL
+  col archived_at: TIMESTAMP WITH TIME ZONE NULL
+  col carry_over_remainder: BOOLEAN NOT NULL
+  col category_id: UUID NOT NULL
+  col created_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col created_by: UUID NOT NULL
+  col currency: VARCHAR(3) NOT NULL
+  col id: UUID NOT NULL
+  col period_kind: VARCHAR NOT NULL
+  col period_start: DATE NOT NULL
+  col scope: VARCHAR NOT NULL
+  pk pk_budgets(id)
+  fk fk_budgets_category_id_categories: (category_id) -> categories(id) ON DELETE RESTRICT
+  fk fk_budgets_created_by_users: (created_by) -> users(id) ON DELETE RESTRICT
+  idx ix_budgets_active INDEX: category_id) WHERE (archived_at IS NULL
+  idx ix_budgets_category_id INDEX: category_id
+  idx ix_budgets_created_by INDEX: created_by
+
 table categories
   col archived_at: TIMESTAMP WITH TIME ZONE NULL
   col color: VARCHAR(7) NULL

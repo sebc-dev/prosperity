@@ -10,7 +10,7 @@
 
 ## Objectif
 
-Implémenter F08 partie 2 : `Budget` posé sur une catégorie pour une période + scope (perso/commun) + agrégation hiérarchique (un budget parent agrège les dépenses des enfants). Alertes seuils 80%/100%/120% via `shared/events.py`.
+Implémenter F08 partie 2 : `Budget` posé sur une catégorie pour une période + scope (perso/commun) + agrégation hiérarchique (un budget parent agrège les dépenses des enfants). Alertes seuils 80%/100%/120% via le mini-bus `shared/events.py`.
 
 Livrable agrégé : un user crée un budget "Courses, 400€/mois, commun, contributeurs Alice+Bob". Les transactions confirmées de cette catégorie (et descendantes) sont sommées, le pourcentage consommé est calculable, les seuils déclenchent des `BudgetThresholdEvent` que `notifications` (V1) souscrira.
 
@@ -25,7 +25,7 @@ Livrable agrégé : un user crée un budget "Courses, 400€/mois, commun, contr
 | Phase | Description | Diff |
 |---|---|---|
 | **P08.1.1** | Modèles : `Budget` (`id`, `category_id` FK, `period_kind` Literal['monthly','quarterly','yearly'], `period_start` date, `amount_cents`, `scope` Literal['personal','shared'], `created_by`, `archived_at` NULL, `carry_over_remainder` bool default false) + `BudgetContributor` (`budget_id` FK, `user_id` FK) — unique `(budget_id, user_id)`. Note : pour `scope=personal`, un seul contributor (owner) ; pour `scope=shared`, ≥ 2 | ~100 |
-| **P08.1.2** | Migration `0011_budgets.py` (`down_revision` = `0010_transaction_share_request_id` — `0010` est déjà pris par S07.4). Test niveau 1 schema check | ~70 |
+| **P08.1.2** | Migration `0011_budgets.py` (`down_revision = "0010"` — la révision `0010_transaction_share_request_id` de S07.4 ; `0010` est déjà pris). Test niveau 1 schema check | ~70 |
 
 ---
 
@@ -41,7 +41,7 @@ Livrable agrégé : un user crée un budget "Courses, 400€/mois, commun, contr
 
 ---
 
-### S08.3 — Alertes seuils via `shared/events.py`
+### S08.3 — Alertes seuils via le mini-bus `shared/events.py`
 
 **Livrable observable** : à chaque write de transaction confirmée, si un budget concerné franchit un seuil (80%/100%/120%), un `BudgetThresholdEvent` est publié.
 

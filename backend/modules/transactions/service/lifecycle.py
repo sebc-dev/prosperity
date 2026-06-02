@@ -18,9 +18,11 @@ subscriber that raises — fails. The transition, the event `publish`, and the
 persistence all share the **same** transaction opened by the request dependency,
 so atomicity is free.
 
-`publish` is the S05.4 in-process mini-bus, dispatched **synchronously inside the
-caller's transaction, before `get_db` commits**; in V1 there is **no** subscriber
-(no-op). The concrete event types live in `transactions.events` (never in
+The S05.4 in-process mini-bus runs **inside the caller's transaction, before
+`get_db` commits**. `confirm` uses `dispatch` (sync + async channels): the E08
+budget threshold detector subscribes on the async channel and does DB I/O in this
+same transaction. `void` stays on `publish` (no async subscriber — `void` is not
+handled by E08). The concrete event types live in `transactions.events` (never in
 `shared`, which only owns the `DomainEvent` base — import-linter contract #3).
 
 Internal to the transactions module (import-linter contract `2-transactions`);
@@ -44,7 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.modules.transactions import domain, events
 from backend.modules.transactions.models import Split as SplitModel
 from backend.modules.transactions.models import Transaction as TxModel
-from backend.shared.events import publish
+from backend.shared.events import dispatch, publish
 from backend.shared.money import Money
 
 
@@ -258,7 +260,13 @@ async def transition_to_confirmed(session: AsyncSession, *, tx_id: UUID) -> doma
     tx.state = domain.TransactionState.CONFIRMED.value
     tx.confirmed_at = datetime.now(UTC)
     await session.flush()
-    publish(events.TransactionConfirmedEvent(transaction_id=tx.id, account_id=tx.account_id))
+    # `dispatch` (not `publish`): the E08 budget threshold detector subscribes on
+    # the ASYNC channel and recalculates consumption + an idempotent INSERT inside
+    # this same transaction (a subscriber that raises rolls the confirm back).
+    # `dispatch` subsumes `publish` (it replays the sync spies) — never both.
+    await dispatch(
+        session, events.TransactionConfirmedEvent(transaction_id=tx.id, account_id=tx.account_id)
+    )
     return _to_domain(tx, splits)
 
 

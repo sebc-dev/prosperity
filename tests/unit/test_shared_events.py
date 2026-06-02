@@ -21,8 +21,10 @@ import pytest
 from backend.shared.events import (
     DomainEvent,
     clear_subscribers,
+    dispatch,
     publish,
     subscribe,
+    subscribe_async,
     unsubscribe,
 )
 
@@ -131,3 +133,127 @@ def test_unsubscribe_absent_handler_is_noop() -> None:
 
     # Never subscribed → must not raise.
     unsubscribe(_EvtA, _h)
+
+
+# ---------------------------------------------------------------------------
+# Async channel (S08.3, P08.3.2) — `subscribe_async` / `dispatch`
+# ---------------------------------------------------------------------------
+#
+# These never touch the DB: the async handlers ignore the `session` argument
+# (a sentinel object suffices). The DB-in-transaction proof lives in the
+# integration tier (`test_transactions_transitions.py`).
+
+_SESSION = object()  # opaque session sentinel; async handlers below never use it
+
+
+async def test_dispatch_calls_async_handler_with_session_and_event() -> None:
+    received: list[tuple[object, DomainEvent]] = []
+
+    async def _h(session: object, event: _EvtA) -> None:
+        received.append((session, event))
+
+    subscribe_async(_EvtA, _h)
+    evt = _EvtA(value=7)
+    await dispatch(_SESSION, evt)  # type: ignore[arg-type]
+
+    assert received == [(_SESSION, evt)]
+    assert received[0][1] is evt
+
+
+async def test_dispatch_runs_sync_before_async_observable() -> None:
+    # A shared order list proves ALL sync subscribers fire before ANY async one
+    # (load-bearing: the BudgetThresholdEvent spy is SYNC and must capture an
+    # event republished by the async detector).
+    order: list[str] = []
+    subscribe(_EvtA, lambda _e: order.append("sync"))
+
+    async def _async(_s: object, _e: _EvtA) -> None:
+        order.append("async")
+
+    subscribe_async(_EvtA, _async)
+    await dispatch(_SESSION, _EvtA())  # type: ignore[arg-type]
+
+    assert order == ["sync", "async"]
+
+
+async def test_multiple_async_handlers_fire_in_registration_order() -> None:
+    order: list[str] = []
+
+    async def _h1(_s: object, _e: _EvtA) -> None:
+        order.append("h1")
+
+    async def _h2(_s: object, _e: _EvtA) -> None:
+        order.append("h2")
+
+    subscribe_async(_EvtA, _h1)
+    subscribe_async(_EvtA, _h2)
+    await dispatch(_SESSION, _EvtA())  # type: ignore[arg-type]
+
+    assert order == ["h1", "h2"]
+
+
+async def test_subscribe_async_is_idempotent() -> None:
+    calls: list[int] = []
+
+    async def _h(_s: object, _e: _EvtA) -> None:
+        calls.append(1)
+
+    subscribe_async(_EvtA, _h)
+    subscribe_async(_EvtA, _h)  # same (type, handler) → no-op
+    await dispatch(_SESSION, _EvtA())  # type: ignore[arg-type]
+
+    assert calls == [1]
+
+
+async def test_dispatch_async_is_by_exact_type() -> None:
+    calls: list[DomainEvent] = []
+
+    async def _h(_s: object, e: _EvtA) -> None:
+        calls.append(e)
+
+    subscribe_async(_EvtA, _h)
+    await dispatch(_SESSION, _EvtB())  # type: ignore[arg-type]
+
+    assert calls == []
+
+
+async def test_dispatch_propagates_raising_async_handler() -> None:
+    sync_calls: list[str] = []
+    subscribe(_EvtA, lambda _e: sync_calls.append("sync"))
+
+    async def _boom(_s: object, _e: _EvtA) -> None:
+        raise ValueError("async boom")
+
+    subscribe_async(_EvtA, _boom)
+
+    with pytest.raises(ValueError, match="async boom"):
+        await dispatch(_SESSION, _EvtA())  # type: ignore[arg-type]
+    # The sync subscriber ran before the async one raised (order guarantee).
+    assert sync_calls == ["sync"]
+
+
+async def test_dispatch_without_async_subscriber_runs_sync_only() -> None:
+    # `dispatch` with no async subscriber ≈ `publish` (sync subscribers only).
+    received: list[DomainEvent] = []
+    subscribe(_EvtA, received.append)
+
+    await dispatch(_SESSION, _EvtA(value=3))  # type: ignore[arg-type]
+
+    assert len(received) == 1
+    assert received[0].value == 3  # type: ignore[attr-defined]
+
+
+async def test_clear_subscribers_empties_async_registry() -> None:
+    # The autouse fixture relies on `clear_subscribers` wiping BOTH registries —
+    # load-bearing for the threshold scenarios (a leaked async detector across
+    # tests would corrupt their `captured` lists).
+    calls: list[int] = []
+
+    async def _h(_s: object, _e: _EvtA) -> None:
+        calls.append(1)
+
+    subscribe_async(_EvtA, _h)
+    clear_subscribers()
+    await dispatch(_SESSION, _EvtA())  # type: ignore[arg-type]
+
+    assert calls == []  # the cleared async handler never fires

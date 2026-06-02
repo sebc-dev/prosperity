@@ -41,7 +41,12 @@ from backend.modules.transactions.service.lifecycle import (
     transition_to_planned,
     void,
 )
-from backend.shared.events import DomainEvent, clear_subscribers, subscribe
+from backend.shared.events import (
+    DomainEvent,
+    clear_subscribers,
+    subscribe,
+    subscribe_async,
+)
 
 Factories = tuple[type, type, type, type]
 BoundFactories = Callable[[], Awaitable[Factories]]
@@ -362,6 +367,40 @@ async def test_confirm_emits_event(
     assert received[0].account_id == account_id
 
 
+async def test_confirm_dispatches_async_handler_in_request_transaction(
+    household_singleton: AsyncSession,
+    bound_transaction_factories: BoundFactories,
+    bound_category_factory: CategoryMaker,
+) -> None:
+    # An ASYNC subscriber (S08.3 channel) receives `(session, event)` during the
+    # confirm and runs INSIDE the request transaction: it reads the just-flushed
+    # `confirmed` row through the very session it was handed (proof of same-tx).
+    seen: list[tuple[bool, str | None]] = []
+
+    async def _async_handler(session: AsyncSession, event: TransactionConfirmedEvent) -> None:
+        state = (
+            await session.execute(select(TxModel.state).where(TxModel.id == event.transaction_id))
+        ).scalar_one()
+        seen.append((session is household_singleton, state))
+
+    subscribe_async(TransactionConfirmedEvent, _async_handler)
+    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    cat = (await bound_category_factory()).id  # type: ignore[attr-defined]
+    tx_id = await _seed_tx(
+        household_singleton,
+        bound_transaction_factories,
+        account_id=account_id,
+        user_id=user_id,
+        state="planned",
+        legs=[(account_id, -1000, cat), (account_id, 1000, cat)],
+    )
+
+    await transition_to_confirmed(household_singleton, tx_id=tx_id)
+
+    # Same session object, and it observed the flushed `confirmed` state.
+    assert seen == [(True, "confirmed")]
+
+
 @pytest.mark.parametrize("state", ["draft", "planned", "confirmed"])
 async def test_void_emits_event_with_reason(
     household_singleton: AsyncSession, bound_transaction_factories: BoundFactories, state: str
@@ -474,6 +513,34 @@ async def test_raising_subscriber_rolls_back_transition(committed_engine: AsyncE
 
     # From a fresh session: the state is still `planned` (the flushed change to
     # `confirmed` was rolled back when the subscriber raised — same transaction).
+    async with sm() as session:
+        state = (
+            await session.execute(select(TxModel.state).where(TxModel.id == tx_id))
+        ).scalar_one()
+        assert state == "planned"
+
+
+@pytest.mark.usefixtures("_clean_committed_db")
+async def test_raising_async_subscriber_rolls_back_transition(
+    committed_engine: AsyncEngine,
+) -> None:
+    # Same guarantee for the ASYNC channel (S08.3): a raising async handler
+    # propagates through `dispatch` and rolls the confirm back, proven from a
+    # fresh session. This is the availability arbitrage of the threshold detector
+    # on the critical path (#127 D13) — exercised end to end.
+    sm = async_sessionmaker(committed_engine, expire_on_commit=False)
+    tx_id = await _seed_committed_transfer(sm)
+
+    async def _boom(_session: AsyncSession, _event: TransactionConfirmedEvent) -> None:
+        raise RuntimeError("async subscriber refused the transaction")
+
+    subscribe_async(TransactionConfirmedEvent, _boom)
+
+    async with sm() as session:
+        with pytest.raises(RuntimeError, match="refused"):
+            await transition_to_confirmed(session, tx_id=tx_id)
+        await session.rollback()
+
     async with sm() as session:
         state = (
             await session.execute(select(TxModel.state).where(TxModel.id == tx_id))

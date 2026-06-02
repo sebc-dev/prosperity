@@ -593,6 +593,30 @@ async def test_unknown_budget_returns_none(household_singleton: AsyncSession) ->
     assert await compute_consumption(household_singleton, budget_id=uuid4(), as_of=_AS_OF) is None
 
 
+async def test_unexpected_scope_fail_closed(
+    household_singleton: AsyncSession, bound_account_factories: FactoryBundle
+) -> None:
+    # Scope inattendu (ni personal ni shared) → fail-closed : aucun compte
+    # éligible → consommation 0, jamais une fuite cross-scope (D7).
+    user_factory, account_factory, _ = await bound_account_factories()
+
+    def _seed(s: Session) -> UUID:
+        owner = user_factory(email="scope@example.com")
+        acc = account_factory(owner_id=owner.id, name="Perso")
+        cat = Category(name="Courses")
+        s.add(cat)
+        s.flush()
+        _add_expense(s, account_id=acc.id, category_id=cat.id, amount=5000, created_by=owner.id)
+        return _make_budget(s, category_id=cat.id, created_by=owner.id, scope="weird")
+
+    budget_id = await household_singleton.run_sync(_seed)
+
+    c = await compute_consumption(household_singleton, budget_id=budget_id, as_of=_AS_OF)
+    assert c is not None
+    assert c.consumed_cents == 0
+    assert c.splits_count == 0
+
+
 async def test_empty_subtree_or_no_expense_zero(
     household_singleton: AsyncSession, bound_account_factories: FactoryBundle
 ) -> None:

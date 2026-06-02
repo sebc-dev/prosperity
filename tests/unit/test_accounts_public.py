@@ -73,8 +73,7 @@ def test_public_names_are_identical_objects_to_internals() -> None:
     assert accounts_public.accessible_account_ids is _accounts_service.accessible_account_ids
     # The S08.2 budget-consumption membership helpers re-export the real symbols.
     assert (
-        accounts_public.owned_personal_account_ids
-        is _accounts_service.owned_personal_account_ids
+        accounts_public.owned_personal_account_ids is _accounts_service.owned_personal_account_ids
     )
     assert (
         accounts_public.shared_account_ids_with_members_subset

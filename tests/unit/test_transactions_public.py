@@ -24,6 +24,7 @@ from backend.modules.transactions.public import (
     UncategorizedExpenseError,
     add_split,
     create_draft,
+    get_transaction,
     remove_split,
     transition_to_confirmed,
     transition_to_planned,
@@ -31,6 +32,7 @@ from backend.modules.transactions.public import (
     void,
 )
 from backend.modules.transactions.service import lifecycle as _lifecycle
+from backend.modules.transactions.service import queries as _queries
 from backend.shared.events import DomainEvent
 
 _EXPECTED = {
@@ -46,6 +48,7 @@ _EXPECTED = {
     "UncategorizedExpenseError",
     "add_split",
     "create_draft",
+    "get_transaction",
     "remove_split",
     "transition_to_confirmed",
     "transition_to_planned",
@@ -66,6 +69,7 @@ def test_service_functions_are_identical_re_exports() -> None:
     assert transition_to_confirmed is _lifecycle.transition_to_confirmed
     assert update_editable_fields is _lifecycle.update_editable_fields
     assert void is _lifecycle.void
+    assert get_transaction is _queries.get_transaction
 
 
 def test_errors_and_state_are_identical_re_exports() -> None:

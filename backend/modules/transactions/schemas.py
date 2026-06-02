@@ -41,6 +41,7 @@ _MAX_SPLITS = 100
 _MAX_TAGS = 32
 _MAX_TAG_LEN = 64
 _MAX_DESC_LEN = 500
+_MAX_REASON_LEN = 500
 
 # Each `tags` item is length-bounded (the item, not just the cardinality).
 Tag = Annotated[str, StringConstraints(max_length=_MAX_TAG_LEN)]
@@ -73,6 +74,18 @@ class TransactionCreate(BaseModel):
     description: str | None = Field(default=None, max_length=_MAX_DESC_LEN)
     tags: list[Tag] = Field(default_factory=list, max_length=_MAX_TAGS)
     debt_generation_override: DebtGenerationOverride = "default"
+
+
+class VoidRequest(BaseModel):
+    """Optional body for `POST /transactions/{id}/void`.
+
+    `reason` rides the `TransactionVoidedEvent` payload only — no column in V1
+    (S07.4 D7). Bounded (`max_length`) against unbounded payloads / log-injection
+    (PII); the boundary never logs it raw.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    reason: str = Field(default="", max_length=_MAX_REASON_LEN)
 
 
 class SplitResponse(BaseModel):

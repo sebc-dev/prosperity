@@ -36,16 +36,28 @@ from backend.modules.accounts.public import (
     account_is_accessible,
 )
 from backend.modules.auth.public import User, get_current_user
+from backend.modules.transactions import domain
 from backend.modules.transactions.public import (
+    ImmutableFieldViolation,
+    InvalidStateTransitionError,
+    TransactionError,
+    UnbalancedTransactionError,
+    UncategorizedExpenseError,
     add_split,
     create_draft,
+    get_transaction,
+    transition_to_confirmed,
+    transition_to_planned,
     update_editable_fields,
+    void,
 )
 from backend.modules.transactions.schemas import (
     TransactionCreate,
     TransactionResponse,
+    VoidRequest,
 )
 from backend.shared.db import get_db
+from backend.shared.money import IncompatibleCurrencyError
 
 logger = logging.getLogger(__name__)
 
@@ -130,4 +142,118 @@ async def create_transaction(
             ) from exc
         logger.error("tx_create_unexpected_integrity", extra={"sqlstate": sqlstate})
         raise
+    return TransactionResponse.from_domain(tx)
+
+
+# --- Per-transaction routes: access guard + domain-error mapping (P07.5.2) ---
+#
+# Every per-transaction route confirms membership of the transaction's account
+# BEFORE mutating (D4): `_require_accessible_tx` collapses unknown + inaccessible
+# into one uniform 404, so a non-member — admin included — cannot probe a tx's
+# existence. Domain rejections map to curated 4xx via the tables below (never
+# `str(exc)`, C-SEC-1; never a 500). `IncompatibleCurrencyError` is bordered
+# explicitly (it is OUTSIDE the `TransactionError` family, raised by `Money.__add__`).
+
+_EXC_STATUS: dict[type[Exception], int] = {
+    InvalidStateTransitionError: status.HTTP_409_CONFLICT,
+    ImmutableFieldViolation: status.HTTP_409_CONFLICT,
+    UnbalancedTransactionError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+    UncategorizedExpenseError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+    IncompatibleCurrencyError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+}
+_EXC_DETAIL: dict[type[Exception], str] = {
+    InvalidStateTransitionError: "Transaction state does not allow this transition.",
+    ImmutableFieldViolation: "This field is frozen on a confirmed transaction.",
+    UnbalancedTransactionError: "Transaction splits must sum to zero.",
+    UncategorizedExpenseError: "Every expense split must have a category.",
+    IncompatibleCurrencyError: "All splits must share one currency.",
+}
+_DEFAULT_EXC_DETAIL = "Transaction error."
+
+
+async def _require_accessible_tx(
+    session: AsyncSession, tx_id: UUID, user: User
+) -> domain.Transaction:
+    """Load the tx + verify membership of ITS account; uniform 404 otherwise (D4).
+
+    Merges "unknown id" and "inaccessible" into one 404 (`get_transaction` → None,
+    or `account_is_accessible` → False), so neither path is an enumeration oracle.
+    """
+    tx = await get_transaction(session, tx_id=tx_id)
+    if tx is None or not await account_is_accessible(
+        session, account_id=tx.account_id, user_id=user.id
+    ):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL)
+    return tx
+
+
+def _map_domain_exc(exc: Exception) -> HTTPException:
+    """Curated HTTP mapping for a domain rejection (never `str(exc)`, C-SEC-1).
+
+    An unmapped exception (should not happen — the routes catch only the known
+    families) would surface as 500 via the default, never as a leaked message.
+    """
+    code = _EXC_STATUS.get(type(exc), status.HTTP_500_INTERNAL_SERVER_ERROR)
+    logger.info(
+        "tx_transition_rejected",
+        extra={
+            "error": type(exc).__name__,
+            "code": exc.code if isinstance(exc, TransactionError) else None,
+        },
+    )
+    return HTTPException(code, detail=_EXC_DETAIL.get(type(exc), _DEFAULT_EXC_DETAIL))
+
+
+@transactions_router.post("/{tx_id}/confirm", response_model=TransactionResponse)
+async def confirm_transaction(
+    tx_id: UUID, user: CurrentUser, session: SessionDep
+) -> TransactionResponse:
+    """`planned → confirmed`: zero-sum + every expense split categorised.
+
+    A gate failure (unbalanced/uncategorized/mixed currency) → 422; an illegal
+    transition (e.g. `draft → confirmed`) → 409 — never a 500.
+    """
+    await _require_accessible_tx(session, tx_id, user)
+    try:
+        tx = await transition_to_confirmed(session, tx_id=tx_id)
+    except (TransactionError, IncompatibleCurrencyError) as exc:
+        raise _map_domain_exc(exc) from exc
+    return TransactionResponse.from_domain(tx)
+
+
+@transactions_router.post("/{tx_id}/plan", response_model=TransactionResponse)
+async def plan_transaction(
+    tx_id: UUID, user: CurrentUser, session: SessionDep
+) -> TransactionResponse:
+    """`draft → planned`, refusing an unbalanced transaction (422).
+
+    `confirmed → planned` is refused with 409 (ADR 0001 — reopening a confirmed
+    transaction's amounts is forbidden).
+    """
+    await _require_accessible_tx(session, tx_id, user)
+    try:
+        tx = await transition_to_planned(session, tx_id=tx_id)
+    except (TransactionError, IncompatibleCurrencyError) as exc:
+        raise _map_domain_exc(exc) from exc
+    return TransactionResponse.from_domain(tx)
+
+
+@transactions_router.post("/{tx_id}/void", response_model=TransactionResponse)
+async def void_transaction(
+    tx_id: UUID,
+    user: CurrentUser,
+    session: SessionDep,
+    body: VoidRequest | None = None,
+) -> TransactionResponse:
+    """`* → void` (terminal). A `void → void` re-void is a 409 (terminal state).
+
+    `reason` (optional, bounded) rides the event payload only (no V1 column);
+    the boundary never logs it raw (PII / log-injection).
+    """
+    await _require_accessible_tx(session, tx_id, user)
+    reason = body.reason if body is not None else ""
+    try:
+        tx = await void(session, tx_id=tx_id, reason=reason)
+    except (TransactionError, IncompatibleCurrencyError) as exc:
+        raise _map_domain_exc(exc) from exc
     return TransactionResponse.from_domain(tx)

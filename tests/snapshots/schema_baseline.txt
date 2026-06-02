@@ -57,6 +57,15 @@ table budget_contributors
   idx ix_budget_contributors_user_id INDEX: user_id
   idx uq_budget_contributors_budget_id_user_id UNIQUE: budget_id, user_id
 
+table budget_threshold_alerts
+  col budget_id: UUID NOT NULL
+  col id: UUID NOT NULL
+  col period_start: DATE NOT NULL
+  col threshold_pct: SMALLINT NOT NULL
+  pk pk_budget_threshold_alerts(id)
+  fk fk_budget_threshold_alerts_budget_id_budgets: (budget_id) -> budgets(id) ON DELETE CASCADE
+  idx uq_budget_threshold_alerts_dedup UNIQUE: budget_id, period_start, threshold_pct
+
 table budgets
   col amount_cents: BIGINT NOT NULL
   col archived_at: TIMESTAMP WITH TIME ZONE NULL

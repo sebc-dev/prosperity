@@ -30,6 +30,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    SmallInteger,
     String,
     UniqueConstraint,
     func,
@@ -270,4 +271,59 @@ class BudgetContributor(Base):
         # `user_id` is not the leading column above → its own index is needed
         # for the `ON DELETE RESTRICT` seq-scan avoidance on `users` delete.
         Index("ix_budget_contributors_user_id", "user_id"),
+    )
+
+
+class BudgetThresholdAlert(Base):
+    """Ligne d'idempotence d'une alerte de seuil déjà émise (S08.3, source de
+    vérité de l'exactly-once des `BudgetThresholdEvent`). UNE ligne par
+    `(budget, fenêtre de période, seuil %)` : sa présence atteste qu'un
+    `BudgetThresholdEvent` a déjà été publié pour ce triplet — robuste au restart
+    serveur et au rejeu (E13), vs un état « % avant/après » volatil.
+
+    **Server-only** : table d'infra serveur, JAMAIS exposée aux règles de sync
+    PowerSync (gabarit `users`/`admin_audit_logs`/`invitations`). Aucun client
+    ne la lit ; le frontend recalcule l'état d'alerte via la consommation (S08.4).
+
+    `budget_id` `ON DELETE CASCADE` (l'alerte n'a aucun sens hors de son budget ;
+    gabarit `budget_contributors.budget_id`). `period_start` (`Date`) = borne
+    basse de la fenêtre courante (`compute_period_window(...).start`).
+    `threshold_pct` (`SmallInteger`) ∈ {80, 100, 120}, SANS CHECK (set verrouillé
+    au domaine `crossed_thresholds`, gabarit `period_kind`/`scope`).
+    Unique `(budget_id, period_start, threshold_pct)` nommée explicitement —
+    cible de l'`ON CONFLICT ON CONSTRAINT` de l'INSERT idempotent.
+    """
+
+    __tablename__ = "budget_threshold_alerts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    budget_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "budgets.id",
+            ondelete="CASCADE",
+            name="fk_budget_threshold_alerts_budget_id_budgets",
+        ),
+        nullable=False,
+    )
+    period_start: Mapped[date] = mapped_column(Date, nullable=False)
+    threshold_pct: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+
+    __table_args__ = (
+        # Unique = idempotence ET cible de l'`ON CONFLICT ON CONSTRAINT`. Nom
+        # littéral court et stable (déclaré identique côté migration, PAS `op.f`)
+        # : la parité create_all/Alembic exige le même littéral des deux côtés
+        # (même piège que `uq_invitations_pending_email`). `budget_id` en tête
+        # sert le CASCADE → pas d'index `budget_id` standalone (gabarit
+        # `budget_contributors`).
+        UniqueConstraint(
+            "budget_id",
+            "period_start",
+            "threshold_pct",
+            name="uq_budget_threshold_alerts_dedup",
+        ),
     )

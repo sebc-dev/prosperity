@@ -71,6 +71,13 @@ from tests.strategies import balanced_splits_strategy
 # A persisted leg, projection comparable: (account_id, amount_cents, currency).
 Leg = tuple[UUID, int, str]
 
+# Texte sûr pour Postgres : `codec="utf-8"` exclut les surrogates non
+# encodables, `min_codepoint=1` exclut le NUL `\x00` (que les colonnes `text`/
+# `varchar` PG refusent — `invalid byte sequence for encoding "UTF8": 0x00`).
+# Les properties PURES (domaine, sans DB) gardent `st.text()` sans contrainte ;
+# ici les valeurs sont PERSISTÉES, d'où le filtrage.
+_PG_SAFE_TEXT = st.text(st.characters(codec="utf-8", min_codepoint=1), max_size=12)
+
 
 def _user_row(uid: UUID) -> User:
     """Ligne `users` minimale et déterministe (FK RESTRICT `created_by`/`owner_id`).
@@ -214,8 +221,8 @@ def test_property_editable_update_preserves_sum(
     # IDENTIQUE au seed : les champs allowed ne touchent jamais les montants.
     url, user_id, category_id = tx_invariants_socle
     allowed: dict[str, object] = {
-        "tags": tuple(data.draw(st.lists(st.text(max_size=8), max_size=3))),
-        "description": data.draw(st.none() | st.text(max_size=12)),
+        "tags": tuple(data.draw(st.lists(_PG_SAFE_TEXT, max_size=3))),
+        "description": data.draw(st.none() | _PG_SAFE_TEXT),
         "debt_generation_override": data.draw(
             st.sampled_from(["default", "force_full_debt", "force_no_debt"])
         ),

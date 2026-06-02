@@ -19,6 +19,10 @@ from backend.modules.accounts.events import (
     ShareRatioUpdated,
 )
 from backend.modules.accounts.models import HOUSEHOLD_SINGLETON_UUID as HOUSEHOLD_ID
+from backend.modules.accounts.service.accounts import (
+    accessible_account_ids,
+    account_is_accessible,
+)
 from backend.modules.accounts.service.household import (
     HouseholdNotInitializedError,
     get_household,
@@ -26,11 +30,13 @@ from backend.modules.accounts.service.household import (
 from backend.modules.accounts.service.setup import bootstrap_initial_admin_from_env
 
 __all__ = [
-    "HOUSEHOLD_ID",
     "AccountMemberAdded",
     "AccountMemberRemoved",
+    "HOUSEHOLD_ID",
     "HouseholdNotInitializedError",
     "ShareRatioUpdated",
+    "accessible_account_ids",
+    "account_is_accessible",
     "bootstrap_initial_admin_from_env",
     "get_household",
 ]

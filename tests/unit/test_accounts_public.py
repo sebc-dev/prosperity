@@ -11,9 +11,12 @@ from backend.modules.accounts.public import (
     AccountMemberRemoved,
     HouseholdNotInitializedError,
     ShareRatioUpdated,
+    accessible_account_ids,
+    account_is_accessible,
     bootstrap_initial_admin_from_env,
     get_household,
 )
+from backend.modules.accounts.service import accounts as _accounts_service
 from backend.modules.accounts.service import household as _household_service
 from backend.modules.accounts.service import setup as _setup_service
 from backend.shared.events import DomainEvent
@@ -26,6 +29,8 @@ def test_public_exports_exact_set() -> None:
         "AccountMemberRemoved",
         "HouseholdNotInitializedError",
         "ShareRatioUpdated",
+        "accessible_account_ids",
+        "account_is_accessible",
         "bootstrap_initial_admin_from_env",
         "get_household",
     }
@@ -34,6 +39,8 @@ def test_public_exports_exact_set() -> None:
 def test_public_symbols_are_callable_or_exceptions() -> None:
     assert callable(get_household)
     assert callable(bootstrap_initial_admin_from_env)
+    assert callable(account_is_accessible)
+    assert callable(accessible_account_ids)
     assert issubclass(HouseholdNotInitializedError, Exception)
 
 
@@ -54,6 +61,10 @@ def test_public_names_are_identical_objects_to_internals() -> None:
         accounts_public.bootstrap_initial_admin_from_env
         is _setup_service.bootstrap_initial_admin_from_env
     )
+    # The S07.5 membership primitives re-export the real symbols from
+    # `accounts.service.accounts` (not a stub re-implemented in `public.py`).
+    assert accounts_public.account_is_accessible is _accounts_service.account_is_accessible
+    assert accounts_public.accessible_account_ids is _accounts_service.accessible_account_ids
     # The S05.4 events re-export the concrete types defined in `accounts.events`.
     assert accounts_public.AccountMemberAdded is _events.AccountMemberAdded
     assert accounts_public.AccountMemberRemoved is _events.AccountMemberRemoved

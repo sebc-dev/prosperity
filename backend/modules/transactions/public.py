@@ -37,6 +37,7 @@ from backend.modules.transactions.service.lifecycle import (
     update_editable_fields,
     void,
 )
+from backend.modules.transactions.service.queries import get_transaction, list_transactions
 
 __all__ = [
     "ImmutableFieldViolation",
@@ -51,6 +52,8 @@ __all__ = [
     "UncategorizedExpenseError",
     "add_split",
     "create_draft",
+    "get_transaction",
+    "list_transactions",
     "remove_split",
     "transition_to_confirmed",
     "transition_to_planned",

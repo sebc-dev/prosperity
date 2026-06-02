@@ -210,23 +210,37 @@ class Transaction(BaseModel):
         """Impose `sum(splits) == Money(0, ccy)` SI `state is CONFIRMED` (D4).
 
         Toléré en `draft`/`planned` (édition en cours ; le service revérifie le
-        zero-sum à `transition_to_planned`, S07.4). La somme via `Money.__add__`
-        propage `IncompatibleCurrencyError` sur devise mixte (devise unique
-        imposée « gratuitement » par le type) — exception HORS taxonomie
+        zero-sum à `transition_to_planned`, S07.4). Délègue à `assert_zero_sum`
+        (helper standalone S07.4) : comportement préservé (ne s'exécute qu'à
+        `CONFIRMED`). La somme via `Money.__add__` propage
+        `IncompatibleCurrencyError` sur devise mixte (devise unique imposée
+        « gratuitement » par le type) — exception HORS taxonomie
         `TransactionError`, à border côté S07.4.
         """
         if self.state is not TransactionState.CONFIRMED:
             return self
-        if not self.splits:
-            raise UnbalancedTransactionError("transaction confirmée sans split")
-        total = self.splits[0].amount
-        for split in self.splits[1:]:
-            total = total + split.amount  # lève IncompatibleCurrencyError si mélange
-        if total != Money(0, total.currency):
-            raise UnbalancedTransactionError(
-                f"somme des splits = {total}, attendu 0 à l'état confirmed"
-            )
+        assert_zero_sum(self)
         return self
+
+
+def assert_zero_sum(tx: Transaction) -> None:
+    """Lève `UnbalancedTransactionError` si `sum(splits) != Money(0, ccy)`.
+
+    Standalone (gabarit `assert_transition`/`assert_expenses_categorized`) pour
+    que le service vérifie le solde à `planned` ET `confirmed` sans construire un
+    `confirmed` jetable (le `model_validator` n'enforce le zero-sum qu'à
+    `confirmed`). La somme via `Money.__add__` propage `IncompatibleCurrencyError`
+    sur devise mixte (HORS taxonomie `TransactionError`, à border côté service).
+    Le message « sans split » diffère du validator (« confirmée sans split ») —
+    sans impact : le canal client est `code`, jamais `str(exc)`.
+    """
+    if not tx.splits:
+        raise UnbalancedTransactionError("transaction sans split")
+    total = tx.splits[0].amount
+    for split in tx.splits[1:]:
+        total = total + split.amount  # lève IncompatibleCurrencyError si mélange
+    if total != Money(0, total.currency):
+        raise UnbalancedTransactionError(f"somme des splits = {total}, attendu 0")
 
 
 def assert_transition(from_state: TransactionState, to_state: TransactionState) -> None:

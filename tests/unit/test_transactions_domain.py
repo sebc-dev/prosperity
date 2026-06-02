@@ -19,7 +19,7 @@ import datetime as dt
 from uuid import UUID, uuid4
 
 import pytest
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
@@ -42,7 +42,7 @@ from backend.modules.transactions.domain import (
 from backend.shared.money import IncompatibleCurrencyError, Money
 from tests.strategies import (
     balanced_splits_strategy,
-    confirmed_transaction_strategy,
+    transaction_confirmed_strategy,
 )
 
 _DATE = dt.date(2026, 1, 15)
@@ -365,7 +365,7 @@ class TestImmutability:
         }
         assert EDITABLE_AFTER_CONFIRMED <= set(Transaction.model_fields)
 
-    @given(data=st.data(), old=confirmed_transaction_strategy())
+    @given(data=st.data(), old=transaction_confirmed_strategy())
     def test_property_only_editable_fields_accepted(
         self, data: st.DataObject, old: Transaction
     ) -> None:
@@ -394,7 +394,7 @@ class TestImmutability:
         new = old.model_copy(update=updates)
         check_mutation_allowed(old, new)  # no raise
 
-    @given(old=confirmed_transaction_strategy())
+    @given(old=transaction_confirmed_strategy())
     def test_property_any_frozen_divergence_raises(self, old: Transaction) -> None:
         # ∀ divergence sur un champ gelé NON FINANCIER (évite le piège « double
         # exception » : muter un montant déséquilibrerait `new` → le validator
@@ -471,6 +471,70 @@ class TestStateMachine:
             assert_transition(TransactionState.CONFIRMED, TransactionState.PLANNED)
         assert exc.value.from_state is TransactionState.CONFIRMED
         assert exc.value.to_state is TransactionState.PLANNED
+
+
+# Progression linéaire draft<planned<confirmed (ADR 0001). `void` exclu : il
+# n'est jamais une étape d'avancement, seulement une sortie terminale.
+_PROGRESSION: dict[TransactionState, int] = {
+    TransactionState.DRAFT: 0,
+    TransactionState.PLANNED: 1,
+    TransactionState.CONFIRMED: 2,
+}
+
+
+def _legal_by_rule(frm: TransactionState, to: TransactionState) -> bool:
+    """Légalité d'une transition DÉRIVÉE des règles ADR 0001 (oracle indépendant).
+
+    Ne lit NI `STATE_TRANSITIONS` NI `_ALLOWED_PAIRS` (anti auto-validation, AC
+    property 3) — reconstruit la légalité depuis les règles textuelles :
+
+      - `void` est TERMINAL : aucune sortie de `void` (toujours illégal) ;
+      - `* → void` autorisé depuis tout état non-`void` ;
+      - sinon, exactement UN cran d'avancement dans la progression linéaire
+        `draft < planned < confirmed` (`confirmed → planned` interdit, pas de
+        saut `draft → confirmed`, pas de self-transition).
+    """
+    if frm is TransactionState.VOID:
+        return False
+    if to is TransactionState.VOID:
+        return True
+    return _PROGRESSION.get(to, -99) - _PROGRESSION.get(frm, 99) == 1
+
+
+class TestStateMachineDerivedOracle:
+    """Propriété (3) #117 : `assert_transition` ⟺ oracle DÉRIVÉ d'une règle (D5).
+
+    Renforce `TestStateMachine` (qui confronte `assert_transition` à la table
+    littérale `_ALLOWED_PAIRS`) : ici l'oracle est RECONSTRUIT depuis les règles
+    ADR 0001 (`_legal_by_rule`), pas re-listé, et lève sur TOUTE transition non
+    légale (forme « pour toute paire » exigée par l'AC).
+    """
+
+    @given(
+        frm=st.sampled_from(list(TransactionState)),
+        to=st.sampled_from(list(TransactionState)),
+    )
+    @settings(max_examples=200)
+    def test_property_assert_transition_matches_derived_oracle(
+        self, frm: TransactionState, to: TransactionState
+    ) -> None:
+        # ∀ (frm, to) : `assert_transition` lève SSI l'oracle dérivé la dit
+        # illégale. Toute transition non listée dans STATE_TRANSITIONS lève.
+        if _legal_by_rule(frm, to):
+            assert_transition(frm, to)  # no raise
+        else:
+            with pytest.raises(InvalidStateTransitionError):
+                assert_transition(frm, to)
+
+    @pytest.mark.parametrize(("from_state", "to_state"), _ALL_PAIRS)
+    def test_derived_oracle_matches_const_exhaustively(
+        self, from_state: TransactionState, to_state: TransactionState
+    ) -> None:
+        # Verrou de non-régression sur l'espace FINI (16 paires) : l'oracle
+        # dérivé et la table littérale `_ALLOWED_PAIRS` concordent exactement.
+        # Si l'une des deux dérive de l'autre (ajout d'état, règle modifiée), ce
+        # test casse — les deux indépendances restent prouvablement cohérentes.
+        assert _legal_by_rule(from_state, to_state) == ((from_state, to_state) in _ALLOWED_PAIRS)
 
 
 # ---------------------------------------------------------------------------

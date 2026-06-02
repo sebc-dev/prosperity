@@ -156,3 +156,10 @@ class TransactionResponse(BaseModel):
                 for s in tx.splits
             ],
         )
+
+
+class TransactionListResponse(BaseModel):
+    """A page of transactions + the opaque cursor of the next page (None if last)."""
+
+    items: list[TransactionResponse]
+    next_cursor: str | None

@@ -23,10 +23,11 @@ membership filter is applied at the route boundary, S07.5).
 
 from __future__ import annotations
 
+import datetime as dt
 from collections.abc import Sequence
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.transactions import domain
@@ -86,3 +87,66 @@ async def get_transaction(session: AsyncSession, *, tx_id: UUID) -> domain.Trans
         .all()
     )
     return _to_domain(tx, list(splits))
+
+
+async def list_transactions(  # noqa: PLR0913 — flat, keyword-only filter surface
+    session: AsyncSession,
+    *,
+    account_ids: set[UUID],
+    date_from: dt.date | None = None,
+    date_to: dt.date | None = None,
+    state: domain.TransactionState | None = None,
+    after: tuple[dt.date, UUID] | None = None,
+    limit: int = 50,
+) -> tuple[list[domain.Transaction], tuple[dt.date, UUID] | None]:
+    """A page of transactions over `account_ids`, + the next cursor or `None` (D12).
+
+    `account_ids` is the already-filtered accessible set (the route computes it via
+    `accounts.public`); an empty set short-circuits to `([], None)` with no query.
+    Ordered `(date DESC, id DESC)` — a total order (`id` UUID breaks `date` ties),
+    both fields carried by `domain.Transaction` (no ORM leak). `LIMIT limit + 1`
+    detects whether a next page exists; the keyset filter `(date, id) < after`
+    keeps pagination stable under concurrent inserts. Splits are loaded in ONE
+    grouped query (no N+1) and grouped in memory.
+    """
+    if not account_ids:
+        return [], None
+    stmt = select(TxModel).where(TxModel.account_id.in_(account_ids))
+    if date_from is not None:
+        stmt = stmt.where(TxModel.date >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(TxModel.date <= date_to)
+    if state is not None:
+        stmt = stmt.where(TxModel.state == state.value)
+    if after is not None:
+        stmt = stmt.where(tuple_(TxModel.date, TxModel.id) < after)
+    stmt = stmt.order_by(TxModel.date.desc(), TxModel.id.desc()).limit(limit + 1)
+    rows = list((await session.execute(stmt)).scalars().all())
+
+    page = rows[:limit]
+    # The cursor is the LAST row of THIS page (not `rows[limit]`, the first row of
+    # the next page): the keyset filter `(date, id) < after` is strict, so anchoring
+    # on the first next-page row would skip it. `len(rows) > limit` ⇒ a next page exists.
+    next_cursor = (page[-1].date, page[-1].id) if len(rows) > limit else None
+
+    # Load every page split in ONE query, then group in memory (no N+1).
+    page_ids = [tx.id for tx in page]
+    splits_by_tx: dict[UUID, list[SplitModel]] = {}
+    if page_ids:
+        split_rows = (
+            (
+                await session.execute(
+                    select(SplitModel)
+                    .where(SplitModel.transaction_id.in_(page_ids))
+                    .order_by(SplitModel.transaction_id, SplitModel.id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for split in split_rows:
+            splits_by_tx.setdefault(split.transaction_id, []).append(split)
+
+    # `.get(tx.id, [])`: a listed `draft` may have zero split → no KeyError (→ 500).
+    items = [_to_domain(tx, splits_by_tx.get(tx.id, [])) for tx in page]
+    return items, next_cursor

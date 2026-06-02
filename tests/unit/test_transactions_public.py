@@ -25,6 +25,7 @@ from backend.modules.transactions.public import (
     add_split,
     create_draft,
     get_transaction,
+    list_transactions,
     remove_split,
     transition_to_confirmed,
     transition_to_planned,
@@ -49,6 +50,7 @@ _EXPECTED = {
     "add_split",
     "create_draft",
     "get_transaction",
+    "list_transactions",
     "remove_split",
     "transition_to_confirmed",
     "transition_to_planned",
@@ -70,6 +72,7 @@ def test_service_functions_are_identical_re_exports() -> None:
     assert update_editable_fields is _lifecycle.update_editable_fields
     assert void is _lifecycle.void
     assert get_transaction is _queries.get_transaction
+    assert list_transactions is _queries.list_transactions
 
 
 def test_errors_and_state_are_identical_re_exports() -> None:

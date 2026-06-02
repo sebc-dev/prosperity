@@ -23,11 +23,14 @@ second-hops in the `2-transactions` `ignore_imports` block.
 
 from __future__ import annotations
 
+import base64
+import binascii
+import datetime as dt
 import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,11 +44,13 @@ from backend.modules.transactions.public import (
     ImmutableFieldViolation,
     InvalidStateTransitionError,
     TransactionError,
+    TransactionState,
     UnbalancedTransactionError,
     UncategorizedExpenseError,
     add_split,
     create_draft,
     get_transaction,
+    list_transactions,
     transition_to_confirmed,
     transition_to_planned,
     update_editable_fields,
@@ -53,6 +58,7 @@ from backend.modules.transactions.public import (
 )
 from backend.modules.transactions.schemas import (
     TransactionCreate,
+    TransactionListResponse,
     TransactionPatch,
     TransactionResponse,
     VoidRequest,
@@ -78,6 +84,9 @@ _NOT_FOUND_DETAIL = "Transaction not found."
 # Generic on purpose — it never echoes the offending id (C-SEC-1).
 _INACCESSIBLE_SPLIT_DETAIL = "A split references an inaccessible account."
 _BAD_DEBT_OVERRIDE_DETAIL = "Invalid debt generation override."
+_BAD_CURSOR_DETAIL = "Malformed pagination cursor."
+_DEFAULT_LIMIT = 50
+_MAX_LIMIT = 100
 
 
 @account_tx_router.post(
@@ -299,3 +308,78 @@ async def patch_transaction(
     except (TransactionError, IncompatibleCurrencyError) as exc:
         raise _map_domain_exc(exc) from exc
     return TransactionResponse.from_domain(tx)
+
+
+# --- List route + cursor pagination (P07.5.4) -------------------------------
+#
+# Opaque keyset cursor over `(date, id)` (D12): a total order (the UUID breaks
+# `date` ties), encoded base64 so no internal structure leaks. Every decode
+# failure normalises to `ValueError` → 422 (never a 500).
+
+_CURSOR_SEP = "|"
+
+
+def _encode_cursor(date: dt.date, tx_id: UUID) -> str:
+    raw = f"{date.isoformat()}{_CURSOR_SEP}{tx_id}"
+    return base64.urlsafe_b64encode(raw.encode()).decode()
+
+
+def _decode_cursor(raw: str) -> tuple[dt.date, UUID]:
+    """Decode an opaque cursor, or raise `ValueError` if malformed.
+
+    Every decode failure is normalised to `ValueError` (base64 → `binascii.Error`,
+    non-UTF8 bytes → `UnicodeDecodeError`, missing separator / bad
+    `date.fromisoformat` / bad `UUID` → `ValueError`) so the boundary maps a
+    single `ValueError` to 422 — never a 500.
+    """
+    try:
+        decoded = base64.urlsafe_b64decode(raw.encode()).decode()
+        raw_date, raw_id = decoded.split(_CURSOR_SEP, 1)
+        return dt.date.fromisoformat(raw_date), UUID(raw_id)
+    except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
+        raise ValueError("malformed cursor") from exc
+
+
+@transactions_router.get("", response_model=TransactionListResponse)
+async def list_transactions_route(  # noqa: PLR0913 — flat query params
+    user: CurrentUser,
+    session: SessionDep,
+    account_id: UUID | None = None,
+    date_from: Annotated[dt.date | None, Query(alias="from")] = None,
+    date_to: Annotated[dt.date | None, Query(alias="to")] = None,
+    state: TransactionState | None = None,
+    cursor: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=_MAX_LIMIT)] = _DEFAULT_LIMIT,
+) -> TransactionListResponse:
+    """List the transactions of the caller's accessible accounts, paginated (D4/D12).
+
+    Watertight by membership: only accounts the caller can reach are scanned
+    (`accessible_account_ids`), so the admin is not exempt and a new user gets an
+    empty page. An explicit `?account_id=X` the caller cannot reach is a **404**
+    (targeted resource, non-disclosure) — not a silent empty list. Filters
+    `from`/`to`/`state` narrow the page; a malformed `cursor` is a 422.
+    """
+    reachable = await accessible_account_ids(session, user_id=user.id)
+    if account_id is not None:
+        if account_id not in reachable:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND_DETAIL)
+        reachable = {account_id}
+    try:
+        after = _decode_cursor(cursor) if cursor else None
+    except ValueError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_BAD_CURSOR_DETAIL
+        ) from exc
+    txs, next_cursor = await list_transactions(
+        session,
+        account_ids=reachable,
+        date_from=date_from,
+        date_to=date_to,
+        state=state,
+        after=after,
+        limit=limit,
+    )
+    return TransactionListResponse(
+        items=[TransactionResponse.from_domain(t) for t in txs],
+        next_cursor=_encode_cursor(*next_cursor) if next_cursor else None,
+    )

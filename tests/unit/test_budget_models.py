@@ -8,12 +8,18 @@ from typing import cast
 from sqlalchemy import (
     CheckConstraint,
     ForeignKeyConstraint,
+    SmallInteger,
     String,
     Table,
     UniqueConstraint,
 )
 
-from backend.modules.budget.models import Budget, BudgetContributor, Category
+from backend.modules.budget.models import (
+    Budget,
+    BudgetContributor,
+    BudgetThresholdAlert,
+    Category,
+)
 
 
 def test_tablename_is_categories() -> None:
@@ -176,3 +182,59 @@ def test_carry_over_default_false() -> None:
     server_default = cast(Table, Budget.__table__).c.carry_over_remainder.server_default
     assert server_default is not None
     assert server_default.arg.text == "false"  # type: ignore[union-attr]
+
+
+# ---------------------------------------------------------------------------
+# BudgetThresholdAlert (S08.3, P08.3.1) — table d'idempotence des alertes
+# ---------------------------------------------------------------------------
+
+
+def test_threshold_alert_columns_present() -> None:
+    assert set(cast(Table, BudgetThresholdAlert.__table__).c.keys()) == {
+        "id",
+        "budget_id",
+        "period_start",
+        "threshold_pct",
+    }
+
+
+def test_threshold_pct_is_small_integer() -> None:
+    col_type = cast(Table, BudgetThresholdAlert.__table__).c["threshold_pct"].type
+    assert isinstance(col_type, SmallInteger)
+
+
+def test_threshold_alert_no_check_constraint() -> None:
+    # threshold_pct ∈ {80,100,120} verrouillé au domaine (`crossed_thresholds`),
+    # PAS par un CHECK — anti-regression si quelqu'un « durcit » en SQL.
+    table = cast(Table, BudgetThresholdAlert.__table__)
+    assert not [c for c in table.constraints if isinstance(c, CheckConstraint)]
+
+
+def test_threshold_alert_unique_named_dedup() -> None:
+    # The unique is the target of `ON CONFLICT ON CONSTRAINT` — its literal name
+    # is load-bearing (the detector references it). Pin name + column order.
+    table = cast(Table, BudgetThresholdAlert.__table__)
+    uc = next(
+        c
+        for c in table.constraints
+        if isinstance(c, UniqueConstraint) and c.name == "uq_budget_threshold_alerts_dedup"
+    )
+    assert list(uc.columns.keys()) == ["budget_id", "period_start", "threshold_pct"]
+
+
+def test_threshold_alert_budget_fk_cascade() -> None:
+    table = cast(Table, BudgetThresholdAlert.__table__)
+    fks = [c for c in table.constraints if isinstance(c, ForeignKeyConstraint)]
+    assert len(fks) == 1
+    fk = fks[0]
+    assert fk.name == "fk_budget_threshold_alerts_budget_id_budgets"
+    assert fk.elements[0].column.table.name == "budgets"
+    assert fk.ondelete == "CASCADE"
+
+
+def test_threshold_alert_budget_id_has_no_standalone_index() -> None:
+    # The composite unique already indexes `budget_id` as its leading column →
+    # serves the CASCADE lookup, so no standalone `[budget_id]` index is
+    # declared (gabarit `budget_contributors`).
+    table = cast(Table, BudgetThresholdAlert.__table__)
+    assert all(list(idx.columns.keys()) != ["budget_id"] for idx in table.indexes)

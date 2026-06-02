@@ -1,12 +1,19 @@
-"""Structural tests for `budget.models.Category` (S06.1, P06.1.1)."""
+"""Structural tests for `budget.models` (S06.1 `Category`, S08.1 `Budget` /
+`BudgetContributor`)."""
 
 from __future__ import annotations
 
 from typing import cast
 
-from sqlalchemy import CheckConstraint, ForeignKeyConstraint, String, Table
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKeyConstraint,
+    String,
+    Table,
+    UniqueConstraint,
+)
 
-from backend.modules.budget.models import Category
+from backend.modules.budget.models import Budget, BudgetContributor, Category
 
 
 def test_tablename_is_categories() -> None:
@@ -70,3 +77,102 @@ def test_active_index_is_partial() -> None:
     # migration's `postgresql_where` byte-for-byte (create_all/Alembic parity,
     # same trap as `uq_invitations_pending_email`).
     assert str(where) == "archived_at IS NULL"
+
+
+# ---------------------------------------------------------------------------
+# Budget / BudgetContributor (S08.1, P08.1.1)
+# ---------------------------------------------------------------------------
+#
+# Same doctrine as `test_accounts_models.py:67-74`: `__tablename__` and the FK
+# `ondelete` are NOT re-tested here — they live byte-for-byte in the level-1
+# snapshot (migration-authoritative) and fire in the integration behaviour
+# tests (RESTRICT/CASCADE). The unit tier only pins decisions invisible to the
+# snapshot or uncovered elsewhere: column set (incl. the *absence* of
+# `account_id`), absence of CHECK, the unique, the lack of a standalone
+# `budget_id` index, the partial nature of `ix_budgets_active`, and the
+# `carry_over_remainder` server_default (the snapshot ignores column defaults).
+
+
+def test_budget_columns_present() -> None:
+    table = cast(Table, Budget.__table__)
+    assert set(table.c.keys()) == {
+        "id",
+        "category_id",
+        "period_kind",
+        "period_start",
+        "amount_cents",
+        "currency",
+        "scope",
+        "created_by",
+        "created_at",
+        "archived_at",
+        "carry_over_remainder",
+    }
+    # No `account_id`: a budget binds to category + scope + contributors, not
+    # to an account (CONTEXT.md §Budget). Pins the structural decision §1 —
+    # invisible to the snapshot, which only lists columns that exist.
+    assert "account_id" not in table.c
+
+
+def test_budget_contributor_columns_present() -> None:
+    assert set(cast(Table, BudgetContributor.__table__).c.keys()) == {
+        "id",
+        "budget_id",
+        "user_id",
+    }
+
+
+def test_no_check_on_budgets_or_contributors() -> None:
+    # `period_kind`/`scope` are closed sets locked at the Pydantic boundary
+    # (S08.4), NOT in the column — anti-regression guard if someone "hardens"
+    # by adding a CHECK. Extended to both tables.
+    for model in (Budget, BudgetContributor):
+        table = cast(Table, model.__table__)
+        assert not [c for c in table.constraints if isinstance(c, CheckConstraint)]
+
+
+def test_unique_contributor_constraint() -> None:
+    table = cast(Table, BudgetContributor.__table__)
+    uc = next(
+        c
+        for c in table.constraints
+        if isinstance(c, UniqueConstraint) and c.name == "uq_budget_contributors_budget_id_user_id"
+    )
+    assert list(uc.columns.keys()) == ["budget_id", "user_id"]
+
+
+def test_contributor_budget_id_has_no_standalone_index() -> None:
+    # The composite unique already indexes `budget_id` as its leading column →
+    # serves the CASCADE lookup, so no standalone `[budget_id]` index is
+    # declared (would be redundant write cost). Pins the delta vs a naive
+    # split that would index both FKs. Jumeau
+    # `test_account_member_account_id_has_no_standalone_index`.
+    table = cast(Table, BudgetContributor.__table__)
+    assert all(list(idx.columns.keys()) != ["budget_id"] for idx in table.indexes)
+
+
+def test_budgets_active_index_is_partial() -> None:
+    active = next(
+        ix for ix in cast(Table, Budget.__table__).indexes if ix.name == "ix_budgets_active"
+    )
+    where = active.dialect_options["postgresql"]["where"]
+    # The *partial* nature (vs a full index) is invisible to a bare index-name
+    # list. Assert the exact predicate — it must match the migration's
+    # `postgresql_where` byte-for-byte (create_all/Alembic parity).
+    assert str(where) == "archived_at IS NULL"
+    # `ix_budgets_category_id` (full) and `ix_budgets_active` (partial) both
+    # cover `category_id` but play distinct roles — both must exist. Exact set
+    # (== not <=) doubles as the anti-surnumerary guard: the three explicit
+    # names are required and no extra index sneaks in. The literal names also
+    # pin the create_all/Alembic parity the snapshot checks.
+    names = {ix.name for ix in cast(Table, Budget.__table__).indexes}
+    assert names == {"ix_budgets_category_id", "ix_budgets_created_by", "ix_budgets_active"}
+
+
+def test_carry_over_default_false() -> None:
+    # The snapshot does NOT capture `column_default` (`_format_schema` extracts
+    # only type + nullability), so this is the only static guard on the
+    # server_default. Access via `server_default.arg.text` (the SQL literal).
+    server_default = cast(Table, Budget.__table__).c.carry_over_remainder.server_default
+    assert server_default is not None
+    assert server_default.arg.text == "false"  # type: ignore[union-attr]

@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import datetime as dt
 import enum
-from typing import ClassVar, Final, Literal
+from typing import Any, ClassVar, Final, Literal, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, model_validator
@@ -48,6 +48,15 @@ from backend.shared.money import Money
 # de dette (ADR 0011 / Q2). Source unique de vérité du futur CHECK SQL différé
 # en S07.4 (le `String` ORM de S07.2 n'a volontairement pas de contrainte).
 DebtGenerationOverride = Literal["default", "force_full_debt", "force_no_debt"]
+
+# Marqueur STRUCTUREL du rôle d'une jambe (ADR 0017, option 1). Set fermé à 2
+# valeurs, source unique de vérité : le CHECK SQL `ck_splits_leg_role`
+# (migration 0013), le default ORM context-sensitive (`models._default_leg_role`)
+# et le validator `before` ci-dessous miroitent EXACTEMENT ces deux valeurs.
+# `funding` = mouvement de compte (peut rester non catégorisé) ; `classification`
+# = jambe de dépense. En S08.5.1 aucune règle ne le lit encore
+# (`assert_expenses_categorized` inchangé) ; sa lecture arrive en S08.5.2.
+LegRole = Literal["funding", "classification"]
 
 
 class TransactionState(enum.StrEnum):
@@ -164,6 +173,15 @@ class Split(BaseModel):
     l'ORM) : le domaine raisonne en `Money` (zero-sum = `sum(splits) == 0`). Le
     découplage colonnes ↔ `Money` est la responsabilité du mapper S07.4.
     `category_id` NULL = transfert ou split en cours d'édition.
+
+    `leg_role` (ADR 0017, option 1) : marqueur STRUCTUREL du rôle de la jambe.
+    `funding` = mouvement de compte (peut être non catégorisé) ; `classification`
+    = jambe de dépense (catégorie attendue une fois la règle réécrite, S08.5.2).
+    En S08.5.1 le champ est exposé mais AUCUNE règle ne le lit
+    (`assert_expenses_categorized` inchangé) : il dérive de `category_id` quand le
+    constructeur ne le reçoit pas (même règle que le back-fill `0013` et le
+    default ORM `_default_leg_role`), et les mappers S07.4 passent la valeur
+    autoritative du SGBD.
     """
 
     model_config = ConfigDict(frozen=True, strict=True)
@@ -171,6 +189,30 @@ class Split(BaseModel):
     account_id: UUID
     category_id: UUID | None = None
     amount: Money
+    # Default présent UNIQUEMENT pour le type-checker (les sites de construction
+    # n'ont pas à passer `leg_role`) ; le validator `before` ci-dessous impose la
+    # valeur réelle, donc ce littéral n'est jamais utilisé à l'exécution.
+    leg_role: LegRole = "classification"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_leg_role(cls, data: Any) -> Any:
+        """Dérive `leg_role` de `category_id` quand l'appelant l'omet.
+
+        Règle identique au back-fill `0013` et au default ORM : pas de
+        `category_id` ⇒ `funding`, sinon `classification`. Si l'appelant fournit
+        `leg_role` (cas des mappers : valeur autoritative du SGBD), on le
+        respecte. N'agit que sur un input `dict` (construction par kwargs) —
+        `model_construct`/`model_copy` (réservés au mapper, D11) ne passent pas
+        par ce validator, et c'est voulu.
+        """
+        if not isinstance(data, dict):
+            return data
+        values = cast(dict[str, Any], data)
+        if "leg_role" not in values:
+            derived = "funding" if values.get("category_id") is None else "classification"
+            values = {**values, "leg_role": derived}
+        return values
 
 
 class Transaction(BaseModel):

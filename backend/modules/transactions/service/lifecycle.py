@@ -107,6 +107,9 @@ def _to_domain(tx: TxModel, splits: Sequence[SplitModel]) -> domain.Transaction:
                 account_id=s.account_id,
                 category_id=s.category_id,
                 amount=Money(s.amount_cents, s.currency),  # type: ignore[arg-type]
+                # Mapped[str] → LegRole (gabarit debt_generation_override) ;
+                # valeur autoritative du SGBD, le mapper ne re-dérive pas.
+                leg_role=s.leg_role,  # type: ignore[arg-type]
             )
             for s in splits
         ),

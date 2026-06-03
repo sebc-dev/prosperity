@@ -661,3 +661,85 @@ class TestTransferGuard:
         assert not is_transfer(tx)
         with pytest.raises(UncategorizedExpenseError):
             assert_expenses_categorized(tx)
+
+
+# ---------------------------------------------------------------------------
+# S08.5.1 — leg_role (ADR 0017) : dérivation domaine ⇄ back-fill ⇄ default ORM
+# ---------------------------------------------------------------------------
+
+
+class TestSplitLegRole:
+    """`Split.leg_role` (ADR 0017, option 1) : marqueur structurel dérivé de
+    `category_id` quand le constructeur ne le reçoit pas (même règle que le
+    back-fill 0013 et le default ORM), explicite quand un mapper le fournit.
+    """
+
+    def test_derived_funding_when_no_category(self) -> None:
+        # category_id absent ⇒ funding (jambe « mouvement de compte »).
+        split = Split(account_id=uuid4(), amount=Money(-100, "EUR"))
+        assert split.leg_role == "funding"
+
+    def test_derived_classification_when_category(self) -> None:
+        # category_id présent ⇒ classification (jambe « dépense »).
+        split = Split(account_id=uuid4(), category_id=uuid4(), amount=Money(-100, "EUR"))
+        assert split.leg_role == "classification"
+
+    def test_explicit_value_is_preserved(self) -> None:
+        # Le mapper passe la valeur autoritative du SGBD : elle prime sur la
+        # dérivation (ici un funding sans catégorie marqué classification).
+        split = Split(
+            account_id=uuid4(),
+            category_id=None,
+            amount=Money(-100, "EUR"),
+            leg_role="classification",
+        )
+        assert split.leg_role == "classification"
+
+    def test_explicit_funding_with_category_is_preserved(self) -> None:
+        # Symétrique : valeur explicite respectée même contre la règle dérivée.
+        split = Split(
+            account_id=uuid4(),
+            category_id=uuid4(),
+            amount=Money(-100, "EUR"),
+            leg_role="funding",
+        )
+        assert split.leg_role == "funding"
+
+    def test_rejects_out_of_literal(self) -> None:
+        # strict=True + Literal : une valeur hors set est refusée à la frontière.
+        with pytest.raises(ValidationError):
+            Split(
+                account_id=uuid4(),
+                amount=Money(-100, "EUR"),
+                leg_role="bogus",  # type: ignore[arg-type]
+            )
+
+    def test_explicit_none_is_rejected(self) -> None:
+        # `leg_role=None` explicite (clé présente) : le validator `before` le
+        # respecte donc NE dérive PAS, et le Literal strict rejette `None` à la
+        # frontière (review #136 — clarifie le cas « clé présente mais invalide »).
+        with pytest.raises(ValidationError):
+            Split(
+                account_id=uuid4(),
+                amount=Money(-100, "EUR"),
+                leg_role=None,  # type: ignore[arg-type]
+            )
+
+    def test_model_copy_bypasses_derivation(self) -> None:
+        # `model_copy` court-circuite le validator `before` (chemin réservé au
+        # mapper, D11) : la valeur portée est conservée telle quelle. On retire
+        # la catégorie d'une jambe `classification` → leg_role NE redevient PAS
+        # `funding` (pas de re-dérivation), contrat pinné par la review #136.
+        split = Split(account_id=uuid4(), category_id=uuid4(), amount=Money(-100, "EUR"))
+        assert split.leg_role == "classification"
+        copied = split.model_copy(update={"category_id": None})
+        assert copied.category_id is None
+        assert copied.leg_role == "classification"
+
+    @given(category=st.none() | st.uuids())
+    def test_property_derivation_matches_backfill_rule(self, category: UUID | None) -> None:
+        # ∀ category_id : la dérivation domaine == la règle de back-fill 0013 ==
+        # le default ORM `_default_leg_role` (équivalence pinnée).
+        split = Split(account_id=uuid4(), category_id=category, amount=Money(1, "EUR"))
+        expected = "funding" if category is None else "classification"
+        assert split.leg_role == expected

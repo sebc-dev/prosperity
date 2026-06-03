@@ -265,6 +265,27 @@ def test_split_index_names() -> None:
     }
 
 
-def test_split_has_no_check_constraint() -> None:
+def test_split_leg_role_has_closed_set_check() -> None:
+    # S08.5.1 (ADR 0017): a defense-in-depth CHECK on the closed 2-value set
+    # `leg_role`, the fail-closed backstop against any out-of-enum write (raw
+    # SQL, `model_copy`). Mirrors the domain `LegRole` (gabarit
+    # `debt_generation_override`). The constraint `name="leg_role"` is prefixed
+    # to `ck_splits_leg_role` by the NAMING_CONVENTION.
     table = cast(Table, Split.__table__)
-    assert not any(isinstance(c, CheckConstraint) for c in table.constraints)
+    checks = [c for c in table.constraints if isinstance(c, CheckConstraint)]
+    leg_role_checks = [c for c in checks if "leg_role" in str(c.sqltext)]
+    assert len(leg_role_checks) == 1
+    body = str(leg_role_checks[0].sqltext)
+    for value in ("funding", "classification"):
+        assert value in body
+
+
+def test_split_leg_role_default_is_context_callable() -> None:
+    # The ORM Python-side default derives `leg_role` from `category_id` at INSERT
+    # (context-sensitive callable), NOT a server_default — keeps create_all /
+    # Alembic snapshot parity.
+    col = cast(Table, Split.__table__).c["leg_role"]
+    assert col.nullable is False
+    assert col.default is not None
+    assert callable(col.default.arg)  # type: ignore[union-attr]
+    assert col.server_default is None

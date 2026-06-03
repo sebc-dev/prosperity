@@ -23,7 +23,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from backend.modules.accounts.domain import AccountType
@@ -173,6 +173,76 @@ async def test_add_split_keeps_null_category(
     )
 
     assert after.splits[0].category_id is None
+
+
+async def test_to_domain_carries_leg_role_from_db(
+    household_singleton: AsyncSession,
+    bound_transaction_factories: BoundFactories,
+    bound_category_factory: Callable[..., Awaitable[object]],
+) -> None:
+    # S08.5.1: `_to_domain` must reflect the AUTHORITATIVE column, not re-derive
+    # it — a categoryless leg maps to `funding`, a categorised one to
+    # `classification` (proves the mapper reads `s.leg_role`).
+    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    tx = await create_draft(household_singleton, account_id=account_id, by_user_id=user_id)
+    category = await bound_category_factory()
+    cat = category.id  # type: ignore[attr-defined]
+
+    await add_split(
+        household_singleton, tx_id=tx.id, account_id=account_id, amount_cents=-1500, currency="EUR"
+    )
+    await add_split(
+        household_singleton,
+        tx_id=tx.id,
+        account_id=account_id,
+        amount_cents=1500,
+        currency="EUR",
+        category_id=cat,
+    )
+
+    tx_model, splits = await _load_aggregate(household_singleton, tx.id)
+    aggregate = _to_domain(tx_model, splits)
+
+    by_role = {s.leg_role for s in aggregate.splits}
+    assert by_role == {"funding", "classification"}
+    funding = next(s for s in aggregate.splits if s.category_id is None)
+    classified = next(s for s in aggregate.splits if s.category_id is not None)
+    assert funding.leg_role == "funding"
+    assert classified.leg_role == "classification"
+
+
+async def test_to_domain_reads_divergent_leg_role_not_re_derived(
+    household_singleton: AsyncSession,
+    bound_transaction_factories: BoundFactories,
+) -> None:
+    # Review #136: DISCRIMINATING proof that `_to_domain` READS the column and
+    # does not re-derive it. We persist a DIVERGENT row — `leg_role` is
+    # 'classification' while `category_id` IS NULL — which is exactly what the
+    # domain validator would re-derive as 'funding'. Because the mapper passes
+    # `leg_role=s.leg_role`, the aggregate keeps 'classification'; a fortuitous
+    # re-derivation would instead yield 'funding'. This is the case S08.5.2 must
+    # be able to flag (a classification leg with no category = to be refused).
+    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    tx = await create_draft(household_singleton, account_id=account_id, by_user_id=user_id)
+
+    # Raw INSERT bypasses the ORM context default (which would derive 'funding').
+    await household_singleton.execute(
+        text(
+            "INSERT INTO splits "
+            "(id, transaction_id, account_id, amount_cents, currency, leg_role) "
+            "VALUES (:id, :tx, :acc, 0, 'EUR', 'classification')"
+        ),
+        {"id": uuid.uuid4(), "tx": tx.id, "acc": account_id},
+    )
+    await household_singleton.flush()
+
+    tx_model, splits = await _load_aggregate(household_singleton, tx.id)
+    aggregate = _to_domain(tx_model, splits)
+
+    assert len(aggregate.splits) == 1
+    assert aggregate.splits[0].category_id is None
+    # Authoritative DB value preserved — NOT the 'funding' the validator derives.
+    assert aggregate.splits[0].leg_role == "classification"
 
 
 async def test_remove_split_removes_the_right_one(

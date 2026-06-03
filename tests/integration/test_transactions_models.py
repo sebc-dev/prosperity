@@ -280,6 +280,128 @@ async def test_tags_array_round_trips(
     assert reloaded.tags == ["courses", "monoprix"]
 
 
+async def test_split_leg_role_defaults_to_funding_when_category_null(
+    auth_schema: AsyncSession,
+    bound_user_factory: Callable[..., Awaitable[User]],
+) -> None:
+    # S08.5.1: the context-sensitive ORM default derives `leg_role` from
+    # `category_id` at INSERT — a categoryless split is a funding leg.
+    user = await bound_user_factory()
+    account_id = await _make_account(auth_schema, user.id)
+    tx = Transaction(
+        account_id=account_id, date=dt.date(2026, 1, 1), state="draft", created_by=user.id
+    )
+    auth_schema.add(tx)
+    await auth_schema.flush()
+    split = Split(transaction_id=tx.id, account_id=account_id, amount_cents=-1000, currency="EUR")
+    auth_schema.add(split)
+    await auth_schema.flush()
+
+    # Read via raw SQL (gabarit `savings_goal_id`): the context-sensitive Python
+    # default leaves the in-memory attribute expired, and an ORM refresh would
+    # attempt sync IO inside the async session.
+    stored = (
+        await auth_schema.execute(
+            text("SELECT leg_role FROM splits WHERE id = :id"), {"id": split.id}
+        )
+    ).scalar_one()
+    assert stored == "funding"
+
+
+async def test_split_leg_role_defaults_to_classification_when_category_set(
+    auth_schema: AsyncSession,
+    bound_user_factory: Callable[..., Awaitable[User]],
+) -> None:
+    # A categorised split derives `classification` (same rule as the back-fill).
+    user = await bound_user_factory()
+    account_id = await _make_account(auth_schema, user.id)
+    category_id = await _make_category(auth_schema)
+    tx = Transaction(
+        account_id=account_id, date=dt.date(2026, 1, 1), state="draft", created_by=user.id
+    )
+    auth_schema.add(tx)
+    await auth_schema.flush()
+    split = Split(
+        transaction_id=tx.id,
+        account_id=account_id,
+        category_id=category_id,
+        amount_cents=-1000,
+        currency="EUR",
+    )
+    auth_schema.add(split)
+    await auth_schema.flush()
+
+    stored = (
+        await auth_schema.execute(
+            text("SELECT leg_role FROM splits WHERE id = :id"), {"id": split.id}
+        )
+    ).scalar_one()
+    assert stored == "classification"
+
+
+async def test_split_leg_role_explicit_value_overrides_default(
+    auth_schema: AsyncSession,
+    bound_user_factory: Callable[..., Awaitable[User]],
+) -> None:
+    # An explicit value wins over the context default (mapper-authoritative path):
+    # a categoryless split persisted as `classification` keeps that value.
+    user = await bound_user_factory()
+    account_id = await _make_account(auth_schema, user.id)
+    tx = Transaction(
+        account_id=account_id, date=dt.date(2026, 1, 1), state="draft", created_by=user.id
+    )
+    auth_schema.add(tx)
+    await auth_schema.flush()
+    split = Split(
+        transaction_id=tx.id,
+        account_id=account_id,
+        category_id=None,
+        amount_cents=-1000,
+        currency="EUR",
+        leg_role="classification",
+    )
+    auth_schema.add(split)
+    await auth_schema.flush()
+
+    stored = (
+        await auth_schema.execute(
+            text("SELECT leg_role FROM splits WHERE id = :id"), {"id": split.id}
+        )
+    ).scalar_one()
+    assert stored == "classification"
+
+
+async def test_split_leg_role_check_rejects_unknown_value(
+    auth_schema: AsyncSession,
+    bound_user_factory: Callable[..., Awaitable[User]],
+) -> None:
+    # The defense-in-depth CHECK `ck_splits_leg_role` rejects any out-of-set
+    # value reaching the DB via raw SQL (bypassing the ORM default / domain).
+    user = await bound_user_factory()
+    account_id = await _make_account(auth_schema, user.id)
+    tx = Transaction(
+        account_id=account_id, date=dt.date(2026, 1, 1), state="draft", created_by=user.id
+    )
+    auth_schema.add(tx)
+    await auth_schema.flush()
+    with pytest.raises(IntegrityError):
+        await auth_schema.execute(
+            text(
+                "INSERT INTO splits "
+                "(id, transaction_id, account_id, amount_cents, currency, leg_role) "
+                "VALUES (:id, :tx, :acc, :amt, :ccy, 'bogus')"
+            ),
+            {
+                "id": uuid.uuid4(),
+                "tx": tx.id,
+                "acc": account_id,
+                "amt": 0,
+                "ccy": "EUR",
+            },
+        )
+        await auth_schema.flush()
+
+
 async def test_category_id_nullable_on_both(
     auth_schema: AsyncSession,
     bound_user_factory: Callable[..., Awaitable[User]],

@@ -115,7 +115,9 @@ async def test_confirm_uncategorised_expense_422(
     def _seed(_s: Session) -> tuple[UUID, UUID]:
         owner = user_factory(email="c2@example.com")
         acc = account_factory(owner_id=owner.id, name="Perso")
-        # Same-account expense (not a transfer), no category on the splits.
+        # Default factory pair (2 NULL-category legs → 2 funding) on one account.
+        # Under the rewritten rule this trips the ≤1-funding invariant (D8); P2
+        # rewrites this test to target a classification-NULL leg instead.
         tx = tx_factory(account_id=acc.id, created_by=owner.id, state="planned")
         return owner.id, tx.id
 
@@ -123,7 +125,7 @@ async def test_confirm_uncategorised_expense_422(
 
     resp = await async_client.post(f"/transactions/{tx_id}/confirm", headers=_bearer(owner_id))
     assert resp.status_code == 422, resp.text
-    assert resp.json()["detail"] == "Every expense split must have a category."
+    assert resp.json()["detail"] == "An expense may have at most one funding leg."
 
 
 async def test_confirm_from_draft_is_409(

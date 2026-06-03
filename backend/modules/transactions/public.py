@@ -17,6 +17,7 @@ from __future__ import annotations
 from backend.modules.transactions.domain import (
     ImmutableFieldViolation,
     InvalidStateTransitionError,
+    MultipleFundingLegsError,
     TransactionError,
     TransactionState,
     UnbalancedTransactionError,
@@ -42,6 +43,7 @@ from backend.modules.transactions.service.queries import get_transaction, list_t
 __all__ = [
     "ImmutableFieldViolation",
     "InvalidStateTransitionError",
+    "MultipleFundingLegsError",
     "SplitNotFoundError",
     "TransactionConfirmedEvent",
     "TransactionError",

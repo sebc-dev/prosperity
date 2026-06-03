@@ -114,7 +114,7 @@ Nœud d'une hiérarchie arborescente illimitée en profondeur. Porte `name`, `co
 _Avoid_: tag, label (les tags libres existent en plus, distincts)
 
 **`splits.category_id NULL`** :
-Autorisé dans deux cas légitimes : (1) splits de transfert inter-comptes (pas de dépense), (2) splits saisis "à la volée" en état `draft`. **Pour passer une transaction en `confirmed`, tout split dépense doit avoir une `category_id`** (validé au service). Pas de catégorie "Sans catégorie" magique — l'utilisateur doit choisir explicitement.
+Autorisé dans deux cas légitimes : (1) splits de transfert inter-comptes (pas de dépense), (2) splits saisis "à la volée" en état `draft`. **Pour passer une transaction en `confirmed`, tout split *de classification* (`leg_role == "classification"`) doit avoir une `category_id`** (validé au service, ADR 0017) ; la jambe `funding` (mouvement de compte) peut rester NULL et reste exclue de la consommation budget. Pas de catégorie "Sans catégorie" magique — l'utilisateur doit choisir explicitement.
 
 **Budget** :
 Montant alloué à une catégorie sur une période (mensuel par défaut), avec scope (perso/commun) et liste de contributeurs. Agrège automatiquement les dépenses des sous-catégories.

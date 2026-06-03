@@ -82,6 +82,10 @@ async def test_confirm_planned_categorised_200(
     bound_transaction_factories: TxFactoryBundle,
     bound_category_factory: CategoryFactory,
 ) -> None:
+    # Canonical form B (ADR 0017): a same-account expense with a `funding` leg
+    # (category NULL, -1000) + a `classification` leg (category, +1000). The
+    # funding leg is no longer refused → the consuming form confirms via the
+    # real flow. This is the core deliverable of S08.5.2.
     user_factory, account_factory, tx_factory, split_factory = await bound_transaction_factories()
     category = await bound_category_factory(name="Courses")
     cat_id = category.id  # type: ignore[attr-defined]
@@ -90,12 +94,10 @@ async def test_confirm_planned_categorised_200(
         owner = user_factory(email="c1@example.com")
         acc = account_factory(owner_id=owner.id, name="Perso")
         tx = tx_factory(account_id=acc.id, created_by=owner.id, state="planned", splits=False)
-        split_factory(
-            transaction_id=tx.id, account_id=acc.id, amount_cents=-1000, category_id=cat_id
-        )
+        split_factory(transaction_id=tx.id, account_id=acc.id, amount_cents=-1000)  # funding (NULL)
         split_factory(
             transaction_id=tx.id, account_id=acc.id, amount_cents=1000, category_id=cat_id
-        )
+        )  # classification
         return owner.id, tx.id
 
     owner_id, tx_id = await household_singleton.run_sync(_seed)
@@ -110,15 +112,47 @@ async def test_confirm_uncategorised_expense_422(
     household_singleton: AsyncSession,
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
-    user_factory, account_factory, tx_factory, _ = await bound_transaction_factories()
+    # ADR 0017: a `classification` leg with a NULL category is still refused. The
+    # funding leg (NULL, derived) is exempt; the classification leg's role is
+    # FORCED so the divergent/NULL value is what's rejected (not re-derived).
+    user_factory, account_factory, tx_factory, split_factory = await bound_transaction_factories()
 
     def _seed(_s: Session) -> tuple[UUID, UUID]:
         owner = user_factory(email="c2@example.com")
         acc = account_factory(owner_id=owner.id, name="Perso")
-        # Default factory pair (2 NULL-category legs → 2 funding) on one account.
-        # Under the rewritten rule this trips the ≤1-funding invariant (D8); P2
-        # rewrites this test to target a classification-NULL leg instead.
-        tx = tx_factory(account_id=acc.id, created_by=owner.id, state="planned")
+        tx = tx_factory(account_id=acc.id, created_by=owner.id, state="planned", splits=False)
+        split_factory(transaction_id=tx.id, account_id=acc.id, amount_cents=-1000)  # funding (NULL)
+        split_factory(
+            transaction_id=tx.id,
+            account_id=acc.id,
+            amount_cents=1000,
+            leg_role="classification",  # forced classification leg with NULL category
+        )
+        return owner.id, tx.id
+
+    owner_id, tx_id = await household_singleton.run_sync(_seed)
+
+    resp = await async_client.post(f"/transactions/{tx_id}/confirm", headers=_bearer(owner_id))
+    assert resp.status_code == 422, resp.text
+    assert resp.json()["detail"] == "Every expense split must have a category."
+
+
+async def test_confirm_two_funding_legs_422(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # D2/D3 (ADR 0017): two NULL-category legs on one account → two `funding`
+    # legs → the ≤1-funding invariant trips (categorisation passes, 0
+    # classification). Pins the HTTP 422 mapping of the invariant via the real flow.
+    user_factory, account_factory, tx_factory, split_factory = await bound_transaction_factories()
+
+    def _seed(_s: Session) -> tuple[UUID, UUID]:
+        owner = user_factory(email="c5@example.com")
+        acc = account_factory(owner_id=owner.id, name="Perso")
+        tx = tx_factory(account_id=acc.id, created_by=owner.id, state="planned", splits=False)
+        split_factory(transaction_id=tx.id, account_id=acc.id, amount_cents=-1000)
+        split_factory(transaction_id=tx.id, account_id=acc.id, amount_cents=1000)
         return owner.id, tx.id
 
     owner_id, tx_id = await household_singleton.run_sync(_seed)

@@ -45,6 +45,7 @@ from backend.modules.transactions.domain import (
 from backend.shared.money import IncompatibleCurrencyError, Money
 from tests.strategies import (
     balanced_splits_strategy,
+    canonical_expense_splits_strategy,
     transaction_confirmed_strategy,
 )
 
@@ -766,6 +767,17 @@ class TestFundingLegInvariant:
             ),
         )
         assert is_transfer(tx)
+        assert_at_most_one_funding_leg(tx)  # no raise
+
+    @given(splits=canonical_expense_splits_strategy())
+    def test_property_canonical_form_b_is_confirmable(self, splits: tuple[Split, ...]) -> None:
+        # ∀ forme canonique B générée : non-transfert, AUCUNE jambe
+        # `classification` NULL, ≤ 1 jambe `funding` → passe les DEUX gates de
+        # confirmation. Pinne le cœur du livrable (la forme consommatrice est
+        # confirmable) via le générateur réutilisé en aval.
+        tx = _tx(state=TransactionState.CONFIRMED, splits=splits)
+        assert not is_transfer(tx)
+        assert_expenses_categorized(tx)  # no raise
         assert_at_most_one_funding_leg(tx)  # no raise
 
     @given(n_funding=st.integers(min_value=0, max_value=4))

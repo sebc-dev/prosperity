@@ -140,6 +140,9 @@ async def test_patch_frozen_field_422(
         {"payee": "Carrefour"},
         {"state": "void"},
         {"splits": []},
+        # 🔒 Anti-circumvention (D5): `leg_role` is not a PATCH field — the
+        # post-creation door to desync `leg_role`/`category_id` stays shut.
+        {"leg_role": "funding"},
     ):
         resp = await async_client.patch(
             f"/transactions/{tx_id}", json=frozen, headers=_bearer(owner_id)

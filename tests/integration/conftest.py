@@ -208,13 +208,23 @@ async def bound_transaction_factories(
     boundary, otherwise objects attach to divergent sessions and the flush
     breaks. Depends on `household_singleton` (the account needs the singleton
     row to exist for its `household_id` FK).
+
+    `CategoryFactory` is bound on the SAME session too (though not returned):
+    `TransactionFactory`'s default canonical-form-B pair auto-creates a
+    `Category` for its classification leg, which must persist via this session.
     """
 
     async def _bind() -> tuple[
         type[UserFactory], type[AccountFactory], type[TransactionFactory], type[SplitFactory]
     ]:
         def _do(sync_session: Session) -> None:
-            for factory in (UserFactory, AccountFactory, TransactionFactory, SplitFactory):
+            for factory in (
+                UserFactory,
+                AccountFactory,
+                CategoryFactory,
+                TransactionFactory,
+                SplitFactory,
+            ):
                 factory._meta.sqlalchemy_session = sync_session  # type: ignore[attr-defined]
 
         await household_singleton.run_sync(_do)

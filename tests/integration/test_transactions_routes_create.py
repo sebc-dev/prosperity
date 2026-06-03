@@ -18,6 +18,7 @@ from collections.abc import Awaitable, Callable
 from uuid import UUID, uuid4
 
 from httpx import AsyncClient
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -90,6 +91,79 @@ async def test_create_nominal(
     assert body["debt_generation_override"] == "force_full_debt"
     assert len(body["splits"]) == 2
     assert {s["amount_cents"] for s in body["splits"]} == {-1000, 1000}
+
+
+async def test_create_rejects_leg_role_in_split_payload(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # 🔒 Anti-circumvention (D5): `leg_role` is NOT a field of `SplitInput`
+    # (`extra="forbid"`). A client trying to mark a real expense leg `funding`
+    # (to escape mandatory categorisation) gets a 422 — not a silent drop.
+    user_factory, account_factory, _, _ = await bound_transaction_factories()
+
+    def _seed(_s: Session) -> tuple[UUID, UUID]:
+        owner = user_factory(email="legrole1@example.com")
+        acc = account_factory(owner_id=owner.id, name="Perso")
+        return owner.id, acc.id
+
+    owner_id, acc_id = await household_singleton.run_sync(_seed)
+
+    split = {**_split(acc_id, -1000), "leg_role": "funding"}
+    payload = {"splits": [split, _split(acc_id, 1000)]}
+    resp = await async_client.post(
+        f"/accounts/{acc_id}/transactions", json=payload, headers=_bearer(owner_id)
+    )
+    assert resp.status_code == 422, resp.text
+
+
+async def test_created_split_leg_role_is_server_derived(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+    bound_category_factory: CategoryFactory,
+) -> None:
+    # D5: the server derives `leg_role` from `category_id` — never from the
+    # payload (the field does not exist there). A categorised leg becomes
+    # `classification`; a NULL one becomes `funding`. Read straight from the DB.
+    user_factory, account_factory, _, _ = await bound_transaction_factories()
+    category = await bound_category_factory(name="Courses")
+    cat_id = category.id  # type: ignore[attr-defined]
+
+    def _seed(_s: Session) -> tuple[UUID, UUID]:
+        owner = user_factory(email="legrole2@example.com")
+        acc = account_factory(owner_id=owner.id, name="Perso")
+        return owner.id, acc.id
+
+    owner_id, acc_id = await household_singleton.run_sync(_seed)
+
+    payload = {
+        "splits": [
+            _split(acc_id, -1000),  # NULL category -> funding
+            _split(acc_id, 1000, category_id=cat_id),  # category -> classification
+        ]
+    }
+    resp = await async_client.post(
+        f"/accounts/{acc_id}/transactions", json=payload, headers=_bearer(owner_id)
+    )
+    assert resp.status_code == 201, resp.text
+    tx_id = resp.json()["id"]
+
+    rows = (
+        await household_singleton.execute(
+            text(
+                "SELECT category_id, leg_role FROM splits "
+                "WHERE transaction_id = :id ORDER BY amount_cents"
+            ),
+            {"id": tx_id},
+        )
+    ).all()
+    funding, classification = rows
+    assert funding.category_id is None
+    assert funding.leg_role == "funding"
+    assert classification.category_id == cat_id
+    assert classification.leg_role == "classification"
 
 
 async def test_create_created_by_not_injectable(

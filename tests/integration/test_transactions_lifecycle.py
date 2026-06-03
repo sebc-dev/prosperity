@@ -175,6 +175,42 @@ async def test_add_split_keeps_null_category(
     assert after.splits[0].category_id is None
 
 
+async def test_to_domain_carries_leg_role_from_db(
+    household_singleton: AsyncSession,
+    bound_transaction_factories: BoundFactories,
+    bound_category_factory: Callable[..., Awaitable[object]],
+) -> None:
+    # S08.5.1: `_to_domain` must reflect the AUTHORITATIVE column, not re-derive
+    # it — a categoryless leg maps to `funding`, a categorised one to
+    # `classification` (proves the mapper reads `s.leg_role`).
+    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    tx = await create_draft(household_singleton, account_id=account_id, by_user_id=user_id)
+    category = await bound_category_factory()
+    cat = category.id  # type: ignore[attr-defined]
+
+    await add_split(
+        household_singleton, tx_id=tx.id, account_id=account_id, amount_cents=-1500, currency="EUR"
+    )
+    await add_split(
+        household_singleton,
+        tx_id=tx.id,
+        account_id=account_id,
+        amount_cents=1500,
+        currency="EUR",
+        category_id=cat,
+    )
+
+    tx_model, splits = await _load_aggregate(household_singleton, tx.id)
+    aggregate = _to_domain(tx_model, splits)
+
+    by_role = {s.leg_role for s in aggregate.splits}
+    assert by_role == {"funding", "classification"}
+    funding = next(s for s in aggregate.splits if s.category_id is None)
+    classified = next(s for s in aggregate.splits if s.category_id is not None)
+    assert funding.leg_role == "funding"
+    assert classified.leg_role == "classification"
+
+
 async def test_remove_split_removes_the_right_one(
     household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
 ) -> None:

@@ -293,9 +293,7 @@ async def test_split_leg_role_defaults_to_funding_when_category_null(
     )
     auth_schema.add(tx)
     await auth_schema.flush()
-    split = Split(
-        transaction_id=tx.id, account_id=account_id, amount_cents=-1000, currency="EUR"
-    )
+    split = Split(transaction_id=tx.id, account_id=account_id, amount_cents=-1000, currency="EUR")
     auth_schema.add(split)
     await auth_schema.flush()
 

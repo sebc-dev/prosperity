@@ -54,8 +54,7 @@ def _seed_fk_chain(sync_dsn: str) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
         with engine.begin() as conn:
             conn.execute(
                 text(
-                    "INSERT INTO household (id, name, base_currency) "
-                    "VALUES (:id, 'Foyer', 'EUR')"
+                    "INSERT INTO household (id, name, base_currency) VALUES (:id, 'Foyer', 'EUR')"
                 ),
                 {"id": _SINGLETON},
             )
@@ -220,8 +219,7 @@ def test_downgrade_drops_leg_role_column(postgres_container: PostgresContainer) 
                 checks = (
                     conn.execute(
                         text(
-                            "SELECT conname FROM pg_constraint "
-                            "WHERE conname = 'ck_splits_leg_role'"
+                            "SELECT conname FROM pg_constraint WHERE conname = 'ck_splits_leg_role'"
                         )
                     )
                     .scalars()

@@ -17,8 +17,10 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
+import pytest
 from alembic.config import Config
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
 from testcontainers.postgres import PostgresContainer
 
 from alembic import command
@@ -35,19 +37,17 @@ def _alembic_config(async_dsn: str) -> Config:
     return cfg
 
 
-def _seed_at_0012(sync_dsn: str) -> tuple[uuid.UUID, uuid.UUID]:
-    """Seed the minimal FK chain + two splits at revision 0012.
+def _seed_fk_chain(sync_dsn: str) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
+    """Seed the minimal FK chain — household, user, account, category,
+    transaction — WITHOUT any split. Returns `(account_id, tx_id, category_id)`.
 
-    Returns `(funding_split_id, classification_split_id)` — the first has
-    `category_id IS NULL`, the second a real category. `leg_role` is omitted
-    on purpose: the column does not exist until `0013`.
+    Revision-agnostic: touches no `splits` column, so it is reusable both at
+    `0012` (before `leg_role` exists) and at `0013`.
     """
     user_id = uuid.uuid4()
     account_id = uuid.uuid4()
     category_id = uuid.uuid4()
     tx_id = uuid.uuid4()
-    funding_split_id = uuid.uuid4()
-    classification_split_id = uuid.uuid4()
 
     engine = create_engine(sync_dsn)
     try:
@@ -85,6 +85,25 @@ def _seed_at_0012(sync_dsn: str) -> tuple[uuid.UUID, uuid.UUID]:
                 ),
                 {"id": tx_id, "acc": account_id, "user": user_id},
             )
+    finally:
+        engine.dispose()
+    return account_id, tx_id, category_id
+
+
+def _seed_at_0012(sync_dsn: str) -> tuple[uuid.UUID, uuid.UUID]:
+    """Seed the minimal FK chain + two splits at revision 0012.
+
+    Returns `(funding_split_id, classification_split_id)` — the first has
+    `category_id IS NULL`, the second a real category. `leg_role` is omitted
+    on purpose: the column does not exist until `0013`.
+    """
+    account_id, tx_id, category_id = _seed_fk_chain(sync_dsn)
+    funding_split_id = uuid.uuid4()
+    classification_split_id = uuid.uuid4()
+
+    engine = create_engine(sync_dsn)
+    try:
+        with engine.begin() as conn:
             conn.execute(
                 text(
                     "INSERT INTO splits (id, transaction_id, account_id, amount_cents, currency) "
@@ -140,6 +159,38 @@ def test_backfill_derives_leg_role_from_category(
         assert _leg_role(sync_dsn, classification_id) == "classification"
     finally:
         # Leave the session-scoped container clean for sibling tests.
+        command.downgrade(cfg, "base")
+
+
+def test_leg_role_is_not_null_after_upgrade(
+    postgres_container: PostgresContainer,
+) -> None:
+    # Review #136: a behavioural check that the column is truly NOT NULL in
+    # Postgres after 0013 — a raw INSERT omitting `leg_role` (bypassing the ORM
+    # context default) must be rejected. Complements the level-1 snapshot, which
+    # only pins the declared nullability, by exercising the `SET NOT NULL` step.
+    async_dsn = postgres_container.get_connection_url()
+    sync_dsn = async_dsn.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+    cfg = _alembic_config(async_dsn)
+
+    try:
+        command.upgrade(cfg, "0013")
+        account_id, tx_id, _category_id = _seed_fk_chain(sync_dsn)
+
+        engine = create_engine(sync_dsn)
+        try:
+            with pytest.raises(IntegrityError), engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "INSERT INTO splits "
+                        "(id, transaction_id, account_id, amount_cents, currency) "
+                        "VALUES (:id, :tx, :acc, 0, 'EUR')"
+                    ),
+                    {"id": uuid.uuid4(), "tx": tx_id, "acc": account_id},
+                )
+        finally:
+            engine.dispose()
+    finally:
         command.downgrade(cfg, "base")
 
 

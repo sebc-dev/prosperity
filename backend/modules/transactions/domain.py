@@ -208,6 +208,9 @@ class Split(BaseModel):
         """
         if not isinstance(data, dict):
             return data
+        # `cast` requis sous pyright strict : `isinstance` ne narrow `Any` qu'en
+        # `dict[Unknown, Unknown]`, ce qui rend `.get`/le spread « partiellement
+        # inconnus ». On fixe les types des clés/valeurs.
         values = cast(dict[str, Any], data)
         if "leg_role" not in values:
             derived = "funding" if values.get("category_id") is None else "classification"

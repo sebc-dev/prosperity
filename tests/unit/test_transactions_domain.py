@@ -627,6 +627,41 @@ class TestTransferGuard:
         tx = _tx(state=TransactionState.DRAFT, splits=(_split(Money(1000, "EUR")),))
         assert not is_transfer(tx)
 
+    def test_assert_expenses_categorized_single_categorized_split(self) -> None:
+        # 1 split (non-transfert) catégorisé → OK (couvre la branche any()=False).
+        tx = _tx(
+            state=TransactionState.DRAFT,
+            splits=(_split(Money(1000, "EUR"), category_id=uuid4()),),
+        )
+        assert_expenses_categorized(tx)
+
+    def test_split_expense_two_accounts_classified_as_transfer(self) -> None:
+        # LIMITE V1 CONNUE (D6) : une dépense non catégorisée éclatée sur 2
+        # comptes est classée transfert → assert_expenses_categorized no-op.
+        # L'enforcement réel (transfert vs dépense-éclatée) appartient à S07.4
+        # qui a le contexte comptes du foyer (accounts.public).
+        tx = _tx(
+            state=TransactionState.CONFIRMED,
+            splits=(
+                _split(Money(-1000, "EUR"), account_id=uuid4(), category_id=None),
+                _split(Money(1000, "EUR"), account_id=uuid4(), category_id=None),
+            ),
+        )
+        assert is_transfer(tx)
+        assert_expenses_categorized(tx)  # no raise — comportement documenté
+
+    @given(splits=balanced_splits_strategy(distinct_accounts=False))
+    def test_property_uncategorized_expense_raises(self, splits: tuple[Split, ...]) -> None:
+        # ∀ dépense confirmée (même compte → non-transfert) dont AU MOINS un split
+        # perd sa catégorie → UncategorizedExpenseError. `distinct_accounts=False`
+        # exerce la forme dépense canonique (is_transfer False) en property-based,
+        # absente des autres properties (toutes en distinct_accounts=True).
+        uncategorized = (splits[0].model_copy(update={"category_id": None}), *splits[1:])
+        tx = _tx(state=TransactionState.CONFIRMED, splits=uncategorized)
+        assert not is_transfer(tx)
+        with pytest.raises(UncategorizedExpenseError):
+            assert_expenses_categorized(tx)
+
 
 # ---------------------------------------------------------------------------
 # S08.5.1 — leg_role (ADR 0017) : dérivation domaine ⇄ back-fill ⇄ default ORM
@@ -679,6 +714,28 @@ class TestSplitLegRole:
                 leg_role="bogus",  # type: ignore[arg-type]
             )
 
+    def test_explicit_none_is_rejected(self) -> None:
+        # `leg_role=None` explicite (clé présente) : le validator `before` le
+        # respecte donc NE dérive PAS, et le Literal strict rejette `None` à la
+        # frontière (review #136 — clarifie le cas « clé présente mais invalide »).
+        with pytest.raises(ValidationError):
+            Split(
+                account_id=uuid4(),
+                amount=Money(-100, "EUR"),
+                leg_role=None,  # type: ignore[arg-type]
+            )
+
+    def test_model_copy_bypasses_derivation(self) -> None:
+        # `model_copy` court-circuite le validator `before` (chemin réservé au
+        # mapper, D11) : la valeur portée est conservée telle quelle. On retire
+        # la catégorie d'une jambe `classification` → leg_role NE redevient PAS
+        # `funding` (pas de re-dérivation), contrat pinné par la review #136.
+        split = Split(account_id=uuid4(), category_id=uuid4(), amount=Money(-100, "EUR"))
+        assert split.leg_role == "classification"
+        copied = split.model_copy(update={"category_id": None})
+        assert copied.category_id is None
+        assert copied.leg_role == "classification"
+
     @given(category=st.none() | st.uuids())
     def test_property_derivation_matches_backfill_rule(self, category: UUID | None) -> None:
         # ∀ category_id : la dérivation domaine == la règle de back-fill 0013 ==
@@ -686,38 +743,3 @@ class TestSplitLegRole:
         split = Split(account_id=uuid4(), category_id=category, amount=Money(1, "EUR"))
         expected = "funding" if category is None else "classification"
         assert split.leg_role == expected
-
-    def test_assert_expenses_categorized_single_categorized_split(self) -> None:
-        # 1 split (non-transfert) catégorisé → OK (couvre la branche any()=False).
-        tx = _tx(
-            state=TransactionState.DRAFT,
-            splits=(_split(Money(1000, "EUR"), category_id=uuid4()),),
-        )
-        assert_expenses_categorized(tx)
-
-    def test_split_expense_two_accounts_classified_as_transfer(self) -> None:
-        # LIMITE V1 CONNUE (D6) : une dépense non catégorisée éclatée sur 2
-        # comptes est classée transfert → assert_expenses_categorized no-op.
-        # L'enforcement réel (transfert vs dépense-éclatée) appartient à S07.4
-        # qui a le contexte comptes du foyer (accounts.public).
-        tx = _tx(
-            state=TransactionState.CONFIRMED,
-            splits=(
-                _split(Money(-1000, "EUR"), account_id=uuid4(), category_id=None),
-                _split(Money(1000, "EUR"), account_id=uuid4(), category_id=None),
-            ),
-        )
-        assert is_transfer(tx)
-        assert_expenses_categorized(tx)  # no raise — comportement documenté
-
-    @given(splits=balanced_splits_strategy(distinct_accounts=False))
-    def test_property_uncategorized_expense_raises(self, splits: tuple[Split, ...]) -> None:
-        # ∀ dépense confirmée (même compte → non-transfert) dont AU MOINS un split
-        # perd sa catégorie → UncategorizedExpenseError. `distinct_accounts=False`
-        # exerce la forme dépense canonique (is_transfer False) en property-based,
-        # absente des autres properties (toutes en distinct_accounts=True).
-        uncategorized = (splits[0].model_copy(update={"category_id": None}), *splits[1:])
-        tx = _tx(state=TransactionState.CONFIRMED, splits=uncategorized)
-        assert not is_transfer(tx)
-        with pytest.raises(UncategorizedExpenseError):
-            assert_expenses_categorized(tx)

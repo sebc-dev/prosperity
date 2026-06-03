@@ -2,9 +2,11 @@
 
 > **Durée estimée** : 3-4 jours
 > **Statut** : not started
-> **Dépend de** : E08, E10
+> **Dépend de** : E08.5, E10
 > **Bloque** : E13 (write upload handler matérialise les dettes overflow synchronement)
-> **ADRs activés** : 0002 (étendu pour overflow), 0011 (réutilisé via `compute_remaining`)
+> **ADRs activés** : 0002 (étendu pour overflow), 0011 (réutilisé via `compute_remaining`), 0017 (prérequis : levé par E08.5)
+>
+> ⚠️ **Prérequis dur E08.5 (ADR 0017).** Le livrable ci-dessous suppose qu'une transaction **confirmée** consomme un budget (P11.3.1 : « calcule consumption avant transaction »). Tant que la contradiction E07/E08 n'est pas levée par E08.5 (`leg_role` sur `Split`), aucune transaction confirmable ne consomme — l'overflow serait toujours nul. Voir [#133](https://github.com/sebc-dev/prosperity/issues/133).
 
 ---
 

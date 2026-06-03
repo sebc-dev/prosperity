@@ -49,9 +49,10 @@ Ordre topologique. Chaque epic ne démarre qu'après ses dépendances.
 | [E06](./E06-categories.md) | Categories hiérarchiques | F08 partie 1 : `Category` + cycle prevention + archive + bucket household | E05 | not started |
 | [E07](./E07-transactions.md) | Transactions module | F05 : `Transaction` aggregate immutable (ADR 0001) + splits relationnels + states + Money | E05, E06 | not started |
 | [E08](./E08-budgets.md) | Budgets | F08 partie 2 : `Budget` + agrégation hiérarchique + alertes seuils via `shared/events.py` | E07 | not started |
+| [E08.5](./E08.5-canonical-expense-reconciliation.md) | Réconciliation dépense confirmable ↔ consommation budget | ADR 0017 : `leg_role` sur `Split` — une dépense confirmable consomme un budget (lève la contradiction E07/E08) | E08 | not started |
 | [E09](./E09-debts-foundations.md) | Debts foundations | F09 partie 1 : `Debt` projection (ADR 0002) + `share_request` + dashboard dettes | E05, E07 | not started |
 | [E10](./E10-settlements.md) | Settlements | F09 partie 2 : `Settlement` multi-line (ADR 0011) + 3 types + invariants Hypothesis | E09 | not started |
-| [E11](./E11-debts-overflow.md) | Debts overflow F10 | `debt_generation_override` + `DebtCalculator` matérialisation excédent | E08, E10 | not started |
+| [E11](./E11-debts-overflow.md) | Debts overflow F10 | `debt_generation_override` + `DebtCalculator` matérialisation excédent | E08.5, E10 | not started |
 | [E12](./E12-ofx-import.md) | OFX import | F04 partie 1 : `OFXProvider` + wrapper défensif + preview hybride + `bank_account_external_refs` | E05, E07 | not started |
 | [E13](./E13-sync-write-upload-handler.md) | Sync module + write upload handler | ADR 0014 : module `sync` + dispatcher + 10 étapes + idempotence + `WriteResult.error` typé | E07, E09, E11 | not started |
 | [E14](./E14-frontend-bootstrap.md) | Frontend bootstrap | Capacitor 8 + React 19 + Vite 6 + Drizzle + Tailwind + shadcn scaffolding + PowerSync client setup | E13 | not started |

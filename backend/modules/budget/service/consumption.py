@@ -28,10 +28,12 @@ supplies the default, keeping the service deterministic and testable.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import column, func, select, table
+from sqlalchemy import ColumnElement, column, func, select, table, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.accounts.public import (
@@ -53,6 +55,7 @@ logger = logging.getLogger(__name__)
 # SUM query touches are declared.
 _splits = table(
     "splits",
+    column("id"),
     column("account_id"),
     column("category_id"),
     column("amount_cents"),
@@ -117,6 +120,36 @@ async def _eligible_account_ids(session: AsyncSession, budget: Budget) -> set[UU
     return set()
 
 
+def _consumption_filters(
+    *,
+    subtree: Sequence[UUID],
+    accounts: Sequence[UUID],
+    currency: str,
+    start: date,
+    end: date,
+) -> list[ColumnElement[bool]]:
+    """Bloc `.where(...)` commun à `compute_consumption` ET `list_contributing_splits`
+    (D13 — **source unique**).
+
+    Les sept prédicats qui définissent « un split compté » : leg catégorie ∈
+    sous-arbre, compte éligible, devise du budget, transaction `confirmed`, hors
+    `force_full_debt` (CONTEXT.md §debt_generation_override), fenêtre `[start,
+    end)`. Une seule définition ⇒ `splits_count` (agrégat) et le drill-down
+    (liste paginée) ne peuvent pas diverger silencieusement si un prédicat évolue
+    (affinage forme canonique E15, nouvel état). Seul le `select(...)` (SUM/COUNT
+    vs colonnes + keyset) diffère entre les deux consommateurs.
+    """
+    return [
+        _splits.c.category_id.in_(subtree),
+        _splits.c.account_id.in_(accounts),
+        _splits.c.currency == currency,
+        _transactions.c.state == "confirmed",
+        _transactions.c.debt_generation_override != "force_full_debt",
+        _transactions.c.date >= start,
+        _transactions.c.date < end,
+    ]
+
+
 async def compute_consumption(
     session: AsyncSession, *, budget_id: UUID, as_of: date
 ) -> BudgetConsumption | None:
@@ -149,13 +182,13 @@ async def compute_consumption(
         select(func.coalesce(func.sum(_splits.c.amount_cents), 0), func.count())
         .select_from(_splits.join(_transactions, _splits.c.transaction_id == _transactions.c.id))
         .where(
-            _splits.c.category_id.in_(subtree),
-            _splits.c.account_id.in_(accounts),
-            _splits.c.currency == budget.currency,
-            _transactions.c.state == "confirmed",
-            _transactions.c.debt_generation_override != "force_full_debt",
-            _transactions.c.date >= start,
-            _transactions.c.date < end,
+            *_consumption_filters(
+                subtree=list(subtree),
+                accounts=list(accounts),
+                currency=budget.currency,
+                start=start,
+                end=end,
+            )
         )
     )
     consumed_cents, splits_count = (await session.execute(stmt)).one()
@@ -164,3 +197,103 @@ async def compute_consumption(
         amount_cents=budget.amount_cents,
         splits_count=int(splits_count),
     )
+
+
+# --- Drill-down: contributing splits, paginated (S08.4 P08.4.3) -------------
+
+
+@dataclass(frozen=True, slots=True)
+class ContributingSplit:
+    """One split that contributes to a budget's consumption (drill-down UI).
+
+    `category_id` is **always non-NULL**: the `category_id ∈ subtree` filter
+    excludes the canonical account leg (E15, whose `category_id` is NULL). The
+    pure read shape — no ORM leak (the splits are read via Core, `transactions ⊥
+    budget`).
+    """
+
+    id: UUID
+    transaction_id: UUID
+    account_id: UUID
+    category_id: UUID
+    amount_cents: int
+    currency: str
+    date: date
+
+
+async def list_contributing_splits(
+    session: AsyncSession,
+    *,
+    budget_id: UUID,
+    as_of: date,
+    after: tuple[date, UUID] | None,
+    limit: int,
+) -> tuple[list[ContributingSplit], tuple[date, UUID] | None]:
+    """Page des splits contribuant à la consommation de `budget_id` + cursor suivant.
+
+    Réutilise le **même** prédicat que `compute_consumption` via
+    `_consumption_filters` (D13 — sous-arbre, comptes éligibles, fenêtre
+    `[start,end)`, devise, `confirmed`, hors `force_full_debt`) en mode liste.
+    Ordre `(transactions.date, splits.id)` DESC (ordre total : `splits.id` UUID
+    unique). `LIMIT limit+1` détecte la page suivante ; keyset
+    `tuple_(date, id) < after` (strict — ancré sur le **dernier** de la page).
+    Lecture seule (ADR 0015), splits via Core (pas d'import `transactions`).
+
+    RBAC : **RBAC-aveugle** — présuppose la visibilité vérifiée par l'appelant
+    (`get_visible_budget` au boundary), comme `compute_consumption`. À ne JAMAIS
+    exposer sans garde de visibilité en amont (la route S08.4 garde avant
+    d'appeler). Le cursor ne déplace que l'offset keyset ; la requête reste bornée
+    au `budget_id` de la route → un cursor d'un autre budget n'élargit pas le
+    périmètre.
+    """
+    budget = await session.get(Budget, budget_id)
+    if budget is None:
+        return [], None
+    start, end = compute_period_window(budget.period_kind, budget.period_start, as_of)  # type: ignore[arg-type]
+    subtree = await _load_descendant_ids(session, budget.category_id)
+    accounts = await _eligible_account_ids(session, budget)
+    if not subtree or not accounts:
+        return [], None
+
+    stmt = (
+        select(
+            _splits.c.id,
+            _splits.c.transaction_id,
+            _splits.c.account_id,
+            _splits.c.category_id,
+            _splits.c.amount_cents,
+            _splits.c.currency,
+            _transactions.c.date,
+        )
+        .select_from(_splits.join(_transactions, _splits.c.transaction_id == _transactions.c.id))
+        .where(
+            *_consumption_filters(
+                subtree=list(subtree),
+                accounts=list(accounts),
+                currency=budget.currency,
+                start=start,
+                end=end,
+            )
+        )
+    )
+    if after is not None:
+        stmt = stmt.where(tuple_(_transactions.c.date, _splits.c.id) < after)
+    stmt = stmt.order_by(_transactions.c.date.desc(), _splits.c.id.desc()).limit(limit + 1)
+    rows = (await session.execute(stmt)).all()
+
+    page = [
+        ContributingSplit(
+            id=r.id,
+            transaction_id=r.transaction_id,
+            account_id=r.account_id,
+            category_id=r.category_id,
+            amount_cents=int(r.amount_cents),
+            currency=r.currency,
+            date=r.date,
+        )
+        for r in rows[:limit]
+    ]
+    # The cursor is the LAST row of THIS page (the keyset filter `< after` is
+    # strict, so anchoring on the first next-page row would skip it).
+    next_cursor = (page[-1].date, page[-1].id) if len(rows) > limit else None
+    return page, next_cursor

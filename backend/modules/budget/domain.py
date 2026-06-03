@@ -17,7 +17,7 @@ peer modules; it imports only the stdlib, so it creates no cross-module arc.
 from __future__ import annotations
 
 from calendar import monthrange
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import date
 from decimal import Decimal
 from typing import Final, Literal
@@ -120,6 +120,10 @@ class CycleDetector:
 # budgets agrègent à la lecture, pas à l'écriture »).
 
 PeriodKind = Literal["monthly", "quarterly", "yearly"]
+# Closed set of budget scopes (CONTEXT.md §Budget). Like `PeriodKind`, the
+# `budgets.scope` column carries no CHECK — the set is locked at the Pydantic
+# boundary (S08.4) and in `validate_contributor_count` below.
+Scope = Literal["personal", "shared"]
 
 # Number of calendar months spanned by one window of each kind. Used to step
 # the window anchor forward/backward in `compute_period_window`.
@@ -244,3 +248,53 @@ def compute_period_window(
     start = _add_months(period_start, k * step)
     end = _add_months(period_start, (k + 1) * step)
     return start, end
+
+
+# --- Contributor invariant (S08.4) -----------------------------------------
+#
+# `scope=personal ⇒ exactly its owner` / `scope=shared ⇒ ≥ 2 distinct
+# contributors` — the invariant the S08.1 model docstring defers to the service
+# (a cross-row CHECK on `budget_contributors` would need a trigger). The pure
+# *count/shape* check lives here; the DB-backed "each shared contributor is a
+# member of a common account" check lives at the service (`budget_crud`), which
+# imports the ORM/`accounts.public`.
+
+
+class BudgetError(Exception):
+    """Base of every pure budget-rule violation (S08.4).
+
+    Stays in `domain.py` (stdlib-only) so the service/route can map the whole
+    family with one `except BudgetError` at the boundary while `domain.py`
+    imports nothing but the stdlib (gabarit `CategoryError`).
+    """
+
+
+class BudgetContributorError(BudgetError):
+    """Invalid contributor list for the scope (count, duplicate, unknown scope)."""
+
+
+# A `shared` budget needs at least this many distinct contributors (S08.1
+# invariant). Named so the threshold is not a magic literal in the branch below.
+_MIN_SHARED_CONTRIBUTORS: Final[int] = 2
+
+
+def validate_contributor_count(
+    *, scope: str, contributor_ids: Sequence[UUID], created_by: UUID
+) -> None:
+    """Valide l'invariant contributeurs (pur, sans DB).
+
+    `personal ⇒ {created_by}` exactement ; `shared ⇒ ≥ 2` sans doublon ; tout
+    autre scope → fail-closed (`else`, jamais une branche morte). La vérif
+    « contributeur ∈ compte commun » (DB) vit au service, pas ici.
+    """
+    unique = set(contributor_ids)
+    if len(unique) != len(contributor_ids):
+        raise BudgetContributorError("duplicate contributor")
+    if scope == "personal":
+        if unique != {created_by}:
+            raise BudgetContributorError("personal budget must have its owner as sole contributor")
+    elif scope == "shared":
+        if len(unique) < _MIN_SHARED_CONTRIBUTORS:
+            raise BudgetContributorError("shared budget needs at least two contributors")
+    else:
+        raise BudgetContributorError(f"unknown scope {scope!r}")

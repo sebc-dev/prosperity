@@ -63,3 +63,28 @@ async def list_active_budgets_for_user(
         assert consumption is not None
         result.append(BudgetWithConsumption(budget=budget, consumption=consumption))
     return result
+
+
+async def get_visible_budget(
+    session: AsyncSession, *, budget_id: UUID, user_id: UUID
+) -> Budget | None:
+    """Budget visible par `user_id` (contributeur, non archivé), sinon `None` (D3).
+
+    Fusionne *inconnu / archivé / non-contributeur* → `None`, que le boundary
+    transforme en **404 watertight** (jamais 403) : un budget `shared` est
+    confidentiel, un non-contributeur ne doit pas savoir qu'il existe (Note
+    implémenteur #128 — gabarit `accounts.get_accessible`, **pas** `categories`
+    dont l'oracle 404-vs-422 est acceptable). L'appartenance par
+    `BudgetContributor` couvre `personal` (owner = unique contributeur, S08.1)
+    **et** `shared`, donc aucun import cross-module pour le RBAC. Lecture seule.
+    """
+    stmt = (
+        select(Budget)
+        .join(BudgetContributor, BudgetContributor.budget_id == Budget.id)
+        .where(
+            Budget.id == budget_id,
+            BudgetContributor.user_id == user_id,
+            Budget.archived_at.is_(None),
+        )
+    )
+    return (await session.execute(stmt)).scalar_one_or_none()

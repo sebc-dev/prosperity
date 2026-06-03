@@ -145,12 +145,14 @@ table splits
   col category_id: UUID NULL
   col currency: VARCHAR(3) NOT NULL
   col id: UUID NOT NULL
+  col leg_role: VARCHAR NOT NULL
   col savings_goal_id: UUID NULL
   col transaction_id: UUID NOT NULL
   pk pk_splits(id)
   fk fk_splits_account_id_accounts: (account_id) -> accounts(id) ON DELETE RESTRICT
   fk fk_splits_category_id_categories: (category_id) -> categories(id) ON DELETE RESTRICT
   fk fk_splits_transaction_id_transactions: (transaction_id) -> transactions(id) ON DELETE CASCADE
+  ck ck_splits_leg_role: (leg_role::text = ANY (ARRAY['funding'::character varying, 'classification'::character varying]::text[]))
   idx ix_splits_account_id INDEX: account_id
   idx ix_splits_category_id INDEX: category_id
   idx ix_splits_transaction_id INDEX: transaction_id

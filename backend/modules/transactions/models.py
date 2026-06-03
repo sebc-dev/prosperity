@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
+from typing import Any
 
 from sqlalchemy import (
     ARRAY,
@@ -170,6 +171,20 @@ class Transaction(Base):
     )
 
 
+def _default_leg_role(context: Any) -> str:
+    """Default context-sensitive : dérive `leg_role` de `category_id` à
+    l'INSERT (même règle que le back-fill 0013 et le validator domaine).
+
+    Rend `leg_role` NOT NULL « gratuit » pour `add_split` et les factories sans
+    qu'aucun ne le passe explicitement. L'assignation serveur DURCIE (dérivée de
+    la forme canonique, jamais du payload client) arrive en S08.5.2/S08.5.3 ;
+    ici aucune entrée client n'existe pour `leg_role` (le schema S07.5 ne
+    l'expose pas), donc « jamais depuis le client » est trivialement vrai.
+    """
+    params = context.get_current_parameters()
+    return "funding" if params.get("category_id") is None else "classification"
+
+
 class Split(Base):
     """Une ligne signée d'une transaction (CONTEXT.md §Split). Une
     transaction est une collection de splits zero-sum.
@@ -189,6 +204,17 @@ class Split(Base):
     rejouer cette migration plus tard. La story qui crée `savings` ajoutera
     la contrainte + l'index dans sa propre migration (après nettoyage des
     UUID orphelins éventuels).
+
+    `leg_role` (ADR 0017, option 1, S08.5.1) : marqueur STRUCTUREL du rôle de
+    la jambe — `funding` (mouvement de compte, exempté de catégorie) vs
+    `classification` (jambe de dépense). Set fermé 2-valeurs → `String` NOT NULL
+    + `CheckConstraint` defense-in-depth (gabarit `debt_generation_override`),
+    PAS un ENUM (aligné sur `state`/`currency`, le `Literal` source de vérité
+    `LegRole` vit au domaine). Colonne **server-authoritative**, valeur dérivée
+    de `category_id` par `_default_leg_role` à l'INSERT (même règle que le
+    back-fill 0013). Pas d'index (set à 2 valeurs, aucune requête ne le filtre).
+    Pas de règles de sync PowerSync à éditer (aucun artefact ; client = E14,
+    ADR 0003) : sync-safe, à inclure quand les sync rules seront écrites.
     """
 
     __tablename__ = "splits"
@@ -237,9 +263,28 @@ class Split(Base):
         UUID(as_uuid=True),
         nullable=True,
     )
+    # `funding`/`classification` (domaine `LegRole`). `Mapped[str]` (et non
+    # `Mapped[Literal]`) aligne sur `state`/`debt_generation_override` ; le
+    # verrou de valeurs vit au domaine (gabarit), doublé du `CheckConstraint`
+    # ci-dessous (backstop fail-closed). `default=_default_leg_role` (Python,
+    # PAS server_default) dérive la valeur de `category_id` à l'INSERT et
+    # préserve la parité create_all/Alembic du snapshot.
+    leg_role: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        default=_default_leg_role,
+    )
 
     __table_args__ = (
         Index("ix_splits_transaction_id", "transaction_id"),
         Index("ix_splits_account_id", "account_id"),
         Index("ix_splits_category_id", "category_id"),
+        # Set fermé 2-valeurs (domaine `LegRole`) → CHECK defense-in-depth
+        # (gabarit `debt_generation_override`). `name="leg_role"` → préfixé
+        # `ck_splits_leg_role` par NAMING_CONVENTION, à matcher byte-for-byte
+        # dans la migration 0013 via `op.f("ck_splits_leg_role")`.
+        CheckConstraint(
+            "leg_role IN ('funding', 'classification')",
+            name="leg_role",
+        ),
     )

@@ -521,7 +521,9 @@ async def test_transfer_without_category_emits_nothing(
             s, account_id=acc_a.id, category_id=cat.id, amount=9000, created_by=owner.id
         )
         # Transfer built inline (D6): 2 distinct accounts, uncategorised funding
-        # legs — structurally different from the mono-account form B helper.
+        # legs — structurally different from the mono-account form B helper. Both
+        # legs are `funding`, allowed here because a transfer (≥ 2 accounts) is
+        # exempt from `assert_at_most_one_funding_leg` AND from categorisation.
         transfer = Transaction(
             account_id=acc_a.id, date=_TODAY, state="planned", created_by=owner.id
         )

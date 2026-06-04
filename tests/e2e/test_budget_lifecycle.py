@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import base64
 from collections.abc import Iterator
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import uuid4
 
@@ -71,8 +71,19 @@ def _wire_threshold_detector_e2e() -> Iterator[None]:  # pyright: ignore[reportU
     clear_subscribers()
 
 
+def _today() -> date:
+    # Anchor on the server's UTC clock (S08.5.3 review — determinism). The tx date
+    # defaults to `datetime.now(UTC).date()` and the threshold detector resolves
+    # its window with the same UTC clock, while the consumption endpoint defaults
+    # to the *local* `date.today()`. Computing the budget window AND the read
+    # `as_of` here in UTC (and passing `as_of` explicitly to the value reads) keeps
+    # all three clocks aligned, so the window can't straddle the UTC midnight
+    # boundary on a CI runner in a negative timezone (→ tx out of window → flake).
+    return datetime.now(UTC).date()
+
+
 def _first_of_current_month() -> str:
-    return date.today().replace(day=1).isoformat()
+    return _today().replace(day=1).isoformat()
 
 
 async def test_budget_lifecycle(  # noqa: PLR0915 — E2E journey is deliberately long
@@ -95,6 +106,7 @@ async def test_budget_lifecycle(  # noqa: PLR0915 — E2E journey is deliberatel
 
     # 3. Budget on the PARENT (E08): 100 € over the current month.
     period_start = _first_of_current_month()
+    as_of = _today().isoformat()  # UTC, shared by the tx date and the value reads
     budget = await create_budget(
         client,
         admin_access,
@@ -107,10 +119,13 @@ async def test_budget_lifecycle(  # noqa: PLR0915 — E2E journey is deliberatel
 
     # 4. Expense in form B on the CHILD category (E07, D12): both legs on the SAME
     #    account → is_transfer False → the classification leg must be categorised.
+    #    The date is pinned to `as_of` (UTC) so the expense always lands inside the
+    #    budget window the detector and the reads observe.
     tx = await create_transaction(
         client,
         admin_access,
         acc["id"],
+        date=as_of,
         splits=[
             {"account_id": acc["id"], "amount_cents": -8100, "currency": "EUR"},
             {
@@ -128,23 +143,31 @@ async def test_budget_lifecycle(  # noqa: PLR0915 — E2E journey is deliberatel
     assert confirmed["state"] == "confirmed"
 
     # 6. Hierarchical consumption over HTTP: the child leg resolves UP to the
-    #    parent budget; the funding NULL leg is excluded.
+    #    parent budget; the funding NULL leg is excluded. 8100 / 10000 = 0.81 (raw
+    #    ratio, non arrondi) → pin the exact value, not just the ≥ 0.80 band.
     cons = (
-        await client.get(f"/budgets/{budget['id']}/consumption", headers=auth_headers(admin_access))
+        await client.get(
+            f"/budgets/{budget['id']}/consumption",
+            params={"as_of": as_of},
+            headers=auth_headers(admin_access),
+        )
     ).json()
     assert cons["consumed_cents"] == 8100
     assert cons["splits_count"] == 1
-    assert Decimal(str(cons["percent"])) >= Decimal("0.80")
+    assert Decimal(str(cons["percent"])) == Decimal("0.81")
 
-    # 7. Threshold crossed (side-channel, D8): the `lifespan`-wired detector wrote
-    #    the durable alert row for the 80 % crossing.
+    # 7. Threshold crossed (side-channel, D8): the §B autouse-wired detector wrote
+    #    the durable alert row for the 80 % crossing (the lifespan does NOT run
+    #    under ASGITransport — see the module docstring).
     assert await fetch_threshold_alerts(committed_sessionmaker, budget_id=budget["id"]) == [80]
 
     # 8. Drill-down over HTTP: exactly the classification leg (the funding NULL leg
     #    is out of the subtree, so it never appears).
     drill = (
         await client.get(
-            f"/budgets/{budget['id']}/contributing-splits", headers=auth_headers(admin_access)
+            f"/budgets/{budget['id']}/contributing-splits",
+            params={"as_of": as_of},
+            headers=auth_headers(admin_access),
         )
     ).json()
     assert len(drill["items"]) == 1
@@ -226,7 +249,9 @@ async def test_detector_wiring_is_load_bearing(committed_client, committed_sessi
     # subscriber NO alert row is written — so a future lifespan/wiring regression
     # fails THIS test instead of silently passing the journey for the wrong reason.
     client = committed_client
-    admin_access, _refresh, _email = await bootstrap_admin(client)
+    admin_access, _refresh, email = await bootstrap_admin(client)
+    admin_id = str(await user_id_by_email(committed_sessionmaker, email))
+    as_of = _today().isoformat()  # UTC, shared by the tx date and the value read
     parent = await create_category(client, admin_access, name="Maison")
     acc = await create_personal_account(client, admin_access, name="Perso")
     budget = await create_budget(
@@ -235,13 +260,14 @@ async def test_detector_wiring_is_load_bearing(committed_client, committed_sessi
         category_id=parent["id"],
         period_start=_first_of_current_month(),
         amount_cents=10000,
-        contributor_ids=[str(await user_id_by_email(committed_sessionmaker, _email))],
+        contributor_ids=[admin_id],
         scope="personal",
     )
     tx = await create_transaction(
         client,
         admin_access,
         acc["id"],
+        date=as_of,
         splits=[
             {"account_id": acc["id"], "amount_cents": -8100, "currency": "EUR"},
             {
@@ -257,7 +283,11 @@ async def test_detector_wiring_is_load_bearing(committed_client, committed_sessi
     await confirm_transaction(client, admin_access, tx["id"])
 
     cons = (
-        await client.get(f"/budgets/{budget['id']}/consumption", headers=auth_headers(admin_access))
+        await client.get(
+            f"/budgets/{budget['id']}/consumption",
+            params={"as_of": as_of},
+            headers=auth_headers(admin_access),
+        )
     ).json()
     assert cons["consumed_cents"] == 8100  # consumption is read-time, still rises
     # …but no detector ran → no durable alert (proves the wiring is load-bearing).

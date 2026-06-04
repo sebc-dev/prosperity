@@ -131,15 +131,27 @@ class Transaction(Base):
         nullable=False,
         default="default",
     )
-    # Dormant column: nullable UUID WITHOUT a `ForeignKey` (the
-    # `share_requests` table lives in `debts`/E09 and does not exist yet —
-    # same pattern as `Split.savings_goal_id`). Mutable after `confirmed`
-    # (ADR 0001 allowed set, domain `EDITABLE_AFTER_CONFIRMED`). E09 will add
-    # the FK + the `ShareRequest` entity in its own migration; S07.4 only lays
-    # the nullable substrate so this migration is never replayed. No index yet
-    # (no active FK to protect).
+    # Edit handle of the `ShareRequest → Transaction` canonical link (S07.4):
+    # nullable UUID, mutable after `confirmed` (ADR 0001 allowed set, domain
+    # `EDITABLE_AFTER_CONFIRMED`). Laid nullable WITHOUT a FK in S07.4/0010
+    # (the `share_requests` table did not exist yet); E09/S09.1 activates the
+    # FK `→ share_requests.id` `ON DELETE SET NULL` (revoking a SR keeps the tx
+    # pointed at the now-`revoked` row — voulu). The FK is declared BY STRING
+    # (no Python import of `ShareRequest`, no relationship) so the import-linter
+    # graph stays directional (`debts → transactions`, never the reverse). It is
+    # `use_alter=True`: `transactions.share_request_id → share_requests` and
+    # `share_requests.source_transaction_id → transactions` form a (nullable)
+    # cycle, so `create_all` emits this one as a post-CREATE `ALTER TABLE`
+    # (mirroring 0014's separate `op.create_foreign_key`) to break it. No index
+    # yet (no read path filters it; matches the migration / snapshot).
     share_request_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
+        ForeignKey(
+            "share_requests.id",
+            ondelete="SET NULL",
+            name="fk_transactions_share_request_id_share_requests",
+            use_alter=True,
+        ),
         nullable=True,
     )
 

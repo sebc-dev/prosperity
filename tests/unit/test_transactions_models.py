@@ -157,13 +157,21 @@ def test_transaction_fk_ondelete_actions_and_names() -> None:
     assert fks["fk_transactions_created_by_users"].elements[0].column.table.name == "users"
 
 
-def test_share_request_id_has_no_foreign_key() -> None:
-    # Dormant column (S07.4/D1): nullable UUID without an active FK, so the
-    # `share_requests` table (debts/E09) can be created later without replaying
-    # migration 0010 (same pattern as `Split.savings_goal_id`).
+def test_share_request_id_fk_activated_set_null() -> None:
+    # S09.1 activated the formerly-dormant FK (S07.4/D1): the column now carries
+    # an active FK `→ share_requests.id` `ON DELETE SET NULL`, declared BY STRING
+    # (no Python import of `ShareRequest`, no relationship — the import-linter
+    # graph stays directional). `use_alter=True` breaks the nullable cycle with
+    # `share_requests.source_transaction_id` at create_all time.
     col = cast(Table, Transaction.__table__).c["share_request_id"]
-    assert not col.foreign_keys
     assert col.nullable is True
+    assert len(col.foreign_keys) == 1
+    fk = next(iter(col.foreign_keys))
+    # `target_fullname` reads the string spec without resolving the referenced
+    # `Table` (debts.models need not be imported in this unit process).
+    assert fk.target_fullname == "share_requests.id"
+    assert fk.ondelete == "SET NULL"
+    assert fk.use_alter is True
 
 
 def test_fk_to_categories_is_by_string_no_budget_import() -> None:

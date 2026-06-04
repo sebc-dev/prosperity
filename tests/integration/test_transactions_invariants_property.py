@@ -227,7 +227,12 @@ def test_property_editable_update_preserves_sum(
             st.sampled_from(["default", "force_full_debt", "force_no_debt"])
         ),
         "category_id": data.draw(st.sampled_from([None, category_id])),
-        "share_request_id": data.draw(st.none() | st.uuids()),
+        # `None` only: S09.1 activated the FK `share_request_id → share_requests.id`,
+        # so a random UUID would now violate it. This property is about amount/
+        # projection invariance under editable edits (orthogonal to the handle's
+        # value); the non-null FK-valid persist path is covered by
+        # `test_edit_tags_description_override_share_request_persist`.
+        "share_request_id": None,
     }
     expected = _expected_legs(splits)
 

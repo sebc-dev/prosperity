@@ -98,6 +98,29 @@ table categories
   idx ix_categories_active INDEX: parent_id) WHERE (archived_at IS NULL
   idx ix_categories_parent_id INDEX: parent_id
 
+table debts
+  col account_id: UUID NOT NULL
+  col amount_cents: BIGINT NOT NULL
+  col created_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col currency: VARCHAR(3) NOT NULL
+  col from_user_id: UUID NOT NULL
+  col id: UUID NOT NULL
+  col materialization_trace: VARCHAR NULL
+  col origin: VARCHAR NOT NULL
+  col share_ratio: NUMERIC(5, 4) NOT NULL
+  col source_transaction_id: UUID NOT NULL
+  col to_user_id: UUID NOT NULL
+  pk pk_debts(id)
+  fk fk_debts_account_id_accounts: (account_id) -> accounts(id) ON DELETE RESTRICT
+  fk fk_debts_from_user_id_users: (from_user_id) -> users(id) ON DELETE RESTRICT
+  fk fk_debts_source_transaction_id_transactions: (source_transaction_id) -> transactions(id) ON DELETE CASCADE
+  fk fk_debts_to_user_id_users: (to_user_id) -> users(id) ON DELETE RESTRICT
+  ck ck_debts_amount_positive: (amount_cents > 0)
+  ck ck_debts_no_self_debt: (from_user_id <> to_user_id)
+  idx ix_debts_from_user_id INDEX: from_user_id
+  idx ix_debts_source_transaction_id INDEX: source_transaction_id
+  idx ix_debts_to_user_id INDEX: to_user_id
+
 table household
   col base_currency: VARCHAR(3) NOT NULL
   col created_at: TIMESTAMP WITH TIME ZONE NOT NULL
@@ -139,6 +162,24 @@ table refresh_tokens
   idx ix_refresh_tokens_user_id INDEX: user_id
   idx uq_refresh_tokens_token_hash UNIQUE: token_hash
 
+table share_requests
+  col created_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col id: UUID NOT NULL
+  col ratio: NUMERIC(5, 4) NOT NULL
+  col requested_by: UUID NOT NULL
+  col requested_from: UUID NOT NULL
+  col revoked_at: TIMESTAMP WITH TIME ZONE NULL
+  col short_label: VARCHAR(100) NOT NULL
+  col source_transaction_id: UUID NOT NULL
+  pk pk_share_requests(id)
+  fk fk_share_requests_requested_by_users: (requested_by) -> users(id) ON DELETE RESTRICT
+  fk fk_share_requests_requested_from_users: (requested_from) -> users(id) ON DELETE RESTRICT
+  fk fk_share_requests_source_transaction_id_transactions: (source_transaction_id) -> transactions(id) ON DELETE CASCADE
+  ck ck_share_requests_no_self: (requested_by <> requested_from)
+  idx ix_share_requests_requested_by INDEX: requested_by
+  idx ix_share_requests_requested_from INDEX: requested_from
+  idx uq_share_requests_active UNIQUE: source_transaction_id, requested_from) WHERE (revoked_at IS NULL
+
 table splits
   col account_id: UUID NOT NULL
   col amount_cents: BIGINT NOT NULL
@@ -176,6 +217,7 @@ table transactions
   fk fk_transactions_account_id_accounts: (account_id) -> accounts(id) ON DELETE RESTRICT
   fk fk_transactions_category_id_categories: (category_id) -> categories(id) ON DELETE RESTRICT
   fk fk_transactions_created_by_users: (created_by) -> users(id) ON DELETE RESTRICT
+  fk fk_transactions_share_request_id_share_requests: (share_request_id) -> share_requests(id) ON DELETE SET NULL
   ck ck_transactions_debt_generation_override: (debt_generation_override::text = ANY (ARRAY['default'::character varying, 'force_full_debt'::character varying, 'force_no_debt'::character varying]::text[]))
   idx ix_transactions_account_id INDEX: account_id
   idx ix_transactions_category_id INDEX: category_id

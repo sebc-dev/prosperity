@@ -20,11 +20,11 @@ layers =
 name = Only public surface importable cross-module (non-auth, non-accounts sources)
 type = forbidden
 # Sources exclude any module that hosts its own internals (currently
-# `auth`, `accounts`, `budget` and `transactions`) so source and forbidden
-# subtrees never overlap — otherwise grimp's `find_shortest_chains` rejects
-# the pair as "shared descendants". Each excluded module gets its own contract
-# (`2-auth`, `2-accounts`, `2-budget`, `2-transactions`) below. As future
-# modules grow internals, mirror that split here.
+# `auth`, `accounts`, `budget`, `transactions` and `debts`) so source and
+# forbidden subtrees never overlap — otherwise grimp's `find_shortest_chains`
+# rejects the pair as "shared descendants". Each excluded module gets its own
+# contract (`2-auth`, `2-accounts`, `2-budget`, `2-transactions`, `2-debts`)
+# below. As future modules grow internals, mirror that split here.
 #
 # `backend.modules.{auth,accounts}.*` internals are listed explicitly in
 # `forbidden_modules` (in addition to the `backend.modules.*.<layer>` globs)
@@ -32,7 +32,6 @@ type = forbidden
 # `from backend.modules.auth.service.jwt import ...` etc.
 source_modules =
     backend.modules.banking
-    backend.modules.debts
     backend.modules.forecasting
     backend.modules.mcp
     backend.modules.notifications
@@ -460,6 +459,93 @@ ignore_imports =
     backend.modules.accounts.public -> backend.modules.accounts.service.household
     backend.modules.accounts.public -> backend.modules.accounts.service.setup
 unmatched_ignore_imports_alerting = error
+
+[importlinter:contract:2-debts]
+name = debts must not import peer modules' internals
+type = forbidden
+# Debts-as-source mirrors the `2-auth` / `2-accounts` / `2-budget` /
+# `2-transactions` split: S09.1 gives debts its first internals
+# (`debts.models`), so debts can no longer sit in contract:2's `source_modules`
+# (debts and `backend.modules.*.models` would share a descendant → grimp's
+# shared-descendants error). Intra-module imports (debts.public → debts.models)
+# stay legitimate; peer modules' internals are enumerated explicitly so debts'
+# own never appear here. auth/accounts/transactions are below debts in the layer
+# graph (contract 1), so debts may import their `.public` freely — reaching into
+# their internals stays forbidden. NO `ignore_imports` block yet: S09.1 adds no
+# cross-module import (the `transactions.share_request_id` link is a DB-level FK
+# declared by string, not a Python import). The second-hop blocks
+# (`auth.public → auth.X`, etc.) arrive in S09.3 when debts first imports a
+# `.public` surface — and will enumerate ONLY the arcs actually imported, since
+# `unmatched_ignore_imports_alerting = error` would otherwise break the lint.
+source_modules =
+    backend.modules.debts
+forbidden_modules =
+    backend.modules.auth.service
+    backend.modules.auth.models
+    backend.modules.auth.domain
+    backend.modules.auth.repository
+    backend.modules.auth.transports
+    backend.modules.auth.handlers
+    backend.modules.accounts.service
+    backend.modules.accounts.models
+    backend.modules.accounts.domain
+    backend.modules.accounts.repository
+    backend.modules.accounts.transports
+    backend.modules.accounts.handlers
+    backend.modules.banking.service
+    backend.modules.banking.models
+    backend.modules.banking.domain
+    backend.modules.banking.repository
+    backend.modules.banking.transports
+    backend.modules.banking.handlers
+    backend.modules.budget.service
+    backend.modules.budget.models
+    backend.modules.budget.domain
+    backend.modules.budget.repository
+    backend.modules.budget.transports
+    backend.modules.budget.handlers
+    backend.modules.forecasting.service
+    backend.modules.forecasting.models
+    backend.modules.forecasting.domain
+    backend.modules.forecasting.repository
+    backend.modules.forecasting.transports
+    backend.modules.forecasting.handlers
+    backend.modules.mcp.service
+    backend.modules.mcp.models
+    backend.modules.mcp.domain
+    backend.modules.mcp.repository
+    backend.modules.mcp.transports
+    backend.modules.mcp.handlers
+    backend.modules.notifications.service
+    backend.modules.notifications.models
+    backend.modules.notifications.domain
+    backend.modules.notifications.repository
+    backend.modules.notifications.transports
+    backend.modules.notifications.handlers
+    backend.modules.reconciliation.service
+    backend.modules.reconciliation.models
+    backend.modules.reconciliation.domain
+    backend.modules.reconciliation.repository
+    backend.modules.reconciliation.transports
+    backend.modules.reconciliation.handlers
+    backend.modules.savings.service
+    backend.modules.savings.models
+    backend.modules.savings.domain
+    backend.modules.savings.repository
+    backend.modules.savings.transports
+    backend.modules.savings.handlers
+    backend.modules.sync.service
+    backend.modules.sync.models
+    backend.modules.sync.domain
+    backend.modules.sync.repository
+    backend.modules.sync.transports
+    backend.modules.sync.handlers
+    backend.modules.transactions.service
+    backend.modules.transactions.models
+    backend.modules.transactions.domain
+    backend.modules.transactions.repository
+    backend.modules.transactions.transports
+    backend.modules.transactions.handlers
 
 [importlinter:contract:3]
 name = shared imports nothing of modules

@@ -546,6 +546,47 @@ forbidden_modules =
     backend.modules.transactions.repository
     backend.modules.transactions.transports
     backend.modules.transactions.handlers
+# Legitimate `debts → {auth,accounts,transactions}.public` surface (S09.3): the
+# service (`debts.service.share_request`) imports `user_is_active_member` from
+# `auth.public`, `account_is_accessible`/`owned_personal_account_ids` from
+# `accounts.public`, and `get_transaction`/`TransactionState` from
+# `transactions.public`; the routes (`debts.transports.http`) import
+# `User`/`get_current_user` from `auth.public`. `find_shortest_chains` would
+# otherwise surface `debts → X.public → X.internal` as broken chains. Ignoring
+# the *second hop* (X.public → X.internal) makes those invisible without
+# weakening the direct-import protection (a hypothetical `debts.service.Y →
+# auth.models` would still be flagged). The nine `auth.public → auth.X` arcs are
+# the same block as `2-accounts`/`2-budget`/`2-transactions`; the four
+# `accounts.public → accounts.X` arcs cover its re-exports (`accounts.events`
+# imports only `shared.events`, so it is not forbidden and stays out). The three
+# `transactions.public → transactions.X` arcs cover `domain` (`TransactionState`),
+# `service.queries` (`get_transaction`), AND `service.lifecycle`: the service
+# consumes only the first two, but `find_shortest_chains` routes `debts →
+# transactions.public → transactions.service.lifecycle` as soon as `debts` imports
+# `transactions.public` as a module (independent of the symbols consumed) — DO NOT
+# drop the `lifecycle` arc believing it unused, it would break the lint.
+# `transactions.events` imports only `shared.events`, so it is not forbidden and
+# stays out (mirror of `accounts.events` in `2-transactions`). All sixteen arcs
+# exist in the `.public` modules independently of debts → each is "matched"
+# (`unmatched_ignore_imports_alerting = error`).
+ignore_imports =
+    backend.modules.auth.public -> backend.modules.auth.domain
+    backend.modules.auth.public -> backend.modules.auth.models
+    backend.modules.auth.public -> backend.modules.auth.service.audit
+    backend.modules.auth.public -> backend.modules.auth.service.invitations
+    backend.modules.auth.public -> backend.modules.auth.service.jwt
+    backend.modules.auth.public -> backend.modules.auth.service.refresh_tokens
+    backend.modules.auth.public -> backend.modules.auth.service.roles
+    backend.modules.auth.public -> backend.modules.auth.service.users
+    backend.modules.auth.public -> backend.modules.auth.transports.dependencies
+    backend.modules.accounts.public -> backend.modules.accounts.models
+    backend.modules.accounts.public -> backend.modules.accounts.service.accounts
+    backend.modules.accounts.public -> backend.modules.accounts.service.household
+    backend.modules.accounts.public -> backend.modules.accounts.service.setup
+    backend.modules.transactions.public -> backend.modules.transactions.domain
+    backend.modules.transactions.public -> backend.modules.transactions.service.lifecycle
+    backend.modules.transactions.public -> backend.modules.transactions.service.queries
+unmatched_ignore_imports_alerting = error
 
 [importlinter:contract:3]
 name = shared imports nothing of modules

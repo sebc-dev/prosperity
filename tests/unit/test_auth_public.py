@@ -41,6 +41,7 @@ from backend.modules.auth.public import (
     require_member,
     revoke_invitation,
     sanitize_device_label,
+    user_is_active_member,
     verify_access_token,
 )
 from backend.modules.auth.schemas import TokenPair as _schemas_token_pair
@@ -91,6 +92,7 @@ def test_public_exports_exact_set() -> None:
         "require_member",
         "revoke_invitation",
         "sanitize_device_label",
+        "user_is_active_member",
         "verify_access_token",
     ]
     # Also pin "no duplicates": sorted() collapses nothing, but if
@@ -108,6 +110,7 @@ def test_public_symbols_are_callable_or_exceptions() -> None:
     assert callable(create_user)
     assert callable(create_user_with_hash)
     assert callable(any_user_exists)
+    assert callable(user_is_active_member)
     assert callable(get_current_user)
     assert callable(require_admin)
     assert callable(require_member)
@@ -146,6 +149,7 @@ def test_public_names_are_identical_objects_to_internals() -> None:
     assert auth_public.create_user is _users_service.create_user
     assert auth_public.create_user_with_hash is _users_service.create_user_with_hash
     assert auth_public.any_user_exists is _users_service.any_user_exists
+    assert auth_public.user_is_active_member is _users_service.user_is_active_member
     assert auth_public.TokenPair is _schemas_token_pair
     assert auth_public.sanitize_device_label is _schemas_sanitize
     assert auth_public.User is _user_model

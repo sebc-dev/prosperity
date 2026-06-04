@@ -8,6 +8,10 @@ case-different duplicates through if the index regressed).
 
 from __future__ import annotations
 
+import datetime as dt
+import uuid
+from collections.abc import Awaitable, Callable
+
 import pytest
 from pwdlib import PasswordHash
 from sqlalchemy import select
@@ -19,6 +23,7 @@ from backend.modules.auth.service.users import (
     any_user_exists,
     create_user,
     create_user_with_hash,
+    user_is_active_member,
 )
 
 _HASHER = PasswordHash.recommended()
@@ -204,3 +209,29 @@ async def test_create_user_with_hash_duplicate_email_raises_integrity_error(
             role=UserRole.ADMIN,
         )
     assert "uq_users_email_lower" in str(exc_info.value.orig)
+
+
+# --- user_is_active_member (S09.3, consumed cross-module by debts) -----------
+
+
+async def test_user_is_active_member_true_for_active_user(
+    auth_schema: AsyncSession,
+    bound_user_factory: Callable[..., Awaitable[User]],
+) -> None:
+    user = await bound_user_factory()
+    assert await user_is_active_member(auth_schema, user_id=user.id) is True
+
+
+async def test_user_is_active_member_false_for_disabled_user(
+    auth_schema: AsyncSession,
+    bound_user_factory: Callable[..., Awaitable[User]],
+) -> None:
+    # F02: a disabled user is no longer a valid counterparty (no phantom debt).
+    user = await bound_user_factory(disabled_at=dt.datetime(2026, 1, 1, tzinfo=dt.UTC))
+    assert await user_is_active_member(auth_schema, user_id=user.id) is False
+
+
+async def test_user_is_active_member_false_for_unknown_id(
+    auth_schema: AsyncSession,
+) -> None:
+    assert await user_is_active_member(auth_schema, user_id=uuid.uuid4()) is False

@@ -39,6 +39,13 @@ The current consumers cross-module are:
   subclasses). The `Invitation` model stays intra-auth: the row is only
   ever written through these helpers, never constructed by peers.
 
+- the debts module (S09.3) — `user_is_active_member` answers "is this
+  arbitrary user id an active foyer member?" for the `share_request`
+  `requested_from` check (vérif iv). `get_current_user` resolves a token,
+  not an arbitrary id, so a distinct EXISTS helper is needed. The arc
+  `auth.public → auth.service.users` is already whitelisted (it re-exports
+  `any_user_exists`/`create_user`), so this adds no new `.importlinter` arc.
+
 `RefreshToken` and the shared `password_hasher` factory deliberately
 stay intra-auth: hashing is encapsulated by `create_user` and
 refresh-token row construction by `issue_refresh_token`.
@@ -87,6 +94,7 @@ from backend.modules.auth.service.users import (
     any_user_exists,
     create_user,
     create_user_with_hash,
+    user_is_active_member,
 )
 from backend.modules.auth.transports.dependencies import (
     get_current_user,
@@ -125,5 +133,6 @@ __all__ = [
     "require_member",
     "revoke_invitation",
     "sanitize_device_label",
+    "user_is_active_member",
     "verify_access_token",
 ]

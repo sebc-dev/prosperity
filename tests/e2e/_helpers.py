@@ -13,12 +13,14 @@ once such an endpoint exists.
 from __future__ import annotations
 
 from typing import Any
+from uuid import UUID
 
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.modules.auth.models import AdminAuditLog, User
+from backend.modules.budget.models import BudgetThresholdAlert
 
 # Default admin credentials reused across journeys. The password is ≥12
 # chars (SetupRequest / OWASP ASVS V2.1.*); journeys that re-login against
@@ -177,3 +179,139 @@ async def fetch_audit_by_action(
             )
         ).all()
     return [(r[0], r[1], r[2]) for r in rows]
+
+
+# --- Budget lifecycle (S08.5.3) ---------------------------------------------
+#
+# Plain `async` helpers for the budget E2E journey (D11): create an account, a
+# transaction in canonical form B, confirm it through the real flow, create a
+# budget, and read the threshold alerts. `leg_role` is NEVER in a create payload
+# (server-authoritative, derived from `category_id` — ADR 0017 / S08.5.1), so the
+# journey produces a confirmable consuming expense through the real client flow.
+
+
+async def create_personal_account(
+    client: AsyncClient,
+    access: str,
+    *,
+    name: str,
+    type: str = "courant",
+    currency: str = "EUR",
+) -> dict[str, Any]:
+    """POST /accounts/personal (Bearer) → AccountResponse. owner = caller. Asserts 201."""
+    resp = await client.post(
+        "/accounts/personal",
+        json={"name": name, "type": type, "currency": currency},
+        headers=auth_headers(access),
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+async def create_shared_account(  # noqa: PLR0913 — keyword-only HTTP helper
+    client: AsyncClient,
+    access: str,
+    *,
+    name: str,
+    members: list[dict[str, Any]],
+    type: str = "courant",
+    currency: str = "EUR",
+) -> dict[str, Any]:
+    """POST /accounts/shared (Bearer). `members` = [{user_id, default_share_ratio}]
+    (≥ 2, Σ parts == 1). Asserts 201."""
+    resp = await client.post(
+        "/accounts/shared",
+        json={"name": name, "type": type, "currency": currency, "members": members},
+        headers=auth_headers(access),
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+async def create_transaction(
+    client: AsyncClient,
+    access: str,
+    account_id: str,
+    *,
+    splits: list[dict[str, Any]],
+    date: str | None = None,
+) -> dict[str, Any]:
+    """POST /accounts/{account_id}/transactions (Bearer) → draft TransactionResponse.
+
+    `splits` = [{account_id, amount_cents, currency, category_id?}] ; `leg_role`
+    is NOT exposed (server-authoritative, derived from `category_id` at INSERT —
+    ADR 0017 / S08.5.1). Asserts 201.
+    """
+    body: dict[str, Any] = {"splits": splits}
+    if date is not None:
+        body["date"] = date
+    resp = await client.post(
+        f"/accounts/{account_id}/transactions", json=body, headers=auth_headers(access)
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+async def confirm_transaction(client: AsyncClient, access: str, tx_id: str) -> dict[str, Any]:
+    """draft → planned → confirmed (Bearer). A draft is not directly confirmable
+    (E07): chains POST /plan then POST /confirm. Asserts 200 at each step."""
+    planned = await client.post(f"/transactions/{tx_id}/plan", headers=auth_headers(access))
+    assert planned.status_code == 200, planned.text
+    confirmed = await client.post(f"/transactions/{tx_id}/confirm", headers=auth_headers(access))
+    assert confirmed.status_code == 200, confirmed.text
+    return confirmed.json()
+
+
+async def create_budget(  # noqa: PLR0913 — keyword-only HTTP helper
+    client: AsyncClient,
+    access: str,
+    *,
+    category_id: str,
+    period_start: str,
+    amount_cents: int,
+    contributor_ids: list[str],
+    scope: str = "personal",
+    period_kind: str = "monthly",
+) -> dict[str, Any]:
+    """POST /budgets (Bearer) → BudgetResponse. `currency`/`created_by` server-derived.
+    Asserts 201."""
+    resp = await client.post(
+        "/budgets",
+        json={
+            "category_id": category_id,
+            "period_kind": period_kind,
+            "period_start": period_start,
+            "amount_cents": amount_cents,
+            "scope": scope,
+            "contributor_ids": contributor_ids,
+        },
+        headers=auth_headers(access),
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+async def fetch_threshold_alerts(
+    sessionmaker: async_sessionmaker[AsyncSession],
+    *,
+    budget_id: str,
+) -> list[int]:
+    """Side-channel (D8): the sorted `[threshold_pct, …]` of a budget's alerts.
+
+    No HTTP endpoint exposes the threshold alerts in V1 (notification = SSE/E14);
+    we read `budget_threshold_alerts` directly, gabarit `fetch_audit_*`. Replace
+    with an HTTP call once such an endpoint exists.
+    """
+    async with sessionmaker() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(BudgetThresholdAlert.threshold_pct)
+                    .where(BudgetThresholdAlert.budget_id == UUID(budget_id))
+                    .order_by(BudgetThresholdAlert.threshold_pct)
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return [int(r) for r in rows]

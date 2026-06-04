@@ -1,20 +1,23 @@
-"""Integration tests for the budget threshold detector (S08.3, P08.3.4).
+"""Integration tests for the budget threshold detector (S08.3, repiloted S08.5.3).
 
 Drives the **real** confirm flow end to end: `transition_to_confirmed` →
 `dispatch` → `on_transaction_confirmed`, with a SYNC spy subscribed to
 `BudgetThresholdEvent` proving the livrable observable. The idempotence table
 `budget_threshold_alerts` is inspected alongside the spy.
 
-⚠️ Consumption model note (E15 gap). A transaction the *service* can confirm
-requires every split categorised (so its two legs cancel to 0 in consumption),
-while `compute_consumption` sums the **E15 canonical form** (account leg
-uncategorised + category leg). So here:
-
-* directly-seeded `confirmed` expenses in canonical form DRIVE the consumption
-  (they set the percentage), and
-* an all-categorised `planned` transaction (legs −A/+A on the same category,
-  net 0) is confirmed only to TRIGGER detection — it resolves the budget via its
-  split category without itself moving the consumption.
+Reconciled consumption model (ADR 0017, S08.5.3 — D1/D2). Since #137 a dépense
+in **forme canonique B** (jambe `funding` compte `category_id=NULL` + jambe
+`classification` catégorisée, même compte, zero-sum) is **confirmable by the
+service** AND consumed by the budget: `_consumption_filters` sums the
+`classification` leg (the `funding` NULL leg is excluded by `category_id ∈
+subtree`). So there are no longer **two** objects (a directly-seeded `confirmed`
+expense driving consumption + a net-0 `planned` trigger firing detection) but a
+**single** one — the consuming expense IS the trigger. Every scenario below seeds
+a `planned` form-B expense via `_add_planned_expense` and confirms it through the
+real service; the flip to `CONFIRMED` happens **before** `dispatch`, and
+`compute_consumption` filters `state == "confirmed"`, so the just-confirmed
+expense is in the total the detector observes. No more DB-direct seed of the
+consuming form (AC #138).
 
 Wiring (corrects review Bloquant B1). The `subscribe_async` câblage lives in
 `main.py`'s `lifespan`; these tests call `transition_to_confirmed` directly
@@ -75,7 +78,7 @@ def _wire_threshold_detector() -> Iterator[list[BudgetThresholdEvent]]:  # pyrig
 # ---------------------------------------------------------------------------
 
 
-def _add_confirmed_expense(  # noqa: PLR0913 — keyword-only seed helper
+def _add_planned_expense(  # noqa: PLR0913 — keyword-only seed helper
     s: Session,
     *,
     account_id: UUID,
@@ -84,17 +87,24 @@ def _add_confirmed_expense(  # noqa: PLR0913 — keyword-only seed helper
     created_by: UUID,
     override: str = "default",
     currency: str = "EUR",
-) -> None:
-    """Persist a canonical (E15) expense already `confirmed` — DRIVES consumption.
+) -> UUID:
+    """Persist a `planned` expense in **canonical form B** (ADR 0017) and return
+    its id, ready to be confirmed by the service.
 
-    Account leg `category_id = NULL` (never counted); category leg carries
-    `category_id` and `+amount` (the consumed amount). Seeded directly, so the
-    account-leg-NULL form (which the service confirm would reject) is fine here.
+    `funding` leg (account movement): `category_id=NULL`, `-amount` (leg_role
+    derived `funding` by the ORM default). `classification` leg: `category_id`,
+    `+amount` (leg_role `classification`). Same account, zero-sum.
+
+    Once confirmed via `transition_to_confirmed`, this expense:
+      * **raises** the consumption by `amount` (the NULL leg is excluded by the
+        `category_id ∈ subtree` filter), AND
+      * **triggers** the threshold detector (state `CONFIRMED` before `dispatch`).
+    It is the single object: no more seeded consumption + net-0 trigger.
     """
     tx = Transaction(
         account_id=account_id,
         date=_TODAY,
-        state="confirmed",
+        state="planned",
         created_by=created_by,
         debt_generation_override=override,
     )
@@ -107,7 +117,7 @@ def _add_confirmed_expense(  # noqa: PLR0913 — keyword-only seed helper
                 account_id=account_id,
                 category_id=None,
                 amount_cents=-amount,
-                currency="EUR",
+                currency=currency,
             ),
             Split(
                 transaction_id=tx.id,
@@ -115,39 +125,6 @@ def _add_confirmed_expense(  # noqa: PLR0913 — keyword-only seed helper
                 category_id=category_id,
                 amount_cents=amount,
                 currency=currency,
-            ),
-        ]
-    )
-    s.flush()
-
-
-def _add_planned_trigger(
-    s: Session, *, account_id: UUID, category_id: UUID, created_by: UUID
-) -> UUID:
-    """A `planned` all-categorised expense (legs −1000/+1000 on `category_id`).
-
-    Passes `transition_to_confirmed` (zero-sum + every split categorised) and
-    resolves the budget via its split category, while contributing **net 0** to
-    consumption (the two category legs cancel) — a pure detection trigger.
-    """
-    tx = Transaction(account_id=account_id, date=_TODAY, state="planned", created_by=created_by)
-    s.add(tx)
-    s.flush()
-    s.add_all(
-        [
-            Split(
-                transaction_id=tx.id,
-                account_id=account_id,
-                category_id=category_id,
-                amount_cents=-1000,
-                currency="EUR",
-            ),
-            Split(
-                transaction_id=tx.id,
-                account_id=account_id,
-                category_id=category_id,
-                amount_cents=1000,
-                currency="EUR",
             ),
         ]
     )
@@ -201,6 +178,12 @@ async def _alert_count(session: AsyncSession, budget_id: UUID) -> int:
     ).scalar_one()
 
 
+async def _tx_state(session: AsyncSession, tx_id: UUID) -> str:
+    return (
+        await session.execute(select(Transaction.state).where(Transaction.id == tx_id))
+    ).scalar_one()
+
+
 # ---------------------------------------------------------------------------
 # Scenarios
 # ---------------------------------------------------------------------------
@@ -220,12 +203,9 @@ async def test_below_threshold_emits_no_event(
         cat = Category(name="Courses")
         s.add(cat)
         s.flush()
-        _add_confirmed_expense(
-            s, account_id=acc.id, category_id=cat.id, amount=7900, created_by=owner.id
-        )
         budget_id = _make_budget(s, category_id=cat.id, created_by=owner.id, amount_cents=10000)
-        return _add_planned_trigger(
-            s, account_id=acc.id, category_id=cat.id, created_by=owner.id
+        return _add_planned_expense(
+            s, account_id=acc.id, category_id=cat.id, amount=7900, created_by=owner.id
         ), budget_id
 
     tx_id, budget_id = await household_singleton.run_sync(_seed)
@@ -240,7 +220,8 @@ async def test_crossing_80_emits_once(
     bound_account_factories: FactoryBundle,
     _wire_threshold_detector: list[BudgetThresholdEvent],
 ) -> None:
-    # 81 % (8100 / 10000) → exactly one event `80`, with the exact payload.
+    # 81 % (8100 / 10000) → exactly one event `80`, with the exact payload. The
+    # consumed amount now comes from the **confirmed** expense, not a seed.
     user_factory, account_factory, _ = await bound_account_factories()
 
     def _seed(s: Session) -> tuple[UUID, UUID]:
@@ -249,12 +230,9 @@ async def test_crossing_80_emits_once(
         cat = Category(name="Courses")
         s.add(cat)
         s.flush()
-        _add_confirmed_expense(
-            s, account_id=acc.id, category_id=cat.id, amount=8100, created_by=owner.id
-        )
         budget_id = _make_budget(s, category_id=cat.id, created_by=owner.id, amount_cents=10000)
-        return _add_planned_trigger(
-            s, account_id=acc.id, category_id=cat.id, created_by=owner.id
+        return _add_planned_expense(
+            s, account_id=acc.id, category_id=cat.id, amount=8100, created_by=owner.id
         ), budget_id
 
     tx_id, budget_id = await household_singleton.run_sync(_seed)
@@ -267,6 +245,35 @@ async def test_crossing_80_emits_once(
     # Positive consumed (expense sign convention of `compute_consumption`).
     assert evt.consumed_cents == 8100
     assert evt.period_start == _PERIOD_START
+    assert await _alert_count(household_singleton, budget_id) == 1
+
+
+async def test_crossing_exactly_80_emits_once(
+    household_singleton: AsyncSession,
+    bound_account_factories: FactoryBundle,
+    _wire_threshold_detector: list[BudgetThresholdEvent],
+) -> None:
+    # Boundary (S08.5.3 §I): consumption EXACTLY at 80.00 % (8000 / 10000). The
+    # detector counts equality as reached (`consumed*100 >= pct*amount`), so the
+    # `80` event fires once — pins the frontier the other scenarios straddle.
+    user_factory, account_factory, _ = await bound_account_factories()
+
+    def _seed(s: Session) -> tuple[UUID, UUID]:
+        owner = user_factory(email="exact80@example.com")
+        acc = account_factory(owner_id=owner.id, name="Perso")
+        cat = Category(name="Courses")
+        s.add(cat)
+        s.flush()
+        budget_id = _make_budget(s, category_id=cat.id, created_by=owner.id, amount_cents=10000)
+        return _add_planned_expense(
+            s, account_id=acc.id, category_id=cat.id, amount=8000, created_by=owner.id
+        ), budget_id
+
+    tx_id, budget_id = await household_singleton.run_sync(_seed)
+    await transition_to_confirmed(household_singleton, tx_id=tx_id)
+
+    assert [e.threshold_pct for e in _wire_threshold_detector] == [80]
+    assert _wire_threshold_detector[0].consumed_cents == 8000
     assert await _alert_count(household_singleton, budget_id) == 1
 
 
@@ -284,13 +291,10 @@ async def test_only_new_threshold_published_when_80_pre_seeded(
         cat = Category(name="Courses")
         s.add(cat)
         s.flush()
-        _add_confirmed_expense(
-            s, account_id=acc.id, category_id=cat.id, amount=10500, created_by=owner.id
-        )
         budget_id = _make_budget(s, category_id=cat.id, created_by=owner.id, amount_cents=10000)
         _seed_alert(s, budget_id=budget_id, threshold_pct=80)
-        return _add_planned_trigger(
-            s, account_id=acc.id, category_id=cat.id, created_by=owner.id
+        return _add_planned_expense(
+            s, account_id=acc.id, category_id=cat.id, amount=10500, created_by=owner.id
         ), budget_id
 
     tx_id, budget_id = await household_singleton.run_sync(_seed)
@@ -315,14 +319,11 @@ async def test_crossing_120_from_100_pre_seeded(
         cat = Category(name="Courses")
         s.add(cat)
         s.flush()
-        _add_confirmed_expense(
-            s, account_id=acc.id, category_id=cat.id, amount=12500, created_by=owner.id
-        )
         budget_id = _make_budget(s, category_id=cat.id, created_by=owner.id, amount_cents=10000)
         _seed_alert(s, budget_id=budget_id, threshold_pct=80)
         _seed_alert(s, budget_id=budget_id, threshold_pct=100)
-        return _add_planned_trigger(
-            s, account_id=acc.id, category_id=cat.id, created_by=owner.id
+        return _add_planned_expense(
+            s, account_id=acc.id, category_id=cat.id, amount=12500, created_by=owner.id
         ), budget_id
 
     tx_id, budget_id = await household_singleton.run_sync(_seed)
@@ -346,12 +347,9 @@ async def test_multi_threshold_single_write(
         cat = Category(name="Courses")
         s.add(cat)
         s.flush()
-        _add_confirmed_expense(
-            s, account_id=acc.id, category_id=cat.id, amount=13000, created_by=owner.id
-        )
         budget_id = _make_budget(s, category_id=cat.id, created_by=owner.id, amount_cents=10000)
-        return _add_planned_trigger(
-            s, account_id=acc.id, category_id=cat.id, created_by=owner.id
+        return _add_planned_expense(
+            s, account_id=acc.id, category_id=cat.id, amount=13000, created_by=owner.id
         ), budget_id
 
     tx_id, budget_id = await household_singleton.run_sync(_seed)
@@ -366,8 +364,10 @@ async def test_idempotent_on_second_confirmation(
     bound_account_factories: FactoryBundle,
     _wire_threshold_detector: list[BudgetThresholdEvent],
 ) -> None:
-    # Two confirmations while consumption stays at 81 % → the `80` event fires
-    # ONCE (the second INSERT hits ON CONFLICT DO NOTHING → no re-publish).
+    # Two confirmations that BOTH leave consumption in the same band [80 %, 100 %)
+    # → the `80` event fires ONCE (the second confirm re-evaluates, recomputes the
+    # SAME `[80]` set, and the INSERT hits ON CONFLICT DO NOTHING → no re-publish).
+    # The 8100-then-+50 amounts (81 % → 81.5 %) cross no NEW threshold (S08.5.3 D4).
     user_factory, account_factory, _ = await bound_account_factories()
 
     def _seed(s: Session) -> tuple[UUID, UUID, UUID]:
@@ -376,12 +376,13 @@ async def test_idempotent_on_second_confirmation(
         cat = Category(name="Courses")
         s.add(cat)
         s.flush()
-        _add_confirmed_expense(
+        budget_id = _make_budget(s, category_id=cat.id, created_by=owner.id, amount_cents=10000)
+        tx1 = _add_planned_expense(
             s, account_id=acc.id, category_id=cat.id, amount=8100, created_by=owner.id
         )
-        budget_id = _make_budget(s, category_id=cat.id, created_by=owner.id, amount_cents=10000)
-        tx1 = _add_planned_trigger(s, account_id=acc.id, category_id=cat.id, created_by=owner.id)
-        tx2 = _add_planned_trigger(s, account_id=acc.id, category_id=cat.id, created_by=owner.id)
+        tx2 = _add_planned_expense(
+            s, account_id=acc.id, category_id=cat.id, amount=50, created_by=owner.id
+        )
         return tx1, tx2, budget_id
 
     tx1, tx2, budget_id = await household_singleton.run_sync(_seed)
@@ -389,6 +390,46 @@ async def test_idempotent_on_second_confirmation(
     await transition_to_confirmed(household_singleton, tx_id=tx2)
 
     assert [e.threshold_pct for e in _wire_threshold_detector] == [80]
+    # The single event is the FIRST confirm's (consumed 8100): the second confirm
+    # re-evaluated and republished nothing (ON CONFLICT), it did not emit 8150.
+    assert _wire_threshold_detector[0].consumed_cents == 8100
+    assert await _alert_count(household_singleton, budget_id) == 1
+
+
+async def test_cumulative_crossing_across_two_confirms(
+    household_singleton: AsyncSession,
+    bound_account_factories: FactoryBundle,
+    _wire_threshold_detector: list[BudgetThresholdEvent],
+) -> None:
+    # Recovers the "(re)trigger is orthogonal to the tx amount" coverage the old
+    # net-0 trigger gave (S08.5.3 §E): a FIRST expense at 50 % (5000) crosses
+    # nothing, a SECOND at +31 % (3100) brings the CUMULATIVE to 81 % → the `80`
+    # event fires on the SECOND confirm. This discriminates a CUMULATIVE recompute
+    # (sums 8100) from a per-tx one (3100 = 31 % alone would cross nothing).
+    user_factory, account_factory, _ = await bound_account_factories()
+
+    def _seed(s: Session) -> tuple[UUID, UUID, UUID]:
+        owner = user_factory(email="cumulative@example.com")
+        acc = account_factory(owner_id=owner.id, name="Perso")
+        cat = Category(name="Courses")
+        s.add(cat)
+        s.flush()
+        budget_id = _make_budget(s, category_id=cat.id, created_by=owner.id, amount_cents=10000)
+        tx1 = _add_planned_expense(
+            s, account_id=acc.id, category_id=cat.id, amount=5000, created_by=owner.id
+        )
+        tx2 = _add_planned_expense(
+            s, account_id=acc.id, category_id=cat.id, amount=3100, created_by=owner.id
+        )
+        return tx1, tx2, budget_id
+
+    tx1, tx2, budget_id = await household_singleton.run_sync(_seed)
+    await transition_to_confirmed(household_singleton, tx_id=tx1)
+    assert _wire_threshold_detector == []  # 50 % crosses nothing
+
+    await transition_to_confirmed(household_singleton, tx_id=tx2)
+    assert [e.threshold_pct for e in _wire_threshold_detector] == [80]
+    assert _wire_threshold_detector[0].consumed_cents == 8100  # cumulative, not 3100
     assert await _alert_count(household_singleton, budget_id) == 1
 
 
@@ -398,6 +439,8 @@ async def test_force_full_debt_not_counted(
     _wire_threshold_detector: list[BudgetThresholdEvent],
 ) -> None:
     # A `force_full_debt` expense that would reach 90 % is "hors budget" → 0 event.
+    # It IS confirmed via the service (the override does not block confirmation,
+    # S08.5.3 §J); the `[]` comes from the consumption filter excluding it.
     user_factory, account_factory, _ = await bound_account_factories()
 
     def _seed(s: Session) -> tuple[UUID, UUID]:
@@ -406,22 +449,21 @@ async def test_force_full_debt_not_counted(
         cat = Category(name="Courses")
         s.add(cat)
         s.flush()
-        _add_confirmed_expense(
+        budget_id = _make_budget(s, category_id=cat.id, created_by=owner.id, amount_cents=10000)
+        return _add_planned_expense(
             s,
             account_id=acc.id,
             category_id=cat.id,
             amount=9000,
             created_by=owner.id,
             override="force_full_debt",
-        )
-        budget_id = _make_budget(s, category_id=cat.id, created_by=owner.id, amount_cents=10000)
-        return _add_planned_trigger(
-            s, account_id=acc.id, category_id=cat.id, created_by=owner.id
         ), budget_id
 
     tx_id, budget_id = await household_singleton.run_sync(_seed)
     await transition_to_confirmed(household_singleton, tx_id=tx_id)
 
+    # The `[]` is the consumption FILTER (override), not a silent confirm failure.
+    assert await _tx_state(household_singleton, tx_id) == "confirmed"
     assert _wire_threshold_detector == []
     assert await _alert_count(household_singleton, budget_id) == 0
 
@@ -431,8 +473,8 @@ async def test_hierarchical_parent_budget_alerts(
     bound_account_factories: FactoryBundle,
     _wire_threshold_detector: list[BudgetThresholdEvent],
 ) -> None:
-    # Expense + trigger on a CHILD category, budget posted on the PARENT → the
-    # upward resolution (D8) makes the parent budget alert.
+    # Expense on a CHILD category, budget posted on the PARENT → the upward
+    # resolution (D8) makes the parent budget alert.
     user_factory, account_factory, _ = await bound_account_factories()
 
     def _seed(s: Session) -> tuple[UUID, UUID]:
@@ -444,12 +486,9 @@ async def test_hierarchical_parent_budget_alerts(
         child = Category(name="Énergie", parent_id=parent.id)
         s.add(child)
         s.flush()
-        _add_confirmed_expense(
-            s, account_id=acc.id, category_id=child.id, amount=8100, created_by=owner.id
-        )
         budget_id = _make_budget(s, category_id=parent.id, created_by=owner.id, amount_cents=10000)
-        return _add_planned_trigger(
-            s, account_id=acc.id, category_id=child.id, created_by=owner.id
+        return _add_planned_expense(
+            s, account_id=acc.id, category_id=child.id, amount=8100, created_by=owner.id
         ), budget_id
 
     tx_id, budget_id = await household_singleton.run_sync(_seed)
@@ -465,35 +504,42 @@ async def test_transfer_without_category_emits_nothing(
     _wire_threshold_detector: list[BudgetThresholdEvent],
 ) -> None:
     # A confirmed transfer (2 accounts, uncategorised legs) short-circuits the
-    # detector (`_split_category_ids` empty) → no event, even with a hot budget.
+    # detector (`_split_category_ids` empty) → no event, even against a HOT budget.
+    # The budget is warmed by a REAL consuming confirm (9000 → 90 %, emits `80`);
+    # a snapshot of the spy then isolates the transfer's (null) effect (D5).
     user_factory, account_factory, _ = await bound_account_factories()
 
-    def _seed(s: Session) -> tuple[UUID, UUID]:
+    def _seed(s: Session) -> tuple[UUID, UUID, UUID]:
         owner = user_factory(email="transfer@example.com")
         acc_a = account_factory(owner_id=owner.id, name="A")
         acc_b = account_factory(owner_id=owner.id, name="B")
         cat = Category(name="Courses")
         s.add(cat)
         s.flush()
-        # A hot budget exists, but the transfer carries no category leg.
-        _add_confirmed_expense(
+        budget_id = _make_budget(s, category_id=cat.id, created_by=owner.id, amount_cents=10000)
+        hot = _add_planned_expense(
             s, account_id=acc_a.id, category_id=cat.id, amount=9000, created_by=owner.id
         )
-        budget_id = _make_budget(s, category_id=cat.id, created_by=owner.id, amount_cents=10000)
-        tx = Transaction(account_id=acc_a.id, date=_TODAY, state="planned", created_by=owner.id)
-        s.add(tx)
+        # Transfer built inline (D6): 2 distinct accounts, uncategorised funding
+        # legs — structurally different from the mono-account form B helper. Both
+        # legs are `funding`, allowed here because a transfer (≥ 2 accounts) is
+        # exempt from `assert_at_most_one_funding_leg` AND from categorisation.
+        transfer = Transaction(
+            account_id=acc_a.id, date=_TODAY, state="planned", created_by=owner.id
+        )
+        s.add(transfer)
         s.flush()
         s.add_all(
             [
                 Split(
-                    transaction_id=tx.id,
+                    transaction_id=transfer.id,
                     account_id=acc_a.id,
                     category_id=None,
                     amount_cents=-1000,
                     currency="EUR",
                 ),
                 Split(
-                    transaction_id=tx.id,
+                    transaction_id=transfer.id,
                     account_id=acc_b.id,
                     category_id=None,
                     amount_cents=1000,
@@ -502,13 +548,20 @@ async def test_transfer_without_category_emits_nothing(
             ]
         )
         s.flush()
-        return tx.id, budget_id
+        return hot, transfer.id, budget_id
 
-    tx_id, budget_id = await household_singleton.run_sync(_seed)
-    await transition_to_confirmed(household_singleton, tx_id=tx_id)
+    hot_id, transfer_id, budget_id = await household_singleton.run_sync(_seed)
 
-    assert _wire_threshold_detector == []
-    assert await _alert_count(household_singleton, budget_id) == 0
+    # Warm the budget with a real consuming confirm → it legitimately emits `80`.
+    await transition_to_confirmed(household_singleton, tx_id=hot_id)
+    before = list(_wire_threshold_detector)
+    assert [e.threshold_pct for e in before] == [80]  # the budget IS hot now
+    count_before = await _alert_count(household_singleton, budget_id)
+
+    # Confirming the transfer against the hot budget adds NOTHING.
+    await transition_to_confirmed(household_singleton, tx_id=transfer_id)
+    assert list(_wire_threshold_detector) == before
+    assert await _alert_count(household_singleton, budget_id) == count_before
 
 
 async def test_shared_scope_non_contributor_account_no_leak(
@@ -528,11 +581,6 @@ async def test_shared_scope_non_contributor_account_no_leak(
         cat = Category(name="Courses")
         s.add(cat)
         s.flush()
-        # High spend on a PERSONAL account; the shared budget's eligible set is
-        # shared accounts whose members ⊆ {a,b} — a personal account is not one.
-        _add_confirmed_expense(
-            s, account_id=perso.id, category_id=cat.id, amount=9000, created_by=a.id
-        )
         budget_id = _make_budget(
             s,
             category_id=cat.id,
@@ -541,8 +589,10 @@ async def test_shared_scope_non_contributor_account_no_leak(
             scope="shared",
             contributor_ids=(a.id, b.id),
         )
-        return _add_planned_trigger(
-            s, account_id=perso.id, category_id=cat.id, created_by=a.id
+        # High spend on a PERSONAL account; the shared budget's eligible set is
+        # shared accounts whose members ⊆ {a,b} — a personal account is not one.
+        return _add_planned_expense(
+            s, account_id=perso.id, category_id=cat.id, amount=9000, created_by=a.id
         ), budget_id
 
     tx_id, budget_id = await household_singleton.run_sync(_seed)
@@ -576,9 +626,6 @@ async def test_shared_scope_account_with_foreign_member_no_leak(
         cat = Category(name="Courses")
         s.add(cat)
         s.flush()
-        _add_confirmed_expense(
-            s, account_id=abc.id, category_id=cat.id, amount=9000, created_by=a.id
-        )
         budget_id = _make_budget(
             s,
             category_id=cat.id,
@@ -587,8 +634,8 @@ async def test_shared_scope_account_with_foreign_member_no_leak(
             scope="shared",
             contributor_ids=(a.id, b.id),
         )
-        return _add_planned_trigger(
-            s, account_id=abc.id, category_id=cat.id, created_by=a.id
+        return _add_planned_expense(
+            s, account_id=abc.id, category_id=cat.id, amount=9000, created_by=a.id
         ), budget_id
 
     tx_id, budget_id = await household_singleton.run_sync(_seed)
@@ -617,11 +664,10 @@ async def test_wiring_is_load_bearing(
         cat = Category(name="Courses")
         s.add(cat)
         s.flush()
-        _add_confirmed_expense(
+        _make_budget(s, category_id=cat.id, created_by=owner.id, amount_cents=10000)
+        return _add_planned_expense(
             s, account_id=acc.id, category_id=cat.id, amount=8100, created_by=owner.id
         )
-        _make_budget(s, category_id=cat.id, created_by=owner.id, amount_cents=10000)
-        return _add_planned_trigger(s, account_id=acc.id, category_id=cat.id, created_by=owner.id)
 
     tx_id = await household_singleton.run_sync(_seed)
     await transition_to_confirmed(household_singleton, tx_id=tx_id)
@@ -635,7 +681,11 @@ async def test_wiring_is_load_bearing(
 
 
 async def _seed_committed_budget_scenario(sm: async_sessionmaker[AsyncSession]) -> UUID:
-    """Seed a committed 81 %-budget + a `planned` trigger; return the trigger id."""
+    """Seed a committed budget + a `planned` form-B 81 %-expense; return its id.
+
+    The consuming expense IS the trigger now (S08.5.3): the test confirms it and
+    asserts the detector failure rolls the confirm back — no DB-direct seed.
+    """
     async with sm() as session:
         session.add(Household(name="Committed-S083", base_currency="EUR"))
         await session.commit()
@@ -656,12 +706,9 @@ async def _seed_committed_budget_scenario(sm: async_sessionmaker[AsyncSession]) 
         await session.flush()
 
         def _seed(s: Session) -> UUID:
-            _add_confirmed_expense(
-                s, account_id=acc.id, category_id=cat.id, amount=8100, created_by=owner.id
-            )
             _make_budget(s, category_id=cat.id, created_by=owner.id, amount_cents=10000)
-            return _add_planned_trigger(
-                s, account_id=acc.id, category_id=cat.id, created_by=owner.id
+            return _add_planned_expense(
+                s, account_id=acc.id, category_id=cat.id, amount=8100, created_by=owner.id
             )
 
         tx_id = await session.run_sync(_seed)

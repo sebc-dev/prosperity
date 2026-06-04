@@ -25,6 +25,10 @@ from backend.modules.auth.transports.http import (
 from backend.modules.budget.public import on_transaction_confirmed
 from backend.modules.budget.transports.budgets_http import budgets_router
 from backend.modules.budget.transports.http import categories_router
+from backend.modules.debts.transports.http import (
+    share_requests_router,
+    tx_share_requests_router,
+)
 from backend.modules.transactions.public import TransactionConfirmedEvent
 from backend.modules.transactions.transports.http import (
     account_tx_router,
@@ -91,6 +95,8 @@ app.include_router(categories_router)
 app.include_router(budgets_router)
 app.include_router(account_tx_router)
 app.include_router(transactions_router)
+app.include_router(tx_share_requests_router)
+app.include_router(share_requests_router)
 
 
 @app.get("/healthz")

@@ -20,11 +20,15 @@ from backend.modules.debts.public import (
     create_share_request,
     revoke_share_request,
 )
+from backend.modules.debts.service import dashboard as _dashboard
 from backend.modules.debts.service import share_request as _service
 
 
 def test_public_exports_exact_set() -> None:
     assert sorted(debts_public.__all__) == [
+        "CounterpartyNet",
+        "DebtDirection",
+        "DebtWithContext",
         "DuplicateActiveShareRequestError",
         "RequestedFromNotMemberError",
         "SelfShareError",
@@ -33,7 +37,9 @@ def test_public_exports_exact_set() -> None:
         "SourceAccountNotShareableError",
         "SourceTransactionNotConfirmedError",
         "SourceTransactionNotFoundError",
+        "aggregate_by_counterparty",
         "create_share_request",
+        "list_debts_for_user",
         "revoke_share_request",
     ]
     assert len(debts_public.__all__) == len(set(debts_public.__all__))
@@ -85,3 +91,9 @@ def test_public_names_are_identical_objects_to_internals() -> None:
         debts_public.DuplicateActiveShareRequestError is _service.DuplicateActiveShareRequestError
     )
     assert debts_public.ShareRequestNotFoundError is _service.ShareRequestNotFoundError
+    # The S09.4 read surface re-exports the real dashboard symbols (no stub).
+    assert debts_public.list_debts_for_user is _dashboard.list_debts_for_user
+    assert debts_public.aggregate_by_counterparty is _dashboard.aggregate_by_counterparty
+    assert debts_public.DebtWithContext is _dashboard.DebtWithContext
+    assert debts_public.CounterpartyNet is _dashboard.CounterpartyNet
+    assert debts_public.DebtDirection is _dashboard.DebtDirection

@@ -10,10 +10,22 @@ route boundary (`debts.transports.http`) — can drive the act and map failures 
 HTTP. The pure `DebtCalculator` family (`debts.domain`) is NOT re-exported here:
 it is consumed only internally by the service; the boundary imports the
 `DebtCalculationError` family from `debts.domain` directly (intra-module).
+
+The S09.4 **read** surface (`list_debts_for_user`, `aggregate_by_counterparty`
+and their DTOs `DebtWithContext`/`CounterpartyNet`/`DebtDirection`) is re-exported
+too: the dashboard routes consume it via this surface, never `service.dashboard`
+directly. All re-exports are intra-module (no new cross-module arc).
 """
 
 from __future__ import annotations
 
+from backend.modules.debts.service.dashboard import (
+    CounterpartyNet,
+    DebtDirection,
+    DebtWithContext,
+    aggregate_by_counterparty,
+    list_debts_for_user,
+)
 from backend.modules.debts.service.share_request import (
     DuplicateActiveShareRequestError,
     RequestedFromNotMemberError,
@@ -28,6 +40,9 @@ from backend.modules.debts.service.share_request import (
 )
 
 __all__ = [
+    "CounterpartyNet",
+    "DebtDirection",
+    "DebtWithContext",
     "DuplicateActiveShareRequestError",
     "RequestedFromNotMemberError",
     "SelfShareError",
@@ -36,6 +51,8 @@ __all__ = [
     "SourceAccountNotShareableError",
     "SourceTransactionNotConfirmedError",
     "SourceTransactionNotFoundError",
+    "aggregate_by_counterparty",
     "create_share_request",
+    "list_debts_for_user",
     "revoke_share_request",
 ]

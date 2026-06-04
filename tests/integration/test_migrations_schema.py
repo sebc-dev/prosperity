@@ -209,6 +209,10 @@ def test_baseline_migration_round_trip(postgres_container: PostgresContainer) ->
     assert "table budget_threshold_alerts" not in post, (
         f"budget_threshold_alerts table leaked after downgrade:\n{post}"
     )
+    assert "table debts" not in post, f"debts table leaked after downgrade:\n{post}"
+    assert "table share_requests" not in post, (
+        f"share_requests table leaked after downgrade:\n{post}"
+    )
 
 
 def test_create_all_matches_alembic_head(postgres_container: PostgresContainer) -> None:

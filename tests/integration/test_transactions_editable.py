@@ -23,7 +23,9 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
+from backend.modules.debts.models import ShareRequest
 from backend.modules.transactions import domain
 from backend.modules.transactions.models import Transaction as TxModel
 from backend.modules.transactions.service.lifecycle import update_editable_fields
@@ -103,7 +105,26 @@ async def test_edit_tags_description_override_share_request_persist(
         user_id=user_id,
         state="confirmed",
     )
-    share = uuid.uuid4()  # dormant column, no FK (D1)
+    # S09.1 activated the FK `share_request_id → share_requests.id`, so the
+    # handle must point at a REAL share request now (was an arbitrary UUID while
+    # the column was dormant). Seed one on this tx (requested_from is a second
+    # user — `ck_share_requests_no_self`).
+    user_factory, _a, _tx, _split = await bound_transaction_factories()
+
+    def _seed_share(sync_session: Session) -> uuid.UUID:
+        debtor = user_factory()
+        sr = ShareRequest(
+            source_transaction_id=tx_id,
+            requested_by=user_id,
+            requested_from=debtor.id,
+            ratio="0.5000",
+            short_label="part",
+        )
+        sync_session.add(sr)
+        sync_session.flush()
+        return sr.id
+
+    share = await household_singleton.run_sync(_seed_share)
 
     after = await update_editable_fields(
         household_singleton,

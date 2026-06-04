@@ -40,6 +40,13 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
 
+# Side-effect import: registers both `debts` tables (`debts` + `share_requests`)
+# on `Base.metadata`. REQUIRED here (not optional like transactions, which the
+# factory imports pull in): S09.1 activates the FK
+# `transactions.share_request_id → share_requests.id`, so `auth_schema`'s
+# `create_all` cannot resolve the `Transaction` FK target table unless
+# `share_requests` is registered first.
+import backend.modules.debts.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
 from backend.main import app
 
 # Importing `Household` also registers every accounts table on `Base.metadata`

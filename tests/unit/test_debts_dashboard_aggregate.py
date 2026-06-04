@@ -28,7 +28,7 @@ from hypothesis import strategies as st
 from backend.modules.debts.service.dashboard import (
     CounterpartyNet,
     DebtWithContext,
-    _aggregate_net,
+    _aggregate_net,  # pyright: ignore[reportPrivateUsage]
 )
 from backend.shared.money import IncompatibleCurrencyError
 
@@ -90,6 +90,23 @@ def test_net_offsets_two_directions() -> None:
     assert len(rows) == 1
     assert rows[0].user_id == bob
     assert rows[0].net_amount_cents == 2500
+    assert rows[0].debts_count == 2
+
+
+def test_net_zero_on_exact_offset() -> None:
+    # Exact compensation ("quitte") : la ligne de contrepartie est tout de même
+    # émise avec net 0 et le `debts_count` complet — elle n'est PAS supprimée.
+    me, bob = uuid4(), uuid4()
+    rows = _aggregate_net(
+        [
+            _debt(frm=bob, to=me, amount_cents=4000),  # Bob me doit 40€
+            _debt(frm=me, to=bob, amount_cents=4000),  # je dois 40€ à Bob
+        ],
+        viewer_id=me,
+    )
+    assert len(rows) == 1
+    assert rows[0].user_id == bob
+    assert rows[0].net_amount_cents == 0
     assert rows[0].debts_count == 2
 
 

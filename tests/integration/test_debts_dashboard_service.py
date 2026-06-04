@@ -23,6 +23,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
+from backend.modules.debts.models import Debt
 from backend.modules.debts.public import DebtDirection, list_debts_for_user
 from backend.modules.debts.service.share_request import create_share_request
 from backend.modules.transactions.models import Transaction
@@ -305,18 +306,35 @@ async def test_counterparty_is_not_an_ownership_selector(
     assert via_filter == []
 
 
-async def test_order_is_deterministic(
+async def test_order_follows_created_at(
     household_singleton: AsyncSession,
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
+    # Absolute order, not mere stability: back-date the SECOND-inserted debt
+    # (Charlie's) BEFORE the first (Bob's), decoupling `created_at` from insertion
+    # and from the random `id`. A correct `ORDER BY created_at, id` then returns
+    # Charlie first; an order driven by insertion order would return Bob first.
     b = await _builder(household_singleton, bound_transaction_factories)
     alice = await b.user("alice@example.com")
-    await b.debt(creditor="alice@example.com", debtor="bob@example.com")
-    await b.debt(creditor="alice@example.com", debtor="charlie@example.com")
+    bob = await b.debt(creditor="alice@example.com", debtor="bob@example.com")
+    charlie = await b.debt(creditor="alice@example.com", debtor="charlie@example.com")
 
-    first = await list_debts_for_user(household_singleton, user_id=alice)
-    second = await list_debts_for_user(household_singleton, user_id=alice)
-    assert len(first) == 2
-    keys_first = [(d.from_user_id, d.to_user_id, d.created_at) for d in first]
-    keys_second = [(d.from_user_id, d.to_user_id, d.created_at) for d in second]
-    assert keys_first == keys_second  # stable (created_at, id) ordering
+    await household_singleton.execute(
+        update(Debt)
+        .where(Debt.from_user_id == charlie.debtor_id)
+        .values(created_at=dt.datetime(2026, 1, 1, tzinfo=dt.UTC))
+    )
+    await household_singleton.execute(
+        update(Debt)
+        .where(Debt.from_user_id == bob.debtor_id)
+        .values(created_at=dt.datetime(2026, 6, 1, tzinfo=dt.UTC))
+    )
+    await household_singleton.flush()
+
+    debts = await list_debts_for_user(household_singleton, user_id=alice)
+    assert len(debts) == 2
+    # `from_user_id` of a debt is its debtor → Charlie's debt, back-dated, comes first.
+    assert [d.from_user_id for d in debts] == [charlie.debtor_id, bob.debtor_id]
+    # And the order is stable across reads.
+    again = await list_debts_for_user(household_singleton, user_id=alice)
+    assert [d.from_user_id for d in again] == [charlie.debtor_id, bob.debtor_id]

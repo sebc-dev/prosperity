@@ -222,6 +222,20 @@ async def test_get_debts_invalid_direction_422(
     assert resp.status_code == 422
 
 
+async def test_get_debts_invalid_with_not_uuid_422(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # `with` is typed `UUID | None` → a non-UUID value is rejected with a native
+    # 422 (boundary coercion), symmetric to the invalid `direction` case above.
+    s = await _seed(household_singleton, bound_transaction_factories)
+    resp = await async_client.get(
+        "/debts", params={"with": "not-a-uuid"}, headers=_bearer(s.alice_id)
+    )
+    assert resp.status_code == 422
+
+
 async def test_get_debts_direction_and_with_combined(
     async_client: AsyncClient,
     household_singleton: AsyncSession,
@@ -283,6 +297,35 @@ async def test_by_counterparty_aggregates_net_and_count(
     assert row["user_id"] == str(s.bob_id)
     assert row["net_amount"] == _AMOUNT  # Bob owes Alice → positive for the creditor
     assert row["debts_count"] == 1
+
+
+async def test_by_counterparty_multiple_counterparties_ordered(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # Alice is creditor on TWO debts (toward Bob AND Charlie), materialised from
+    # the same source tx (distinct debtors → distinct debts). Exercises the
+    # list-serialisation contract beyond the singleton: one row per counterparty,
+    # deterministic order (the service sorts by stringified user_id).
+    s = await _seed(household_singleton, bound_transaction_factories)
+    await _materialise_debt(async_client, s)  # Alice → Bob
+    resp = await async_client.post(
+        f"/transactions/{s.tx_id}/share-requests",
+        json={"requested_from": str(s.charlie_id), "ratio": "1.0", "short_label": "Courses"},
+        headers=_bearer(s.alice_id),
+    )
+    assert resp.status_code == 201, resp.text  # Alice → Charlie
+
+    resp = await async_client.get("/debts/by-counterparty", headers=_bearer(s.alice_id))
+    assert resp.status_code == 200, resp.text
+    items = resp.json()["items"]
+    assert len(items) == 2
+    assert [row["user_id"] for row in items] == sorted([str(s.bob_id), str(s.charlie_id)])
+    by_user = {row["user_id"]: row for row in items}
+    assert by_user[str(s.bob_id)]["net_amount"] == _AMOUNT
+    assert by_user[str(s.charlie_id)]["net_amount"] == _AMOUNT
+    assert all(row["debts_count"] == 1 for row in items)
 
 
 async def test_by_counterparty_net_oriented_for_debtor(

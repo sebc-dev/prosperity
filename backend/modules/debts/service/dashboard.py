@@ -200,6 +200,12 @@ def _aggregate_net(debts: list[DebtWithContext], *, viewer_id: UUID) -> list[Cou
     net(C) = Σ(dettes C→moi) − Σ(dettes moi→C). `+` quand C me doit, `−` quand
     je dois à C. Centimes via `Money` (lève `IncompatibleCurrencyError` sur
     devises mixtes — fail-safe ADR 0008). Tri déterministe par `user_id`.
+
+    Précondition : chaque dette a `viewer_id` ∈ {from_user_id, to_user_id}
+    (garanti par `list_debts_for_user`, borné au token). La branche `else`
+    repose dessus : `to_user_id != viewer` ⇒ `from_user_id == viewer`. Une dette
+    « tierce » (viewer ni `from` ni `to`) serait comptée à tort comme « je dois à
+    `to_user_id` » — cas rendu impossible en amont par le bornage.
     """
     nets: dict[UUID, Money] = {}
     counts: dict[UUID, int] = {}

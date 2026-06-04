@@ -29,6 +29,8 @@ Internal to the auth module — cross-module callers must import via
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from sqlalchemy import exists, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -132,3 +134,19 @@ async def any_user_exists(session: AsyncSession) -> bool:
     """
     result = await session.execute(select(exists().select_from(User)))
     return bool(result.scalar())
+
+
+async def user_is_active_member(session: AsyncSession, *, user_id: UUID) -> bool:
+    """True iff an ACTIVE (non-disabled) user exists for `user_id`.
+
+    The foyer is a singleton (ADR 0010, `CONTEXT.md` §Foyer: one deployment =
+    one foyer, all users share it), so "member of the foyer" ⇔ "active user
+    exists". `disabled_at IS NULL`: a disabled user (F02 — disabled, never
+    hard-deleted) is no longer a valid counterparty (no phantom debt towards a
+    dead account). Consumed cross-module by the debts module (S09.3) for the
+    `requested_from` membership check (vérif iv) — it answers an arbitrary id,
+    which `get_current_user` (token resolution) cannot. Selects `EXISTS`, never
+    an ORM row: a caller has no business handling a `User` row, only the verdict.
+    """
+    stmt = select(exists().where(User.id == user_id, User.disabled_at.is_(None)))
+    return bool((await session.execute(stmt)).scalar())

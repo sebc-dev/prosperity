@@ -265,7 +265,7 @@ class TestDebtCalculatorProperties:
                 share_request=sr, expense_total=expense, source_account_id=account_id
             )
         except NonPositiveDebtAmountError:
-            return  # zone d'arrondi→0 (cf. test_property_rounding_to_zero_raises)
+            return  # zone d'arrondi→0 (cf. test_rounding_to_zero_raises)
         b = DebtCalculator.compute_for_share_request(
             share_request=sr, expense_total=expense, source_account_id=account_id
         )
@@ -334,11 +334,13 @@ class TestDebtCalculatorProperties:
                 source_account_id=uuid4(),
             )
         except NonPositiveDebtAmountError:
-            # Zone d'arrondi→0 : couverte par `test_property_rounding_to_zero_raises`,
+            # Zone d'arrondi→0 : couverte par `test_rounding_to_zero_raises`,
             # pas un trou ici.
             return
         amount = debts[0].amount
         assert amount.amount_cents > 0
+        # `<=` sur `Money` lèverait `IncompatibleCurrencyError` cross-devise ; sûr
+        # ici car tout est EUR par construction (à revoir si multi-devise un jour).
         assert amount <= expense
 
     @given(ratio=personal_share_ratio(), expense=positive_money_eur())
@@ -352,9 +354,11 @@ class TestDebtCalculatorProperties:
             return
         assert debts[0].from_user_id != debts[0].to_user_id
 
-    @given(ratio=st.sampled_from([Decimal("0.0001"), Decimal("0.2"), Decimal("0.4")]))
-    def test_property_rounding_to_zero_raises(self, ratio: Decimal) -> None:
+    @pytest.mark.parametrize("ratio", [Decimal("0.0001"), Decimal("0.2"), Decimal("0.4")])
+    def test_rounding_to_zero_raises(self, ratio: Decimal) -> None:
         # `expense_total = 1¢`, ratio ≤ 0.4 (valide) ⇒ arrondi → 0 ⇒ garde D5a.
+        # Espace fini de 3 ratios → un example paramétré déterministe (pas une
+        # property : `@given(sampled_from)` ne ferait qu'itérer ces 3 valeurs).
         with pytest.raises(NonPositiveDebtAmountError):
             DebtCalculator.compute_for_share_request(
                 share_request=_share_request(ratio=ratio),

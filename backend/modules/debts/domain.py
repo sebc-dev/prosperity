@@ -117,6 +117,11 @@ class Debt(BaseModel):
     `created_at` et `materialization_trace` sont ABSENTS : DB-générés /
     server-only, posés par le mapper S09.3 (hors domaine pur — symétrie, D3b).
 
+    `share_ratio` ne reproduit PAS le `default=Decimal("1.0")` de la colonne ORM :
+    un value object pur exige une quote-part explicite (pas de default silencieux),
+    et le calculator la fournit toujours. Le default ORM reste la valeur de repli
+    côté persistance (S09.3+), pas du miroir.
+
     Reproduit les 2 CHECK SQL (`ck_debts_amount_positive`, `ck_debts_no_self_debt`)
     comme `model_validator` : le domaine ne peut pas représenter une dette que la
     DB rejetterait (défense en profondeur). `strict=True` refuse les coercions

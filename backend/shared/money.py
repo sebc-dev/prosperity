@@ -13,6 +13,7 @@ n'importe RIEN de `backend.modules.*` (import-linter #3).
 
 from __future__ import annotations
 
+from decimal import ROUND_HALF_UP, Decimal
 from functools import total_ordering
 from typing import Final
 
@@ -117,6 +118,26 @@ class Money:
             return NotImplemented
         self._same_currency(other)
         return self.amount_cents < other.amount_cents
+
+    def apply_ratio(self, ratio: Decimal) -> Money:
+        """Applique une quote-part `Decimal` au montant et arrondit aux cents.
+
+        Primitif arithmétique PUR : multiplie puis arrondit, SANS borne sur
+        `ratio` (`ratio > 1` est légitime ici → agrandit ; la borne métier
+        `0 < r ≤ 1` vit dans `DebtCalculator`, PAS dans le value object —
+        séparation primitif/règle, S09.2 D6).
+
+        `ROUND_HALF_UP` (arrondi commercial, prévisible pour des montants) :
+        `Money(5, "EUR").apply_ratio(Decimal("0.5")) == Money(3, "EUR")` (2,5¢ →
+        3¢, et non 2¢ comme HALF_EVEN). Politique cents centralisée ici (jamais
+        de `float` ; les `Decimal` du projet servent aux quote-parts, pas aux
+        montants — ADR 0008). `ratio: float` lève `TypeError` (`Decimal * float`
+        interdit) — garde-fou de facto de « jamais de float ». Devise préservée.
+        """
+        rounded = int(
+            (Decimal(self.amount_cents) * ratio).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        )
+        return Money(rounded, self.currency)
 
     def format_french(self) -> str:
         """`Money(123456, "EUR")` -> `"1 234,56 €"` (typographie FR).

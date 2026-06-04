@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import FrozenInstanceError
+from decimal import Decimal
 
 import pytest
 from hypothesis import example, given
@@ -291,6 +292,59 @@ def test_parse_rejects_non_ascii_digits(text: str) -> None:
     # Chiffres Unicode (fullwidth, exposants) rejetés avec message contrôlé.
     with pytest.raises(ValueError, match="Montant FR invalide"):
         parse_french(text)
+
+
+# ---------------------------------------------------------------------------
+# S09.2 P09.2.1 — `apply_ratio` (quote-part Decimal → cents, ROUND_HALF_UP)
+# ---------------------------------------------------------------------------
+
+
+class TestApplyRatio:
+    """`Money.apply_ratio` : primitif arithmétique PUR (multiplie + arrondit aux
+    cents), SANS borne sur `ratio` — la borne métier `0 < r ≤ 1` vit dans le
+    `DebtCalculator`, pas dans le value object (séparation primitif/règle, D6)."""
+
+    def test_ratio_one_is_identity(self) -> None:
+        assert Money(1000, "EUR").apply_ratio(Decimal("1.0")) == Money(1000, "EUR")
+
+    def test_ratio_half_exact(self) -> None:
+        assert Money(1000, "EUR").apply_ratio(Decimal("0.5")) == Money(500, "EUR")
+
+    def test_rounding_half_up_pins_mode(self) -> None:
+        # 2,5¢ → 3¢ : distingue ROUND_HALF_UP de ROUND_HALF_EVEN (qui donnerait 2).
+        assert Money(5, "EUR").apply_ratio(Decimal("0.5")) == Money(3, "EUR")
+
+    def test_rounding_non_trivial(self) -> None:
+        # 166,5 → 167 (HALF_UP).
+        assert Money(333, "EUR").apply_ratio(Decimal("0.5")) == Money(167, "EUR")
+
+    def test_rounds_down_when_below_half(self) -> None:
+        assert Money(100, "EUR").apply_ratio(Decimal("0.4")) == Money(40, "EUR")
+        # Dégénérescence à 0 (0,4¢ → 0), exploitée par le garde du domaine (D5a).
+        assert Money(1, "EUR").apply_ratio(Decimal("0.4")) == Money(0, "EUR")
+
+    def test_negative_amount_half_up_away_from_zero(self) -> None:
+        # ROUND_HALF_UP s'éloigne de zéro des deux côtés : -2,5¢ → -3¢.
+        assert Money(-5, "EUR").apply_ratio(Decimal("0.5")) == Money(-3, "EUR")
+
+    def test_currency_preserved(self) -> None:
+        assert Money(1000, "USD").apply_ratio(Decimal("0.5")).currency == "USD"
+
+    def test_ratio_above_one(self) -> None:
+        # Le PRIMITIF `Money` n'a AUCUNE borne : `ratio > 1` agrandit (la borne
+        # métier est dans le calculator, D5b/D6).
+        assert Money(100, "EUR").apply_ratio(Decimal("1.5")) == Money(150, "EUR")
+
+    def test_ratio_finer_than_scale_4(self) -> None:
+        # Un ratio plus précis que l'échelle 4 (jamais généré par
+        # `personal_share_ratio`) arrondit proprement aux cents : 33,333 → 33.
+        assert Money(100, "EUR").apply_ratio(Decimal("0.33333")) == Money(33, "EUR")
+
+    def test_rejects_float_ratio(self) -> None:
+        # « Jamais de float » transformé en garantie testée : `Decimal * float`
+        # lève `TypeError` en Python — garde-fou de facto épinglé.
+        with pytest.raises(TypeError):
+            Money(100, "EUR").apply_ratio(0.5)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------

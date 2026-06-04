@@ -288,6 +288,50 @@ def distinct_currency_pair(draw: st.DrawFn) -> tuple[Currency, Currency]:
     return a, b  # type: ignore[return-value]  # a != b ∈ Currency par construction
 
 
+# ---------------------------------------------------------------------------
+# S09.2 — stratégies du `DebtCalculator` (domaine pur ; ratios `Decimal`, jamais
+# de `float` — ADR 0008). `_BASIS_POINTS` (échelle 4) déjà défini en tête.
+# ---------------------------------------------------------------------------
+
+
+@st.composite
+def personal_share_ratio(draw: st.DrawFn) -> Decimal:
+    """Ratio `Decimal` à l'échelle 4 dans `(0, 1]` (jamais `float`).
+
+    Réutilise l'approche « points de base » de `share_ratios` : bp ∈ [1, 10000]
+    ⇒ `Decimal(bp) / 10000` ∈ [0.0001, 1.0000], strictement positif et ≤ 1
+    (miroir de la colonne `share_ratio Numeric(5, 4)` sous la borne métier).
+    """
+    bp = draw(st.integers(min_value=1, max_value=_BASIS_POINTS))
+    return Decimal(bp) / Decimal(_BASIS_POINTS)
+
+
+@st.composite
+def positive_money_eur(draw: st.DrawFn) -> Money:
+    """`Money` EUR à montant strictement positif, SANS `assume` (zéro exemple gaspillé).
+
+    `money_strategy` tire dans [−10⁹, +10⁹] ; filtrer par `assume(amount > 0)`
+    rejetterait ~50 % des exemples (risque `filter_too_much` en `ci=50`).
+    Convention repo (`distinct_currency_pair`) = générateur sans rejet.
+    """
+    return Money(draw(st.integers(min_value=1, max_value=_MONEY_BOUND)), "EUR")
+
+
+@st.composite
+def out_of_bounds_ratio(draw: st.DrawFn) -> Decimal:
+    """Ratio `Decimal` HORS `(0, 1]` : soit ≤ 0, soit > 1 (property de rejet S09.2)."""
+    return draw(
+        st.one_of(
+            st.integers(min_value=-_BASIS_POINTS, max_value=0).map(
+                lambda bp: Decimal(bp) / Decimal(_BASIS_POINTS)
+            ),
+            st.integers(min_value=_BASIS_POINTS + 1, max_value=10 * _BASIS_POINTS).map(
+                lambda bp: Decimal(bp) / Decimal(_BASIS_POINTS)
+            ),
+        )
+    )
+
+
 # Borne réduite pour les splits (vs `_MONEY_BOUND` à ±10 M€) : la somme de
 # `_MAX_SPLITS - 1` montants ne doit pas produire un dernier split aberrant,
 # et des montants plus petits gardent les exemples lisibles sans masquer de cas

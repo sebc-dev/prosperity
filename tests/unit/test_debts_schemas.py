@@ -9,13 +9,15 @@ non-Latin homoglyphs. Also pins `ratio` bounds and `extra="forbid"` (anti
 
 from __future__ import annotations
 
+from dataclasses import fields
 from decimal import Decimal
 from uuid import uuid4
 
 import pytest
 from pydantic import ValidationError
 
-from backend.modules.debts.schemas import ShareRequestCreate
+from backend.modules.debts.schemas import DebtResponse, ShareRequestCreate
+from backend.modules.debts.service.dashboard import DebtWithContext
 
 
 def _make(**overrides: object) -> ShareRequestCreate:
@@ -79,3 +81,14 @@ def test_rejects_extra_fields() -> None:
         _make(by_user_id=str(uuid4()))
     with pytest.raises(ValidationError):
         _make(requested_by=str(uuid4()))
+
+
+def test_debtresponse_fields_match_debtwithcontext() -> None:
+    """Allowlist parity (D7): `DebtResponse` ⇔ `DebtWithContext`, field for field.
+
+    Any field added on one side without the other breaks this — the lock against
+    silently re-exposing (or dropping) a field at the HTTP boundary. In
+    particular `materialization_trace` is absent from BOTH by construction.
+    """
+    assert set(DebtResponse.model_fields) == {f.name for f in fields(DebtWithContext)}
+    assert "materialization_trace" not in DebtResponse.model_fields

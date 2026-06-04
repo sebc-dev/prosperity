@@ -29,7 +29,7 @@ import logging
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.auth.public import User, get_current_user
@@ -41,6 +41,7 @@ from backend.modules.debts.domain import (
     SelfDebtError,
 )
 from backend.modules.debts.public import (
+    DebtDirection,
     DuplicateActiveShareRequestError,
     RequestedFromNotMemberError,
     SelfShareError,
@@ -49,10 +50,19 @@ from backend.modules.debts.public import (
     SourceAccountNotShareableError,
     SourceTransactionNotConfirmedError,
     SourceTransactionNotFoundError,
+    aggregate_by_counterparty,
     create_share_request,
+    list_debts_for_user,
     revoke_share_request,
 )
-from backend.modules.debts.schemas import ShareRequestCreate, ShareRequestResponse
+from backend.modules.debts.schemas import (
+    CounterpartyListResponse,
+    CounterpartyNetResponse,
+    DebtListResponse,
+    DebtResponse,
+    ShareRequestCreate,
+    ShareRequestResponse,
+)
 from backend.shared.db import get_db
 
 logger = logging.getLogger(__name__)
@@ -61,6 +71,10 @@ logger = logging.getLogger(__name__)
 # `/transactions` prefix, distinct from `transactions_router`).
 tx_share_requests_router = APIRouter(prefix="/transactions", tags=["debts"])
 share_requests_router = APIRouter(prefix="/share-requests", tags=["debts"])
+# Read-only dashboard surface (S09.4): `GET /debts` + `GET /debts/by-counterparty`.
+# Scope is ALWAYS derived from the token (anti-IDOR) — there is no `/{id}` route
+# nor any mutation route on `Debt` (projection read-only, ADR 0002).
+debts_router = APIRouter(prefix="/debts", tags=["debts"])
 
 CurrentUser = Annotated[User, Depends(get_current_user)]
 SessionDep = Annotated[AsyncSession, Depends(get_db)]
@@ -170,3 +184,46 @@ async def revoke_share_request_route(
         await revoke_share_request(session, share_request_id=share_request_id, by_user_id=user.id)
     except ShareRequestError as exc:
         raise _map_exc(exc) from exc
+
+
+# ---------------------------------------------------------------------------
+# Dashboard read routes (S09.4) — scope derived from the token, no mutation.
+# `/by-counterparty` is declared BEFORE the list route by hygiene (static before
+# any future dynamic segment); there is no `/{id}` route on this router.
+# ---------------------------------------------------------------------------
+
+
+@debts_router.get("/by-counterparty", response_model=CounterpartyListResponse)
+async def debts_by_counterparty_route(
+    user: CurrentUser,
+    session: SessionDep,
+) -> CounterpartyListResponse:
+    """Net orienté par contrepartie pour le user courant (périmètre dérivé du token).
+
+    Passe par le MÊME helper de bornage/masquage que `GET /debts`
+    (`aggregate_by_counterparty` → `list_debts_for_user`) — aucun champ source
+    ne transite dans l'agrégat (non-fuite par construction).
+    """
+    nets = await aggregate_by_counterparty(session, user_id=user.id)
+    return CounterpartyListResponse(items=[CounterpartyNetResponse.from_net(n) for n in nets])
+
+
+@debts_router.get("", response_model=DebtListResponse)
+async def list_debts_route(
+    user: CurrentUser,
+    session: SessionDep,
+    direction: DebtDirection = DebtDirection.ALL,
+    with_: Annotated[UUID | None, Query(alias="with")] = None,  # `with` est un mot-clé Python
+) -> DebtListResponse:
+    """Dettes du user courant (périmètre dérivé du token, D7/D9).
+
+    `direction` borne le sens (`all`/`owed_to_me`/`owed_by_me`) ; `with` filtre la
+    contrepartie APRÈS bornage — jamais un sélecteur de propriétaire (anti-IDOR).
+    `source_transaction_id`/`account_id` sont `null` quand le caller est débiteur ;
+    `materialization_trace` n'apparaît jamais (allowlist). Une `direction` invalide
+    → 422 natif FastAPI (validation enum).
+    """
+    debts = await list_debts_for_user(
+        session, user_id=user.id, direction=direction, counterparty=with_
+    )
+    return DebtListResponse(items=[DebtResponse.from_context(d) for d in debts])

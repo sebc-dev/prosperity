@@ -32,7 +32,7 @@ Livrable agrégé : Alice fait une dépense depuis son compte personnel → elle
 
 ### S09.2 — `DebtCalculator` (domain pur)
 
-**Livrable observable** : fonction pure `DebtCalculator.compute_for_share_request(*, from_user_id, to_user_id, expense_total, ratio, account_id, currency, source_transaction_id) → list[Debt]` testable sans DB ni import du type `Transaction`. **TDD strict** : les tests du calculator précèdent l'implémentation (red → green, §2.3 stratégie).
+**Livrable observable** : fonction pure `DebtCalculator.compute_for_share_request(*, share_request: ShareRequestData, expense_total: Money, source_account_id) → list[Debt]` testable sans DB ni import du type `Transaction` (les scalaires `requested_by`/`requested_from`/`ratio`/`source_transaction_id`/`short_label` voyagent dans `ShareRequestData` ; la devise voyage dans `Money` — cf. issue #143 P09.2.1, qui fait autorité sur la signature à plat de ce tableau). **TDD strict** : les tests du calculator précèdent l'implémentation (red → green, §2.3 stratégie).
 
 > **Signature & ADR 0002.** L'ADR 0002 décrit le `DebtCalculator` comme `(Transaction, Budget, Account) → list[Debt]`. E09 **affine** ce contrat (cf. note « Refined-by » ajoutée à l'ADR 0002) : pour garder `debts.domain` strictement pur (pas d'import du type `Transaction`, conforme au graphe ADR 0005), le calculator reçoit des **scalaires** (`expense_total` calculé par le service) plutôt que l'agrégat. `compute_for_share_request` n'est **qu'une** méthode du calculator — le sous-cas `personal_share_request` ; le sous-cas `shared_account_overflow` (`compute_for_overflow`, qui consommera l'argument `Budget` de la signature ADR) est **déféré à E11**.
 

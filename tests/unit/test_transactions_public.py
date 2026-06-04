@@ -14,6 +14,7 @@ from backend.modules.transactions import events as _events
 from backend.modules.transactions.public import (
     ImmutableFieldViolation,
     InvalidStateTransitionError,
+    MultipleFundingLegsError,
     SplitNotFoundError,
     TransactionConfirmedEvent,
     TransactionError,
@@ -39,6 +40,7 @@ from backend.shared.events import DomainEvent
 _EXPECTED = {
     "ImmutableFieldViolation",
     "InvalidStateTransitionError",
+    "MultipleFundingLegsError",
     "SplitNotFoundError",
     "TransactionConfirmedEvent",
     "TransactionError",
@@ -83,6 +85,7 @@ def test_errors_and_state_are_identical_re_exports() -> None:
     assert InvalidStateTransitionError is _domain.InvalidStateTransitionError
     assert UnbalancedTransactionError is _domain.UnbalancedTransactionError
     assert UncategorizedExpenseError is _domain.UncategorizedExpenseError
+    assert MultipleFundingLegsError is _domain.MultipleFundingLegsError
     assert TransactionState is _domain.TransactionState
 
 

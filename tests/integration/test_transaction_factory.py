@@ -17,7 +17,12 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.modules.transactions.service.lifecycle import transition_to_confirmed
+
 pytestmark = pytest.mark.usefixtures("household_singleton")
+
+# Mirrors `SplitFactory._DEFAULT_SPLIT_AMOUNT_CENTS`: the default leg magnitude.
+_DEFAULT_AMOUNT = 1000
 
 
 async def _seed_account(
@@ -195,3 +200,56 @@ async def test_currency_override_propagates_to_both_legs(
         .all()
     )
     assert list(rows) == ["CHF", "CHF"]
+
+
+async def test_default_transaction_is_canonical_form_b(
+    auth_schema: AsyncSession,
+    bound_transaction_factories: Callable[[], Awaitable[tuple[type, type, type, type]]],
+) -> None:
+    # D4 (ADR 0017): the default pair is exactly 1 `funding` leg (category NULL)
+    # + 1 `classification` leg (category set), same account, zero-sum.
+    account_id, user_id, factories = await _seed_account(auth_schema, bound_transaction_factories)
+    _u, _a, transaction_factory, _s = factories
+
+    def _build(_sync_session: object) -> uuid.UUID:
+        tx = transaction_factory(account_id=account_id, created_by=user_id)
+        return tx.id
+
+    tx_id = await auth_schema.run_sync(_build)
+
+    rows = (
+        await auth_schema.execute(
+            text(
+                "SELECT leg_role, category_id, amount_cents FROM splits "
+                "WHERE transaction_id = :id ORDER BY amount_cents"
+            ),
+            {"id": tx_id},
+        )
+    ).all()
+    funding, classification = rows
+    assert funding.leg_role == "funding"
+    assert funding.category_id is None
+    assert funding.amount_cents == -_DEFAULT_AMOUNT
+    assert classification.leg_role == "classification"
+    assert classification.category_id is not None
+    assert classification.amount_cents == _DEFAULT_AMOUNT
+
+
+async def test_default_transaction_is_confirmable(
+    auth_schema: AsyncSession,
+    bound_transaction_factories: Callable[[], Awaitable[tuple[type, type, type, type]]],
+) -> None:
+    # End-to-end truth: the default factory now produces an expense CONFIRMABLE
+    # via the real service flow (form B passes categorisation + the ≤1-funding
+    # invariant). Budget consumption is asserted in S08.5.3 (M2), not here —
+    # `budget ⊥ transactions` is preserved and no budget is seeded.
+    account_id, user_id, factories = await _seed_account(auth_schema, bound_transaction_factories)
+    _u, _a, transaction_factory, _s = factories
+
+    def _build(_sync_session: object) -> uuid.UUID:
+        return transaction_factory(account_id=account_id, created_by=user_id, state="planned").id
+
+    tx_id = await auth_schema.run_sync(_build)
+
+    result = await transition_to_confirmed(auth_schema, tx_id=tx_id)
+    assert result.state == "confirmed"

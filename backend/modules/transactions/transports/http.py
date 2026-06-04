@@ -43,6 +43,7 @@ from backend.modules.transactions import domain
 from backend.modules.transactions.public import (
     ImmutableFieldViolation,
     InvalidStateTransitionError,
+    MultipleFundingLegsError,
     TransactionError,
     TransactionState,
     UnbalancedTransactionError,
@@ -169,6 +170,7 @@ _EXC_STATUS: dict[type[Exception], int] = {
     ImmutableFieldViolation: status.HTTP_409_CONFLICT,
     UnbalancedTransactionError: status.HTTP_422_UNPROCESSABLE_ENTITY,
     UncategorizedExpenseError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+    MultipleFundingLegsError: status.HTTP_422_UNPROCESSABLE_ENTITY,
     IncompatibleCurrencyError: status.HTTP_422_UNPROCESSABLE_ENTITY,
 }
 _EXC_DETAIL: dict[type[Exception], str] = {
@@ -176,6 +178,7 @@ _EXC_DETAIL: dict[type[Exception], str] = {
     ImmutableFieldViolation: "This field is frozen on a confirmed transaction.",
     UnbalancedTransactionError: "Transaction splits must sum to zero.",
     UncategorizedExpenseError: "Every expense split must have a category.",
+    MultipleFundingLegsError: "An expense may have at most one funding leg.",
     IncompatibleCurrencyError: "All splits must share one currency.",
 }
 _DEFAULT_EXC_DETAIL = "Transaction error."

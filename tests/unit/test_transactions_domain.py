@@ -19,7 +19,7 @@ import datetime as dt
 from uuid import UUID, uuid4
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 from pydantic import ValidationError
 
@@ -28,11 +28,14 @@ from backend.modules.transactions.domain import (
     STATE_TRANSITIONS,
     ImmutableFieldViolation,
     InvalidStateTransitionError,
+    LegRole,
+    MultipleFundingLegsError,
     Split,
     Transaction,
     TransactionState,
     UnbalancedTransactionError,
     UncategorizedExpenseError,
+    assert_at_most_one_funding_leg,
     assert_expenses_categorized,
     assert_transition,
     assert_zero_sum,
@@ -42,6 +45,7 @@ from backend.modules.transactions.domain import (
 from backend.shared.money import IncompatibleCurrencyError, Money
 from tests.strategies import (
     balanced_splits_strategy,
+    canonical_expense_splits_strategy,
     transaction_confirmed_strategy,
 )
 
@@ -49,14 +53,27 @@ _DATE = dt.date(2026, 1, 15)
 
 
 def _split(
-    amount: Money, *, account_id: UUID | None = None, category_id: UUID | None = None
+    amount: Money,
+    *,
+    account_id: UUID | None = None,
+    category_id: UUID | None = None,
+    leg_role: LegRole | None = None,
 ) -> Split:
-    """A `Split` with sensible defaults; only the axis under test is varied."""
-    return Split(
-        account_id=account_id if account_id is not None else uuid4(),
-        category_id=category_id,
-        amount=amount,
-    )
+    """A `Split` with sensible defaults; only the axis under test is varied.
+
+    `leg_role` is forwarded to the constructor ONLY when set: passing an explicit
+    `leg_role=None` would be rejected by the strict `Literal` (cf.
+    `test_explicit_none_is_rejected`). Omitting it lets the S08.5.1 derivation
+    (`category_id` → role) run — the only behaviour wanted for a non-forced leg.
+    """
+    kwargs: dict[str, object] = {
+        "account_id": account_id if account_id is not None else uuid4(),
+        "category_id": category_id,
+        "amount": amount,
+    }
+    if leg_role is not None:
+        kwargs["leg_role"] = leg_role
+    return Split(**kwargs)  # type: ignore[arg-type]
 
 
 def _tx(
@@ -546,12 +563,20 @@ class TestTransferGuard:
     """`is_transfer` (structurel) + `assert_expenses_categorized` (D6/D11)."""
 
     def test_expense_uncategorized_raises(self) -> None:
+        # ADR 0017 : seule une jambe `classification` exige une catégorie. Une
+        # jambe NULL FORCÉE `classification` (et non dérivée `funding`) est donc
+        # bien refusée — c'est la valeur autoritative du SGBD qui prime.
         acc = uuid4()
         tx = _tx(
             state=TransactionState.CONFIRMED,
             splits=(
                 _split(Money(-1000, "EUR"), account_id=acc, category_id=uuid4()),
-                _split(Money(1000, "EUR"), account_id=acc, category_id=None),
+                _split(
+                    Money(1000, "EUR"),
+                    account_id=acc,
+                    category_id=None,
+                    leg_role="classification",
+                ),
             ),
         )
         with pytest.raises(UncategorizedExpenseError) as exc:
@@ -559,6 +584,23 @@ class TestTransferGuard:
         # L'UUID est porté par un attribut typé (canal sûr), pas seulement le message.
         assert exc.value.transaction_id == tx.id
         assert exc.value.code == "uncategorized_expense"
+
+    def test_funding_leg_null_is_accepted(self) -> None:
+        # Forme canonique B (ADR 0017) : jambe `funding` (cat NULL, dérivée) +
+        # jambe `classification` catégorisée, même compte. La jambe `funding`
+        # NULL est EXEMPTÉE de catégorie → pas de refus.
+        acc = uuid4()
+        tx = _tx(
+            state=TransactionState.CONFIRMED,
+            splits=(
+                _split(Money(-1000, "EUR"), account_id=acc, category_id=None),
+                _split(Money(1000, "EUR"), account_id=acc, category_id=uuid4()),
+            ),
+        )
+        assert not is_transfer(tx)
+        assert tx.splits[0].leg_role == "funding"
+        assert tx.splits[1].leg_role == "classification"
+        assert_expenses_categorized(tx)  # no raise
 
     def test_expense_fully_categorized_ok(self) -> None:
         acc = uuid4()
@@ -652,15 +694,118 @@ class TestTransferGuard:
 
     @given(splits=balanced_splits_strategy(distinct_accounts=False))
     def test_property_uncategorized_expense_raises(self, splits: tuple[Split, ...]) -> None:
-        # ∀ dépense confirmée (même compte → non-transfert) dont AU MOINS un split
-        # perd sa catégorie → UncategorizedExpenseError. `distinct_accounts=False`
-        # exerce la forme dépense canonique (is_transfer False) en property-based,
-        # absente des autres properties (toutes en distinct_accounts=True).
-        uncategorized = (splits[0].model_copy(update={"category_id": None}), *splits[1:])
+        # ∀ dépense confirmée (même compte → non-transfert) dont AU MOINS une jambe
+        # `classification` perd sa catégorie → UncategorizedExpenseError.
+        # `distinct_accounts=False` exerce la forme dépense canonique (is_transfer
+        # False) en property-based. On force `leg_role="classification"` dans le
+        # `model_copy` : pinne que la VALEUR AUTORITATIVE prime (une jambe
+        # `classification` NULL est refusée, pas re-dérivée `funding`).
+        uncategorized = (
+            splits[0].model_copy(update={"category_id": None, "leg_role": "classification"}),
+            *splits[1:],
+        )
         tx = _tx(state=TransactionState.CONFIRMED, splits=uncategorized)
         assert not is_transfer(tx)
         with pytest.raises(UncategorizedExpenseError):
             assert_expenses_categorized(tx)
+
+
+class TestFundingLegInvariant:
+    """`assert_at_most_one_funding_leg` (D2/D3, ADR 0017) : une dépense
+    (non-transfert) porte AU PLUS une jambe `funding` ; ≥ 2 → refus typé. Un
+    transfert (≥ 2 comptes) est exempté indépendamment de `leg_role`.
+    """
+
+    def test_two_funding_legs_raise(self) -> None:
+        # Deux jambes cat NULL même compte ⇒ deux `funding` dérivés ⇒ refus.
+        acc = uuid4()
+        tx = _tx(
+            state=TransactionState.CONFIRMED,
+            splits=(
+                _split(Money(-1000, "EUR"), account_id=acc, category_id=None),
+                _split(Money(1000, "EUR"), account_id=acc, category_id=None),
+            ),
+        )
+        with pytest.raises(MultipleFundingLegsError) as exc:
+            assert_at_most_one_funding_leg(tx)
+        assert exc.value.transaction_id == tx.id
+        assert exc.value.code == "multiple_funding_legs"
+
+    def test_one_funding_one_classification_ok(self) -> None:
+        # Forme canonique B ⇒ no-op (1 funding ≤ 1).
+        acc = uuid4()
+        tx = _tx(
+            state=TransactionState.CONFIRMED,
+            splits=(
+                _split(Money(-1000, "EUR"), account_id=acc, category_id=None),
+                _split(Money(1000, "EUR"), account_id=acc, category_id=uuid4()),
+            ),
+        )
+        assert_at_most_one_funding_leg(tx)  # no raise
+
+    def test_zero_funding_two_classification_ok(self) -> None:
+        # Forme A (2 `classification` catégorisées) ⇒ 0 funding ≤ 1 ⇒ no-op.
+        acc = uuid4()
+        cat = uuid4()
+        tx = _tx(
+            state=TransactionState.CONFIRMED,
+            splits=(
+                _split(Money(-1000, "EUR"), account_id=acc, category_id=cat),
+                _split(Money(1000, "EUR"), account_id=acc, category_id=cat),
+            ),
+        )
+        assert_at_most_one_funding_leg(tx)  # no raise
+
+    def test_transfer_with_two_funding_ok(self) -> None:
+        # ≥ 2 comptes distincts ⇒ `is_transfer` ⇒ exempté (AC #137), même avec
+        # deux jambes `funding`.
+        tx = _tx(
+            state=TransactionState.CONFIRMED,
+            splits=(
+                _split(Money(-1000, "EUR"), account_id=uuid4(), category_id=None),
+                _split(Money(1000, "EUR"), account_id=uuid4(), category_id=None),
+            ),
+        )
+        assert is_transfer(tx)
+        assert_at_most_one_funding_leg(tx)  # no raise
+
+    @given(splits=canonical_expense_splits_strategy())
+    def test_property_canonical_form_b_is_confirmable(self, splits: tuple[Split, ...]) -> None:
+        # ∀ forme canonique B générée : non-transfert, AUCUNE jambe
+        # `classification` NULL, ≤ 1 jambe `funding` → passe les DEUX gates de
+        # confirmation. Pinne le cœur du livrable (la forme consommatrice est
+        # confirmable) via le générateur réutilisé en aval.
+        tx = _tx(state=TransactionState.CONFIRMED, splits=splits)
+        assert not is_transfer(tx)
+        assert_expenses_categorized(tx)  # no raise
+        assert_at_most_one_funding_leg(tx)  # no raise
+
+    @given(n_funding=st.integers(min_value=0, max_value=4))
+    @example(n_funding=0)
+    @example(n_funding=1)
+    @example(n_funding=2)
+    def test_property_at_most_one_funding_invariant(self, n_funding: int) -> None:
+        # `assert_at_most_one_funding_leg` lève SSI `n_funding > 1`. Construction
+        # FIGÉE (M1) : (i) toutes les jambes sur UN SEUL `account_id` partagé —
+        # sinon `is_transfer` deviendrait vrai (faux-vert) ; (ii) tx `DRAFT` SANS
+        # équilibrage zero-sum — le helper ne lit ni `state` ni la somme. ≥ 1
+        # jambe `classification` garde `is_transfer` False même quand
+        # `n_funding == 0`.
+        acc = uuid4()
+        funding = tuple(
+            _split(Money(-1, "EUR"), account_id=acc, category_id=None, leg_role="funding")
+            for _ in range(n_funding)
+        )
+        classification = (
+            _split(Money(1, "EUR"), account_id=acc, category_id=uuid4(), leg_role="classification"),
+        )
+        tx = _tx(state=TransactionState.DRAFT, splits=(*funding, *classification))
+        assert not is_transfer(tx)
+        if n_funding > 1:
+            with pytest.raises(MultipleFundingLegsError):
+                assert_at_most_one_funding_leg(tx)
+        else:
+            assert_at_most_one_funding_leg(tx)  # no raise
 
 
 # ---------------------------------------------------------------------------

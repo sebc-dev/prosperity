@@ -99,15 +99,28 @@ async def _seed_tx(  # noqa: PLR0913 — keyword-only test seed; arity is intent
     user_id: uuid.UUID,
     state: str,
     legs: list[Leg],
+    leg_roles: list[str | None] | None = None,
 ) -> uuid.UUID:
-    """Build a transaction in `state` with explicit split legs; returns its id."""
+    """Build a transaction in `state` with explicit split legs; returns its id.
+
+    `leg_roles` (optional, parallel to `legs`) FORCES `leg_role` on a leg — used
+    to seed a divergent `classification`/NULL leg (which the ORM default would
+    otherwise derive to `funding`). Omitted ⇒ each leg's role is derived from its
+    `category_id` (S08.5.1 default), the normal case.
+    """
     _u, _a, tx_factory, split_factory = await bound()
+    roles = leg_roles if leg_roles is not None else [None] * len(legs)
 
     def _build(_sync: object) -> uuid.UUID:
         tx = tx_factory(account_id=account_id, created_by=user_id, state=state, splits=False)
-        for acc, amount, cat in legs:
+        for (acc, amount, cat), role in zip(legs, roles, strict=True):
+            extra = {"leg_role": role} if role is not None else {}
             split_factory(
-                transaction_id=tx.id, account_id=acc, amount_cents=amount, category_id=cat
+                transaction_id=tx.id,
+                account_id=acc,
+                amount_cents=amount,
+                category_id=cat,
+                **extra,
             )
         return tx.id
 
@@ -221,6 +234,32 @@ async def test_confirm_rejects_unbalanced(
 async def test_confirm_rejects_uncategorized_expense(
     household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
 ) -> None:
+    # ADR 0017 : only a `classification` leg requires a category. Canonical form B
+    # with the classification leg's category FORCED to NULL → refused. The funding
+    # leg (NULL, derived) is exempt — what's rejected is the divergent
+    # classification/NULL leg (authoritative DB value, not re-derived).
+    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    tx_id = await _seed_tx(
+        household_singleton,
+        bound_transaction_factories,
+        account_id=account_id,
+        user_id=user_id,
+        state="planned",
+        legs=[(account_id, -1000, None), (account_id, 1000, None)],
+        leg_roles=[None, "classification"],  # funding (derived) + classification/NULL (forced)
+    )
+
+    with pytest.raises(domain.UncategorizedExpenseError) as exc:
+        await transition_to_confirmed(household_singleton, tx_id=tx_id)
+    assert exc.value.transaction_id == tx_id
+
+
+async def test_confirm_rejects_two_funding_legs(
+    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
+) -> None:
+    # D2/D3 (ADR 0017) : a same-account pair with two NULL-category legs derives
+    # two `funding` legs → trips the ≤1-funding invariant (categorisation passes,
+    # 0 classification). Pins the confirm-gate through the real service flow.
     account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
     tx_id = await _seed_tx(
         household_singleton,
@@ -231,7 +270,7 @@ async def test_confirm_rejects_uncategorized_expense(
         legs=[(account_id, -1000, None), (account_id, 1000, None)],
     )
 
-    with pytest.raises(domain.UncategorizedExpenseError) as exc:
+    with pytest.raises(domain.MultipleFundingLegsError) as exc:
         await transition_to_confirmed(household_singleton, tx_id=tx_id)
     assert exc.value.transaction_id == tx_id
 

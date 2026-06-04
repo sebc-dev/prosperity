@@ -138,8 +138,14 @@ class SplitFactory(SQLAlchemyModelFactory):
 
     `amount_cents`/`currency` default to a single positive EUR leg; pair two
     explicit instances (`-N`/`+N`) for a balanced transaction, or use
-    `TransactionFactory` which builds the balanced pair automatically.
+    `TransactionFactory` which builds the canonical-form-B pair automatically.
     `category_id`/`savings_goal_id` left NULL by default.
+
+    `leg_role` is NOT declared: it is derived by the ORM default
+    (`_default_leg_role`) from `category_id` — NULL ⇒ `funding`, set ⇒
+    `classification` (S08.5.1). A test FORCES it by passing `leg_role="..."`
+    (forwarded to the model) to fabricate a divergent leg, e.g. a
+    `classification` leg with a NULL category for a negative confirm test.
     """
 
     class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
@@ -153,19 +159,25 @@ class SplitFactory(SQLAlchemyModelFactory):
 
 
 class TransactionFactory(SQLAlchemyModelFactory):
-    """Persist a `Transaction`; by default attach a **zero-sum** pair of
-    splits (one debit `-N`, one credit `+N`, same currency, same account).
+    """Persist a `Transaction`; by default attach the **canonical form B**
+    (ADR 0017): one `funding` leg (account movement, `category_id=NULL`, `-N`)
+    + one `classification` leg (`category_id=<auto>`, `+N`), SAME account,
+    zero-sum. `leg_role` is derived from `category_id` by the ORM default.
 
     Caller passes the required FKs `account_id` + `created_by`.
 
-    - `TransactionFactory()` -> balanced (`sum(splits.amount_cents) == 0`).
-    - `TransactionFactory(splits__amount_cents=5000)` -> balanced at ±5000.
+    - `TransactionFactory()` -> balanced **and CONFIRMABLE** form B (1 funding +
+      1 categorised classification leg).
+    - `TransactionFactory(splits__amount_cents=5000)` -> form B at ±5000.
+    - `TransactionFactory(splits__category_id=<cat>)` -> pins the classification
+      leg's category (otherwise a `CategoryFactory` is auto-created).
     - `TransactionFactory(splits=False)` -> NO auto-splits (the test adds its
-      own, e.g. an unbalanced pair for a negative test).
+      own, e.g. an unbalanced or 2-funding pair for a negative test).
 
-    `SplitFactory` shares this factory's session (bound together by
-    `bound_transaction_factories`), so the post-generation splits flush in the
-    same session as their transaction — `obj.id` is available post-flush.
+    `SplitFactory`/`CategoryFactory` share this factory's session (bound together
+    by `bound_transaction_factories`), so the post-generation splits and the
+    auto category flush in the same session as their transaction — `obj.id` is
+    available post-flush.
     """
 
     class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
@@ -186,14 +198,18 @@ class TransactionFactory(SQLAlchemyModelFactory):
     # and the return are typed, so no blanket `# type: ignore` is needed.
     @post_generation
     def splits(obj, create: bool, extracted: object, **kwargs: object) -> None:  # noqa: N805
-        # `extracted is False` -> caller opts out of the auto balanced pair.
+        # `extracted is False` -> caller opts out of the auto canonical pair.
         if not create or extracted is False:
             return
         amount = cast(int, kwargs.get("amount_cents", _DEFAULT_SPLIT_AMOUNT_CENTS))
         currency = cast(str, kwargs.get("currency", "EUR"))
         transaction = cast(Transaction, obj)
-        # The debit/credit reference the transaction's own account by default;
-        # equal magnitudes with opposite signs keep the pair zero-sum.
+        category_id = kwargs.get("category_id")
+        if category_id is None:  # form B: the classification leg ALWAYS has a category
+            category_id = CategoryFactory().id
+        # Both legs reference the transaction's own account; equal magnitudes with
+        # opposite signs keep the pair zero-sum. The `-N` leg has no category
+        # (-> derived `funding`); the `+N` leg carries it (-> `classification`).
         SplitFactory(
             transaction_id=transaction.id,
             account_id=transaction.account_id,
@@ -205,4 +221,5 @@ class TransactionFactory(SQLAlchemyModelFactory):
             account_id=transaction.account_id,
             amount_cents=amount,
             currency=currency,
+            category_id=category_id,
         )

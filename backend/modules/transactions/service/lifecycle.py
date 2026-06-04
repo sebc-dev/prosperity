@@ -262,6 +262,7 @@ async def transition_to_confirmed(session: AsyncSession, *, tx_id: UUID) -> doma
     domain.assert_transition(agg.state, domain.TransactionState.CONFIRMED)
     domain.assert_zero_sum(agg)
     domain.assert_expenses_categorized(agg)
+    domain.assert_at_most_one_funding_leg(agg)  # D2 : ≤ 1 jambe funding (non-transfert)
     tx.state = domain.TransactionState.CONFIRMED.value
     tx.confirmed_at = datetime.now(UTC)
     await session.flush()

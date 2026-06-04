@@ -166,6 +166,25 @@ class UncategorizedExpenseError(TransactionError):
         self.transaction_id = transaction_id
 
 
+class MultipleFundingLegsError(TransactionError):
+    """Confirmation refusée : une dépense (non-transfert) porte ≥ 2 jambes `funding`.
+
+    Une dépense bien formée a AU PLUS une jambe `funding` (le mouvement de
+    compte) ; le reste est `classification` (catégorisé, donc consommé). ≥ 2
+    jambes `funding` est une forme ambiguë (ADR 0017) : aucune n'est rattachée à
+    une catégorie, donc rien n'est consommé tout en échappant à la catégorisation
+    obligatoire. L'UUID est porté par l'attribut typé `transaction_id` (canal
+    sûr) ; le service NE DOIT JAMAIS recopier `str(exc)` dans le `error.message`
+    exposé client (gabarit `UncategorizedExpenseError`).
+    """
+
+    code: ClassVar[str] = "multiple_funding_legs"
+
+    def __init__(self, transaction_id: UUID) -> None:
+        super().__init__(f"≥ 2 jambes funding sur une dépense non-transfert : {transaction_id}")
+        self.transaction_id = transaction_id
+
+
 class Split(BaseModel):
     """Une ligne signée d'une transaction (CONTEXT.md §Split).
 
@@ -349,15 +368,43 @@ def is_transfer(tx: Transaction) -> bool:
 
 
 def assert_expenses_categorized(tx: Transaction) -> None:
-    """Lève `UncategorizedExpenseError` si une dépense (non-transfert) n'a pas
-    de catégorie. No-op pour un transfert (D11).
+    """Lève `UncategorizedExpenseError` si une jambe `classification` (non-transfert)
+    n'a pas de catégorie. No-op pour un transfert (D11).
+
+    ADR 0017 (option 1) : seules les jambes `leg_role == "classification"`
+    (jambes de dépense) exigent une catégorie ; la jambe `funding` (mouvement de
+    compte) peut rester NULL et reste exclue de la consommation budget. La forme
+    canonique B `funding(NULL, -X) + classification(cat, +X)` devient ainsi
+    confirmable. Le marqueur lu est la valeur AUTORITATIVE du SGBD (mappers
+    S07.4), PAS une re-dérivation : une ligne divergente `classification` /
+    `category_id` NULL est donc bien refusée (et non requalifiée `funding`).
 
     Appelé par le service à `transition_to_confirmed` (S07.4) — il vit dans le
     domaine (pur), pas dans le service. Glossaire §`splits.category_id NULL` :
-    transfert et `draft` tolérés ; pour `confirmed`, tout split dépense doit
-    avoir une catégorie.
+    transfert et `draft` tolérés ; pour `confirmed`, tout split de classification
+    doit avoir une catégorie.
     """
     if is_transfer(tx):
         return
-    if any(split.category_id is None for split in tx.splits):
+    if any(s.category_id is None for s in tx.splits if s.leg_role == "classification"):
         raise UncategorizedExpenseError(tx.id)
+
+
+def assert_at_most_one_funding_leg(tx: Transaction) -> None:
+    """Lève `MultipleFundingLegsError` si une dépense (non-transfert) porte ≥ 2
+    jambes `funding`. No-op pour un transfert (exempté indépendamment de
+    `leg_role`, AC #137).
+
+    Gate de CONFIRMATION (pas un invariant `model_validator`, D2) : appelé par
+    `transition_to_confirmed` APRÈS `assert_expenses_categorized` (D2/F3 : la
+    catégorisation mord d'abord). Lit la valeur `leg_role` autoritative du SGBD.
+    Garantit la forme canonique B : ≤ 1 mouvement de compte par dépense, le reste
+    catégorisé — sans cet invariant, une paire « 2 jambes funding même compte »
+    serait une dépense mal formée acceptée (aucune catégorie, donc aucune
+    consommation, tout en passant la catégorisation).
+    """
+    if is_transfer(tx):
+        return
+    funding = sum(1 for s in tx.splits if s.leg_role == "funding")
+    if funding > 1:
+        raise MultipleFundingLegsError(tx.id)

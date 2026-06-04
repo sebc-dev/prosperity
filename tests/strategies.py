@@ -348,6 +348,47 @@ def balanced_splits_strategy(  # noqa: PLR0913 — paramétrable par conception 
 
 
 @st.composite
+def canonical_expense_splits_strategy(
+    draw: st.DrawFn,
+    *,
+    currency: Currency | None = None,
+) -> tuple[Split, ...]:
+    """Forme canonique B (ADR 0017) : 1 jambe `funding` (cat NULL, `-Σ`) + N jambes
+    `classification` catégorisées (`+a_i`), MÊME compte, zero-sum.
+
+    `is_transfer` False (compte unique), confirmable (toute jambe `classification`
+    a une catégorie, ≤ 1 jambe `funding`) et consommatrice (la somme des jambes
+    `classification`). `leg_role` est posé EXPLICITEMENT (valeur autoritative,
+    comme un mapper) plutôt que dérivé. Pensée pour réuse aval (properties de
+    transition S08.5.2 et seeds budget S08.5.3)."""
+    cur = currency if currency is not None else draw(st.sampled_from(_CURRENCY_CHOICES))
+    acc = uuid4()
+    positives = draw(
+        st.lists(
+            st.integers(min_value=1, max_value=_SPLIT_AMOUNT_BOUND),
+            min_size=1,
+            max_size=3,
+        )
+    )
+    classification = tuple(
+        Split(
+            account_id=acc,
+            category_id=uuid4(),
+            amount=Money(a, cur),  # type: ignore[arg-type]  # cur ∈ Currency par construction
+            leg_role="classification",
+        )
+        for a in positives
+    )
+    funding = Split(
+        account_id=acc,
+        category_id=None,
+        amount=Money(-sum(positives), cur),  # type: ignore[arg-type]
+        leg_role="funding",
+    )
+    return (funding, *classification)
+
+
+@st.composite
 def transaction_confirmed_strategy(
     draw: st.DrawFn,
     *,

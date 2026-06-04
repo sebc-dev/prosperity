@@ -23,9 +23,22 @@ from sqlalchemy.orm import Session
 
 from backend.modules.accounts.models import AccountMember
 from backend.modules.debts.models import Debt, ShareRequest
-from tests.factories.sqlalchemy import CategoryFactory
+from tests.factories.sqlalchemy import (
+    AccountFactory,
+    CategoryFactory,
+    SplitFactory,
+    TransactionFactory,
+    UserFactory,
+)
 
-TxFactoryBundle = Callable[[], Awaitable[tuple[type, type, type, type]]]
+# Precise mirror of `bound_transaction_factories`'s return (conftest.py): the
+# bundle yields the four bound factory CLASSES in order user/account/tx/split.
+TxFactoryBundle = Callable[
+    [],
+    Awaitable[
+        tuple[type[UserFactory], type[AccountFactory], type[TransactionFactory], type[SplitFactory]]
+    ],
+]
 
 # (amount_cents, is_classification) — a classification leg carries a category,
 # a funding leg does not (leg_role derived by the ORM default). Legs must sum to
@@ -53,10 +66,13 @@ async def seed(  # noqa: PLR0913 — keyword-only scenario knobs
 ) -> Scenario:
     """Seed Alice (owner/creditor), Bob (debtor) + a tx with the given legs.
 
-    `personal=False` builds a *shared* account (owner NULL) with Alice as member
-    (accessible but not owned-personal → vérif ii). `tx_owner_is_alice=False`
-    puts the tx on a third user's personal account (inaccessible to Alice →
-    vérif i). `bob_disabled=True` disables Bob (F02 → vérif iv).
+    Defaults (all knobs off) yield the happy-path scenario consumed by S09.5's
+    real-flow CASCADE test. The optional knobs drive the authz scenarios of the
+    S09.3 service suite: `personal=False` builds a *shared* account (owner NULL)
+    with Alice as member (accessible but not owned-personal → vérif ii);
+    `tx_owner_is_alice=False` puts the tx on a third user's personal account
+    (inaccessible to Alice → vérif i); `bob_disabled=True` disables Bob
+    (F02 → vérif iv).
     """
     user_factory, account_factory, tx_factory, split_factory = await factories()
 

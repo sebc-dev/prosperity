@@ -15,6 +15,7 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 from collections.abc import Awaitable, Callable
+from decimal import Decimal
 
 import pytest
 from sqlalchemy import select, text
@@ -293,7 +294,7 @@ async def _make_share_request(
         source_transaction_id=source_transaction_id,
         requested_by=requested_by,
         requested_from=requested_from,
-        ratio="0.5000",
+        ratio=Decimal("0.5000"),
         short_label="Courses partagées",
         revoked_at=revoked_at,
     )
@@ -426,6 +427,36 @@ async def test_delete_source_transaction_cascades_share_request(
         )
     ).scalar_one()
     assert count == 0
+
+
+@pytest.mark.parametrize("role", ["requested_by", "requested_from"])
+async def test_delete_user_referenced_by_share_request_is_restricted(
+    household_singleton: AsyncSession,
+    bound_user_factory: Callable[..., Awaitable[User]],
+    role: str,
+) -> None:
+    # `requested_by`/`requested_from` ON DELETE RESTRICT (F02): a user is
+    # disabled, never hard-deleted while a share request references them — on
+    # either side of the pair (DB twin of `test_delete_user_referenced_by_debt`).
+    # The account/tx are owned by a SEPARATE `owner` so the deleted user is
+    # referenced ONLY by the share request — isolating the RESTRICT under test
+    # from the (also-RESTRICT) `accounts.owner_id` / `transactions.created_by`.
+    owner = await bound_user_factory()
+    requester = await bound_user_factory()
+    debtor = await bound_user_factory()
+    account_id = await _make_account(household_singleton, owner.id)
+    tx_id = await _make_transaction(household_singleton, account_id=account_id, created_by=owner.id)
+    await _make_share_request(
+        household_singleton,
+        source_transaction_id=tx_id,
+        requested_by=requester.id,
+        requested_from=debtor.id,
+    )
+
+    target = requester if role == "requested_by" else debtor
+    await household_singleton.delete(target)
+    with pytest.raises(IntegrityError):  # ON DELETE RESTRICT
+        await household_singleton.flush()
 
 
 # ---------------------------------------------------------------------------

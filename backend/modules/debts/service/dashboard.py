@@ -24,6 +24,7 @@ Lecture seule (ADR 0002/0015) : aucun `flush()`/`commit()`, aucune mutation.
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any  # pour Row[Any] (pyright strict : Row non paramétré → warning)
@@ -89,15 +90,24 @@ def _reader_owns_source(*, origin: str, reader_id: UUID, to_user_id: UUID) -> bo
     return origin == "personal_share_request" and reader_id == to_user_id
 
 
-def _project_debt(
+def _project_debt(  # noqa: PLR0913 — flat keyword-only allowlist constructor (D6)
     debt: Debt,
     *,
     reader_id: UUID,
+    requested_by: UUID,
     short_label: str | None,
     category_id: UUID | None,
     date: dt.date | None,
 ) -> DebtWithContext:
-    """UNIQUE constructeur de `DebtWithContext` : allowlist + masquage (D6)."""
+    """UNIQUE constructeur de `DebtWithContext` : allowlist + masquage (D6).
+
+    `requested_by` est la valeur AUTORITATIVE lue sur le `ShareRequest` actif
+    joint à la lecture (créancier = owner du compte source pour
+    `personal_share_request`) — plus dérivée de `to_user_id`. L'appelant retombe
+    sur `to_user_id` uniquement si le LEFT JOIN défensif ne ramène aucune SR
+    (inatteignable en V1 ; ⚠️ à revisiter en E11 où `shared_account_overflow`
+    n'a pas de SR).
+    """
     owns = _reader_owns_source(origin=debt.origin, reader_id=reader_id, to_user_id=debt.to_user_id)
     return DebtWithContext(
         from_user_id=debt.from_user_id,
@@ -105,10 +115,7 @@ def _project_debt(
         amount_cents=debt.amount_cents,
         currency=debt.currency,
         origin=debt.origin,
-        # = requested_by pour personal_share_request (créancier = owner).
-        # ⚠️ À REVISITER en E11 : `shared_account_overflow` n'a pas de SR, donc
-        # `to_user_id` n'y porte pas la sémantique « requested_by » — adapter alors.
-        requested_by=debt.to_user_id,
+        requested_by=requested_by,
         short_label=short_label,
         category_id=category_id,
         date=date,
@@ -154,6 +161,7 @@ async def list_debts_for_user(
         select(
             Debt,
             ShareRequest.short_label,
+            ShareRequest.requested_by,
             _transactions.c.category_id,
             _transactions.c.date,
         )
@@ -169,9 +177,18 @@ async def list_debts_for_user(
         .where(*conds)
         .order_by(Debt.created_at, Debt.id)  # ordre déterministe (tests + UX)
     )
-    rows: list[Row[Any]] = list((await session.execute(stmt)).all())
+    rows: Sequence[Row[Any]] = (await session.execute(stmt)).all()
     return [
-        _project_debt(r[0], reader_id=user_id, short_label=r[1], category_id=r[2], date=r[3])
+        _project_debt(
+            r[0],
+            reader_id=user_id,
+            # autoritatif depuis la SR active jointe ; repli `to_user_id` si le
+            # LEFT JOIN défensif ne ramène pas de SR (inatteignable en V1).
+            requested_by=r[2] if r[2] is not None else r[0].to_user_id,
+            short_label=r[1],
+            category_id=r[3],
+            date=r[4],
+        )
         for r in rows
     ]
 

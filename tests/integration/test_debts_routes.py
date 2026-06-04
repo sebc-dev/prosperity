@@ -156,6 +156,8 @@ async def test_get_debts_with_counterparty_filters(
     with_charlie = await async_client.get(
         "/debts", params={"with": str(s.charlie_id)}, headers=_bearer(s.alice_id)
     )
+    assert with_bob.status_code == 200, with_bob.text
+    assert with_charlie.status_code == 200, with_charlie.text
     assert len(with_bob.json()["items"]) == 1
     assert with_charlie.json()["items"] == []
 
@@ -362,6 +364,7 @@ async def test_by_counterparty_bounded_to_token(
     household_singleton: AsyncSession,
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
+    # IDOR: the Alice↔Bob debt EXISTS, yet a third party (Charlie) gets nothing.
     s = await _seed(household_singleton, bound_transaction_factories)
     await _materialise_debt(async_client, s)
 
@@ -375,9 +378,9 @@ async def test_by_counterparty_empty_for_user_without_debts(
     household_singleton: AsyncSession,
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
+    # Genuine empty happy-path: no debt materialised at all → Alice gets [].
     s = await _seed(household_singleton, bound_transaction_factories)
-    await _materialise_debt(async_client, s)
 
-    resp = await async_client.get("/debts/by-counterparty", headers=_bearer(s.charlie_id))
+    resp = await async_client.get("/debts/by-counterparty", headers=_bearer(s.alice_id))
     assert resp.status_code == 200
     assert resp.json()["items"] == []

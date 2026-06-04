@@ -18,6 +18,7 @@ from uuid import UUID, uuid4
 
 from backend.modules.debts.models import Debt
 from backend.modules.debts.service.dashboard import (
+    DebtWithContext,
     _project_debt,  # pyright: ignore[reportPrivateUsage]
 )
 
@@ -38,8 +39,15 @@ def _debt(*, frm: UUID, to: UUID, origin: str) -> Debt:
     )
 
 
-def _project(debt: Debt, *, reader: UUID):  # type: ignore[no-untyped-def]
-    return _project_debt(debt, reader_id=reader, short_label="x", category_id=None, date=None)
+def _project(debt: Debt, *, reader: UUID) -> DebtWithContext:
+    return _project_debt(
+        debt,
+        reader_id=reader,
+        requested_by=debt.to_user_id,
+        short_label="x",
+        category_id=None,
+        date=None,
+    )
 
 
 def test_creditor_sees_source_fields_for_personal_share_request() -> None:
@@ -76,5 +84,12 @@ def test_short_label_none_propagates() -> None:
     # `_project_debt` propagates `None` rather than crashing.
     creditor, debtor = uuid4(), uuid4()
     debt = _debt(frm=debtor, to=creditor, origin="personal_share_request")
-    view = _project_debt(debt, reader_id=creditor, short_label=None, category_id=None, date=None)
+    view = _project_debt(
+        debt,
+        reader_id=creditor,
+        requested_by=debt.to_user_id,
+        short_label=None,
+        category_id=None,
+        date=None,
+    )
     assert view.short_label is None

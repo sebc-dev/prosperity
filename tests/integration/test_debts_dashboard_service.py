@@ -19,7 +19,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -338,3 +338,39 @@ async def test_order_follows_created_at(
     # And the order is stable across reads.
     again = await list_debts_for_user(household_singleton, user_id=alice)
     assert [d.from_user_id for d in again] == [charlie.debtor_id, bob.debtor_id]
+
+
+async def test_order_tie_break_by_id_on_equal_created_at(
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # Tie-break: when two debts share the SAME `created_at`, the second key of
+    # `ORDER BY created_at, id` decides. Force both `created_at` equal, then assert
+    # the rows come back in `id`-ascending order (not insertion order).
+    b = await _builder(household_singleton, bound_transaction_factories)
+    alice = await b.user("alice@example.com")
+    bob = await b.debt(creditor="alice@example.com", debtor="bob@example.com")
+    charlie = await b.debt(creditor="alice@example.com", debtor="charlie@example.com")
+
+    same = dt.datetime(2026, 3, 1, tzinfo=dt.UTC)
+    debtors = [bob.debtor_id, charlie.debtor_id]
+    await household_singleton.execute(
+        update(Debt).where(Debt.from_user_id.in_(debtors)).values(created_at=same)
+    )
+    await household_singleton.flush()
+
+    # Resolve each debt's (debtor, id) to derive the expected id-ascending order.
+    id_rows = (
+        (
+            await household_singleton.execute(
+                select(Debt.from_user_id, Debt.id).where(Debt.from_user_id.in_(debtors))
+            )
+        )
+        .tuples()
+        .all()
+    )
+    # Postgres orders `uuid` by its 16 bytes big-endian == Python `UUID` (`.int`).
+    expected = [debtor_id for debtor_id, _ in sorted(id_rows, key=lambda r: r[1])]
+
+    debts = await list_debts_for_user(household_singleton, user_id=alice)
+    assert [d.from_user_id for d in debts] == expected

@@ -98,9 +98,10 @@ async def test_create_rejects_leg_role_in_split_payload(
     household_singleton: AsyncSession,
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
-    # 🔒 Anti-circumvention (D5): `leg_role` is NOT a field of `SplitInput`
-    # (`extra="forbid"`). A client trying to mark a real expense leg `funding`
-    # (to escape mandatory categorisation) gets a 422 — not a silent drop.
+    # 🔒 Anti-circumvention (D5): `leg_role` is NOT a field of `SplitInput` nor of
+    # `TransactionCreate` (both `extra="forbid"`). A client trying to mark a real
+    # expense leg `funding` (to escape mandatory categorisation) gets a 422 — not
+    # a silent drop — whether it slips `leg_role` into a split OR at the root.
     user_factory, account_factory, _, _ = await bound_transaction_factories()
 
     def _seed(_s: Session) -> tuple[UUID, UUID]:
@@ -111,11 +112,15 @@ async def test_create_rejects_leg_role_in_split_payload(
     owner_id, acc_id = await household_singleton.run_sync(_seed)
 
     split = {**_split(acc_id, -1000), "leg_role": "funding"}
-    payload = {"splits": [split, _split(acc_id, 1000)]}
-    resp = await async_client.post(
-        f"/accounts/{acc_id}/transactions", json=payload, headers=_bearer(owner_id)
+    payloads = (
+        {"splits": [split, _split(acc_id, 1000)]},  # leg_role inside a split
+        {"splits": [_split(acc_id, -1000), _split(acc_id, 1000)], "leg_role": "funding"},  # root
     )
-    assert resp.status_code == 422, resp.text
+    for payload in payloads:
+        resp = await async_client.post(
+            f"/accounts/{acc_id}/transactions", json=payload, headers=_bearer(owner_id)
+        )
+        assert resp.status_code == 422, resp.text
 
 
 async def test_created_split_leg_role_is_server_derived(

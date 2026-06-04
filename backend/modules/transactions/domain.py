@@ -181,7 +181,7 @@ class MultipleFundingLegsError(TransactionError):
     code: ClassVar[str] = "multiple_funding_legs"
 
     def __init__(self, transaction_id: UUID) -> None:
-        super().__init__(f"≥ 2 jambes funding sur une transaction non-transfert : {transaction_id}")
+        super().__init__(f"≥ 2 jambes funding sur une dépense non-transfert : {transaction_id}")
         self.transaction_id = transaction_id
 
 

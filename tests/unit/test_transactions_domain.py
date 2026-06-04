@@ -782,6 +782,7 @@ class TestFundingLegInvariant:
 
     @given(n_funding=st.integers(min_value=0, max_value=4))
     @example(n_funding=0)
+    @example(n_funding=1)
     @example(n_funding=2)
     def test_property_at_most_one_funding_invariant(self, n_funding: int) -> None:
         # `assert_at_most_one_funding_leg` lève SSI `n_funding > 1`. Construction

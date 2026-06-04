@@ -47,13 +47,14 @@ Pur et sans effet de bord : importable depuis n'importe quel test.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_CEILING, Decimal
 from typing import Final, Literal
 from uuid import UUID, uuid4
 
 import hypothesis.strategies as st
 
 from backend.modules.accounts.domain import AccountType, MemberShare
+from backend.modules.debts.domain import Debt, DebtCalculator, ShareRequestData
 from backend.modules.transactions.domain import Split, Transaction, TransactionState
 from backend.shared.currency import CURRENCIES, Currency
 from backend.shared.money import Money
@@ -330,6 +331,71 @@ def out_of_bounds_ratio(draw: st.DrawFn) -> Decimal:
             ),
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# S09.5 — infrastructure Hypothesis du module `debts` (domaine pur).
+# NE teste PAS d'invariant neuf du calculator (clos par S09.2) : fournit les
+# générateurs réutilisables que E10 (properties zero-sum du Settlement, où
+# l'ensemble des dettes d'une tx cesse d'être un singleton) consommera.
+# Générateurs SANS rejet (convention repo) : aucune zone d'arrondi→0, aucun
+# self-debt, aucun `.filter`.
+# ---------------------------------------------------------------------------
+
+
+_UUID_SPACE: Final[int] = 2**128
+
+
+@st.composite
+def distinct_uuid_pair(draw: st.DrawFn) -> tuple[UUID, UUID]:
+    """Deux `UUID` GARANTIS distincts, SANS rejet.
+
+    Le second est dérivé du premier par un offset NON NUL modulo 2¹²⁸ ⇒
+    distinction PAR CONSTRUCTION (jamais `a == b` car 1 ≤ offset ≤ 2¹²⁸−1).
+    Préféré à `st.tuples(...).filter(a != b)` : aucun `.filter`, aucun
+    `filter_too_much` (esprit de `distinct_currency_pair`).
+    """
+    a = draw(st.uuids())
+    offset = draw(st.integers(min_value=1, max_value=_UUID_SPACE - 1))
+    return a, UUID(int=(a.int + offset) % _UUID_SPACE)
+
+
+@st.composite
+def share_request_strategy(draw: st.DrawFn) -> ShareRequestData:
+    """`ShareRequestData` VALIDE : paire d'users distincts, ratio ∈ (0,1].
+
+    `short_label` = `st.text(max_size=100)` : miroir du domaine PERMISSIF
+    (`ShareRequestData` n'a aucun validator métier — D4 de S09.2 ; le champ
+    n'est PAS lu par le calcul). Ce n'est PAS un miroir de la colonne validée
+    S09.3 (trim + rejet caractères de contrôle) — inutile ici, le calculator
+    ignore `short_label`.
+    """
+    requested_by, requested_from = draw(distinct_uuid_pair())
+    return ShareRequestData(
+        source_transaction_id=draw(st.uuids()),
+        requested_by=requested_by,
+        requested_from=requested_from,
+        ratio=draw(personal_share_ratio()),
+        short_label=draw(st.text(max_size=100)),
+    )
+
+
+@st.composite
+def debt_strategy(draw: st.DrawFn) -> Debt:
+    """Une `Debt` VALIDE telle que produite par le calculator, SANS rejet.
+
+    Tire `ratio` PUIS `expense_cents ≥ ⌈1/ratio⌉` ⇒ produit exact ≥ 1 ⇒
+    `amount ≥ 1` après `ROUND_HALF_UP` (l'arrondi ne descend pas sous 1 quand
+    le produit exact est ≥ 1) ⇒ `NonPositiveDebtAmountError` JAMAIS levé. Donc
+    aucun `try/except`/`assume`. Réutilisable E10 (population de `Debt` valides
+    pour les properties zero-sum du Settlement).
+    """
+    sr = draw(share_request_strategy())
+    min_cents = int((Decimal(1) / sr.ratio).to_integral_value(rounding=ROUND_CEILING))
+    expense = Money(draw(st.integers(min_value=min_cents, max_value=_MONEY_BOUND)), "EUR")
+    return DebtCalculator.compute_for_share_request(
+        share_request=sr, expense_total=expense, source_account_id=draw(st.uuids())
+    )[0]
 
 
 # Borne réduite pour les splits (vs `_MONEY_BOUND` à ±10 M€) : la somme de

@@ -18,18 +18,13 @@ fixed emails never collide across tests.
 
 from __future__ import annotations
 
-import datetime as dt
 import uuid
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
 
-from backend.modules.accounts.models import AccountMember
 from backend.modules.debts.domain import (
     NonPositiveDebtAmountError,
     NonPositiveExpenseError,
@@ -47,88 +42,12 @@ from backend.modules.debts.service.share_request import (
     create_share_request,
     revoke_share_request,
 )
-from tests.factories.sqlalchemy import CategoryFactory
-
-TxFactoryBundle = Callable[[], Awaitable[tuple[type, type, type, type]]]
-
-# (amount_cents, is_classification) — a classification leg carries a category,
-# a funding leg does not (leg_role derived by the ORM default). Legs must sum to
-# zero for a `confirmed` tx (the domain re-checks zero-sum on read).
-_Leg = tuple[int, bool]
-
-
-@dataclass
-class _Scenario:
-    alice_id: uuid.UUID  # owner of the personal account = creditor
-    bob_id: uuid.UUID  # active foyer member = debtor
-    account_id: uuid.UUID
-    tx_id: uuid.UUID
-
-
-async def _seed(  # noqa: PLR0913 — keyword-only scenario knobs
-    session: AsyncSession,
-    factories: TxFactoryBundle,
-    *,
-    legs: list[_Leg],
-    state: str = "confirmed",
-    personal: bool = True,
-    tx_owner_is_alice: bool = True,
-    bob_disabled: bool = False,
-) -> _Scenario:
-    """Seed Alice (owner/creditor), Bob (debtor) + a tx with the given legs.
-
-    `personal=False` builds a *shared* account (owner NULL) with Alice as member
-    (accessible but not owned-personal → vérif ii). `tx_owner_is_alice=False`
-    puts the tx on a third user's personal account (inaccessible to Alice →
-    vérif i). `bob_disabled=True` disables Bob (F02 → vérif iv).
-    """
-    user_factory, account_factory, tx_factory, split_factory = await factories()
-
-    def _do(sync_session: Session) -> _Scenario:
-        alice = user_factory(email="alice@example.com")
-        bob_kwargs: dict[str, object] = {"email": "bob@example.com"}
-        if bob_disabled:
-            bob_kwargs["disabled_at"] = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
-        bob = user_factory(**bob_kwargs)
-
-        if not tx_owner_is_alice:
-            carol = user_factory(email="carol@example.com")
-            account = account_factory(owner_id=carol.id, name="Carol perso")
-            tx_creator = carol.id
-        elif personal:
-            account = account_factory(owner_id=alice.id, name="Alice perso")
-            tx_creator = alice.id
-        else:  # shared account: owner NULL + Alice as member
-            account = account_factory(owner_id=None, name="Commun")
-            sync_session.add(
-                AccountMember(
-                    account_id=account.id,
-                    user_id=alice.id,
-                    default_share_ratio=Decimal("1.0"),
-                )
-            )
-            sync_session.flush()
-            tx_creator = alice.id
-
-        tx = tx_factory(account_id=account.id, created_by=tx_creator, state=state, splits=False)
-        for amount, is_classification in legs:
-            category_id = CategoryFactory().id if is_classification else None
-            split_factory(
-                transaction_id=tx.id,
-                account_id=account.id,
-                amount_cents=amount,
-                currency="EUR",
-                category_id=category_id,
-            )
-        return _Scenario(alice.id, bob.id, account.id, tx.id)
-
-    return await session.run_sync(_do)
-
-
-async def _debt_count(session: AsyncSession, *, tx_id: uuid.UUID) -> int:
-    stmt = select(func.count()).select_from(Debt).where(Debt.source_transaction_id == tx_id)
-    return int((await session.execute(stmt)).scalar_one())
-
+from tests.integration._debts_helpers import (
+    Scenario,
+    TxFactoryBundle,
+    debt_count,
+    seed,
+)
 
 # ---------------------------------------------------------------------------
 # Happy path + amount derivation
@@ -139,7 +58,7 @@ async def test_create_materialises_share_request_and_debt(
     household_singleton: AsyncSession,
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
-    s = await _seed(
+    s = await seed(
         household_singleton, bound_transaction_factories, legs=[(-300, False), (300, True)]
     )
 
@@ -174,7 +93,7 @@ async def test_create_non_trivial_ratio_rounds_half_up(
     household_singleton: AsyncSession,
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
-    s = await _seed(
+    s = await seed(
         household_singleton, bound_transaction_factories, legs=[(-333, False), (333, True)]
     )
 
@@ -198,7 +117,7 @@ async def test_create_degenerate_rounding_raises(
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
     # review #144 F1: 1¢ × 0.4 = 0.4 → ROUND_HALF_UP → 0 → NonPositiveDebtAmountError.
-    s = await _seed(household_singleton, bound_transaction_factories, legs=[(-1, False), (1, True)])
+    s = await seed(household_singleton, bound_transaction_factories, legs=[(-1, False), (1, True)])
 
     with pytest.raises(NonPositiveDebtAmountError):
         await create_share_request(
@@ -209,7 +128,7 @@ async def test_create_degenerate_rounding_raises(
             short_label="Centime",
             by_user_id=s.alice_id,
         )
-    assert await _debt_count(household_singleton, tx_id=s.tx_id) == 0
+    assert await debt_count(household_singleton, tx_id=s.tx_id) == 0
 
 
 async def test_expense_total_derives_from_classification_legs_only(
@@ -220,7 +139,7 @@ async def test_expense_total_derives_from_classification_legs_only(
     # = 300 (funding EXCLUDED). If the funding leg were summed in, the total
     # would be 0. Exactly ONE Debt (the classification legs aggregate into a
     # single expense_total — F9).
-    s = await _seed(
+    s = await seed(
         household_singleton,
         bound_transaction_factories,
         legs=[(-300, False), (100, True), (200, True)],
@@ -257,7 +176,7 @@ async def test_i_unknown_transaction_raises_not_found(
     household_singleton: AsyncSession,
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
-    s = await _seed(
+    s = await seed(
         household_singleton, bound_transaction_factories, legs=[(-300, False), (300, True)]
     )
     with pytest.raises(SourceTransactionNotFoundError):
@@ -276,7 +195,7 @@ async def test_i_inaccessible_transaction_raises_not_found(
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
     # tx on Carol's personal account → not accessible to Alice → uniform 404.
-    s = await _seed(
+    s = await seed(
         household_singleton,
         bound_transaction_factories,
         legs=[(-300, False), (300, True)],
@@ -298,7 +217,7 @@ async def test_ii_shared_account_not_shareable(
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
     # Accessible (Alice is a member) but NOT an owned personal account → 422.
-    s = await _seed(
+    s = await seed(
         household_singleton,
         bound_transaction_factories,
         legs=[(-300, False), (300, True)],
@@ -319,7 +238,7 @@ async def test_iii_non_confirmed_transaction(
     household_singleton: AsyncSession,
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
-    s = await _seed(
+    s = await seed(
         household_singleton,
         bound_transaction_factories,
         legs=[(-300, False), (300, True)],
@@ -340,7 +259,7 @@ async def test_iv_requested_from_unknown(
     household_singleton: AsyncSession,
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
-    s = await _seed(
+    s = await seed(
         household_singleton, bound_transaction_factories, legs=[(-300, False), (300, True)]
     )
     with pytest.raises(RequestedFromNotMemberError):
@@ -359,7 +278,7 @@ async def test_iv_requested_from_disabled(
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
     # F02: a disabled user is not a valid counterparty → 422 (no phantom debt).
-    s = await _seed(
+    s = await seed(
         household_singleton,
         bound_transaction_factories,
         legs=[(-300, False), (300, True)],
@@ -380,7 +299,7 @@ async def test_v_self_share(
     household_singleton: AsyncSession,
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
-    s = await _seed(
+    s = await seed(
         household_singleton, bound_transaction_factories, legs=[(-300, False), (300, True)]
     )
     with pytest.raises(SelfShareError):
@@ -400,7 +319,7 @@ async def test_vi_ratio_out_of_bounds_failsafe(
 ) -> None:
     # Direct service call with an out-of-bounds ratio (the 422 boundary is the
     # schema, tested in the route suite): the DebtCalculator is the fail-safe.
-    s = await _seed(
+    s = await seed(
         household_singleton, bound_transaction_factories, legs=[(-300, False), (300, True)]
     )
     with pytest.raises(RatioOutOfBoundsError):
@@ -419,7 +338,7 @@ async def test_viii_transfer_has_no_shareable_expense(
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
     # A transfer = two funding legs, zero classification → expense_total = 0.
-    s = await _seed(
+    s = await seed(
         household_singleton,
         bound_transaction_factories,
         legs=[(-300, False), (300, False)],
@@ -441,7 +360,7 @@ async def test_viii_income_has_no_shareable_expense(
 ) -> None:
     # An income/refund: classification legs sum ≤ 0 → expense_total ≤ 0. One does
     # not "share" a money inflow (review #144 #2, D3).
-    s = await _seed(
+    s = await seed(
         household_singleton,
         bound_transaction_factories,
         legs=[(300, False), (-300, True)],
@@ -461,7 +380,7 @@ async def test_ix_duplicate_active_share_request(
     household_singleton: AsyncSession,
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
-    s = await _seed(
+    s = await seed(
         household_singleton, bound_transaction_factories, legs=[(-300, False), (300, True)]
     )
     await create_share_request(
@@ -482,7 +401,7 @@ async def test_ix_duplicate_active_share_request(
             by_user_id=s.alice_id,
         )
     # Exactly one Debt — the duplicate attempt materialised nothing.
-    assert await _debt_count(household_singleton, tx_id=s.tx_id) == 1
+    assert await debt_count(household_singleton, tx_id=s.tx_id) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -490,7 +409,7 @@ async def test_ix_duplicate_active_share_request(
 # ---------------------------------------------------------------------------
 
 
-async def _create_ok(session: AsyncSession, s: _Scenario, *, label: str = "L") -> ShareRequest:
+async def _create_ok(session: AsyncSession, s: Scenario, *, label: str = "L") -> ShareRequest:
     return await create_share_request(
         session,
         transaction_id=s.tx_id,
@@ -505,7 +424,7 @@ async def test_revoke_by_creditor_deletes_debt_keeps_share_request(
     household_singleton: AsyncSession,
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
-    s = await _seed(
+    s = await seed(
         household_singleton, bound_transaction_factories, legs=[(-300, False), (300, True)]
     )
     sr = await _create_ok(household_singleton, s)
@@ -518,14 +437,14 @@ async def test_revoke_by_creditor_deletes_debt_keeps_share_request(
         await household_singleton.execute(select(ShareRequest).where(ShareRequest.id == sr_id))
     ).scalar_one()
     assert reloaded.revoked_at is not None  # SR kept, marked revoked
-    assert await _debt_count(household_singleton, tx_id=s.tx_id) == 0  # Debt hard-deleted
+    assert await debt_count(household_singleton, tx_id=s.tx_id) == 0  # Debt hard-deleted
 
 
 async def test_revoke_by_non_creditor_raises_not_found(
     household_singleton: AsyncSession,
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
-    s = await _seed(
+    s = await seed(
         household_singleton, bound_transaction_factories, legs=[(-300, False), (300, True)]
     )
     sr = await _create_ok(household_singleton, s)
@@ -540,14 +459,14 @@ async def test_revoke_by_non_creditor_raises_not_found(
         await household_singleton.execute(select(ShareRequest).where(ShareRequest.id == sr_id))
     ).scalar_one()
     assert reloaded.revoked_at is None  # untouched
-    assert await _debt_count(household_singleton, tx_id=s.tx_id) == 1  # Debt intact
+    assert await debt_count(household_singleton, tx_id=s.tx_id) == 1  # Debt intact
 
 
 async def test_revoke_unknown_id_raises_not_found(
     household_singleton: AsyncSession,
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
-    s = await _seed(
+    s = await seed(
         household_singleton, bound_transaction_factories, legs=[(-300, False), (300, True)]
     )
     with pytest.raises(ShareRequestNotFoundError):
@@ -560,7 +479,7 @@ async def test_double_revoke_is_noop(
     household_singleton: AsyncSession,
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
-    s = await _seed(
+    s = await seed(
         household_singleton, bound_transaction_factories, legs=[(-300, False), (300, True)]
     )
     sr = await _create_ok(household_singleton, s)
@@ -584,14 +503,14 @@ async def test_double_revoke_is_noop(
         )
     ).scalar_one()
     assert second_revoked_at == first_revoked_at
-    assert await _debt_count(household_singleton, tx_id=s.tx_id) == 0
+    assert await debt_count(household_singleton, tx_id=s.tx_id) == 0
 
 
 async def test_recreate_after_revoke_succeeds(
     household_singleton: AsyncSession,
     bound_transaction_factories: TxFactoryBundle,
 ) -> None:
-    s = await _seed(
+    s = await seed(
         household_singleton, bound_transaction_factories, legs=[(-300, False), (300, True)]
     )
     sr = await _create_ok(household_singleton, s, label="First")
@@ -600,7 +519,7 @@ async def test_recreate_after_revoke_succeeds(
     # The partial-unique slot is freed → a new SR on the same pair succeeds.
     sr2 = await _create_ok(household_singleton, s, label="Second")
     assert sr2.id != sr.id
-    assert await _debt_count(household_singleton, tx_id=s.tx_id) == 1
+    assert await debt_count(household_singleton, tx_id=s.tx_id) == 1
 
 
 async def test_no_orphan_debt_across_create_revoke_cycles(
@@ -609,14 +528,14 @@ async def test_no_orphan_debt_across_create_revoke_cycles(
 ) -> None:
     # review #144 D12: repeated create→revoke leaves no residual / over-deleted
     # Debt. After each revoke, exactly 0 live Debt on the triplet.
-    s = await _seed(
+    s = await seed(
         household_singleton, bound_transaction_factories, legs=[(-300, False), (300, True)]
     )
     for _ in range(3):
         sr = await _create_ok(household_singleton, s)
-        assert await _debt_count(household_singleton, tx_id=s.tx_id) == 1
+        assert await debt_count(household_singleton, tx_id=s.tx_id) == 1
         await revoke_share_request(
             household_singleton, share_request_id=sr.id, by_user_id=s.alice_id
         )
-        assert await _debt_count(household_singleton, tx_id=s.tx_id) == 0
-    assert await _debt_count(household_singleton, tx_id=s.tx_id) == 0
+        assert await debt_count(household_singleton, tx_id=s.tx_id) == 0
+    assert await debt_count(household_singleton, tx_id=s.tx_id) == 0

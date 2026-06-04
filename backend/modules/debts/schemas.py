@@ -14,12 +14,17 @@ trimmed + bounded (≤ 100) + run through a **whitelist** (vérif vii) — see b
 from __future__ import annotations
 
 import datetime as dt
+from dataclasses import fields
 from decimal import Decimal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.modules.debts.models import ShareRequest
+from backend.modules.debts.service.dashboard import (
+    CounterpartyNet,
+    DebtWithContext,
+)
 
 # Whitelist for `short_label`: ASCII printable (0x20–0x7E) + printable Latin-1
 # (0xA1–0xFF), minus SHY (U+00AD, a `Cf` format char). Pattern adapted from
@@ -88,3 +93,67 @@ class ShareRequestResponse(BaseModel):
             short_label=sr.short_label,
             created_at=sr.created_at,
         )
+
+
+# ---------------------------------------------------------------------------
+# Dashboard read schemas (S09.4) — the allowlist at the HTTP boundary.
+# ---------------------------------------------------------------------------
+
+
+class DebtResponse(BaseModel):
+    """Vue API d'une dette (miroir 1:1 de `DebtWithContext` — D7).
+
+    `source_transaction_id`/`account_id` nullables : `null` quand masqués au
+    débiteur. `materialization_trace` ABSENT (allowlist par construction). Le
+    test de parité (`test_debts_schemas`) verrouille l'égalité des champs avec
+    `DebtWithContext` : tout champ ajouté d'un seul côté casse le build.
+    """
+
+    from_user_id: UUID
+    to_user_id: UUID
+    amount_cents: int
+    currency: str
+    origin: str
+    requested_by: UUID
+    short_label: str | None
+    category_id: UUID | None
+    date: dt.date | None
+    created_at: dt.datetime
+    source_transaction_id: UUID | None
+    account_id: UUID | None
+
+    @classmethod
+    def from_context(cls, d: DebtWithContext) -> DebtResponse:
+        """Single serialisation path DTO → API, field-for-field (parité D7)."""
+        return cls(**{f.name: getattr(d, f.name) for f in fields(d)})
+
+
+class DebtListResponse(BaseModel):
+    items: list[DebtResponse]
+
+
+class CounterpartyNetResponse(BaseModel):
+    """Net orienté par contrepartie pour le dashboard « mes dettes par contrepartie ».
+
+    `net_amount` (centimes signés, libellé de l'issue #145) : positif = la
+    contrepartie me doit net ; négatif = je lui dois net. Aucun champ source
+    (l'agrégat en est structurellement dépourvu — non-fuite par construction).
+    """
+
+    user_id: UUID
+    net_amount: int
+    currency: str
+    debts_count: int
+
+    @classmethod
+    def from_net(cls, n: CounterpartyNet) -> CounterpartyNetResponse:
+        return cls(
+            user_id=n.user_id,
+            net_amount=n.net_amount_cents,
+            currency=n.currency,
+            debts_count=n.debts_count,
+        )
+
+
+class CounterpartyListResponse(BaseModel):
+    items: list[CounterpartyNetResponse]

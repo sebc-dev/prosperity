@@ -312,9 +312,11 @@ class Settlement(Base):
     ⚠️ **`household_id` ne suffit PAS à l'isolation foyer** : rien en SQL ne
     garantit que les `debt_id` des lignes ni le `linked_transaction_id`
     résolvent au même foyer (la `Debt` scope via `account_id`, contrainte
-    cross-table inexprimable en SQL pur). Le validateur S10.2 DOIT vérifier
-    cette égalité de foyer, sinon cross-household leak (ADR 0011, encart
-    Refined-by E10 §4 ; RBAC user-level distinct en S10.4).
+    cross-table inexprimable en SQL pur). Le **service `create_settlement`
+    (S10.4)** DOIT vérifier cette égalité de foyer — la garde est effectful
+    (`debt → account → household`, `tx → household`) donc HORS du validateur
+    pur scalaire S10.2 ; sinon cross-household leak (ADR 0011, encart
+    Refined-by E10 §4 — précision de couche ; RBAC user-level distinct en S10.4).
 
     `created_by` → `users.id` `ON DELETE RESTRICT` (F02 — un user est désactivé,
     jamais hard-deleted), indexé comme toute FK RESTRICT vers `users`.

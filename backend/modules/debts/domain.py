@@ -17,12 +17,14 @@ contenir un UUID/montant) dans le message exposé.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from decimal import Decimal
 from typing import ClassVar, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from backend.shared.currency import Currency
 from backend.shared.money import Money
 
 # Set fermé des origines de dette (gabarit `DebtGenerationOverride`/`LegRole`).
@@ -194,3 +196,294 @@ class DebtCalculator:
                 share_ratio=share_request.ratio,
             )
         ]
+
+
+# ---------------------------------------------------------------------------
+# S10.2 — Settlement : validateur PUR (multi-line, 3 types) — ADR 0011
+# ---------------------------------------------------------------------------
+
+# Set fermé des types de règlement — verrou au boundary Pydantic (le modèle ORM
+# `Settlement.type` est `String` SANS CHECK d'énumération, S10.1 ; gabarit
+# `DebtOrigin`). Le littéral `virtual` est le seul discriminant lien↔type
+# (miroir du CHECK `ck_settlements_virtual_no_link`, ADR 0011 §2).
+SettlementType = Literal["internal_transfer", "external_transfer", "virtual"]
+
+
+class DebtContext(BaseModel):
+    """Vue scalaire d'une `Debt` ciblée — dérivée par le service S10.4.
+
+    Le `SettlementValidator` est PUR (ADR 0002 affiné E09) : comme
+    `DebtCalculator` reçoit `expense_total: Money` (jamais un `Transaction`), il
+    reçoit des `DebtContext` scalaires — JAMAIS une `Debt` ORM ni une `Session`.
+    Le service S10.4 dérive ces scalaires (charge la dette, son `remaining` via
+    S10.3, ses contreparties).
+
+    Ne porte PAS `household_id` : l'isolation foyer (`debt → account → household`)
+    est intrinsèquement effectful ⇒ gardée par le **service S10.4**, hors du
+    validateur pur (ADR 0011 §4, encart Refined-by E10 — précision de couche ;
+    AC opposable `cross_household_leak` sur #155). Ne porte pas non plus
+    `account_id`/`source_transaction_id` : aucune fuite du compte source (principe
+    d'allowlist DTO posé en S09.4 ; la garde DTO du Settlement est portée par S10.4).
+
+    `currency` est typée `Currency` (set fermé du kernel `backend.shared`, gabarit
+    `SettlementType`/`Money.currency`) : verrou au boundary Pydantic contre un code
+    devise hors-ISO. La cohérence cross-debt (devise UNIQUE sur les dettes ciblées)
+    reste portée par la règle (3) `MixedCurrencyError` du validateur — la garde de
+    set fermé est orthogonale et ne rend aucune branche d'erreur inatteignable.
+
+    `remaining_cents` = solde restant COURANT (S10.3), AVANT ce règlement ;
+    `> 0` attendu, vérifié par la règle (6) du validateur.
+
+    PERMISSIF (gabarit `ShareRequestData`, S09.2 D4) : aucun `model_validator`
+    métier (pas de garde `from != to`) ⇒ `SettlementValidator` reste l'UNIQUE
+    gardien testable, sinon des branches d'erreur deviendraient inatteignables.
+    """
+
+    model_config = ConfigDict(frozen=True, strict=True)
+
+    debt_id: UUID
+    from_user_id: UUID  # débiteur
+    to_user_id: UUID  # créancier
+    currency: Currency  # set fermé (boundary) ; cohérence cross-debt = règle (3)
+    remaining_cents: int  # solde restant courant (S10.3) ; > 0 vérifié règle (6)
+
+
+class SettlementLineInput(BaseModel):
+    """Une ligne d'apurement — montant POSITIF (D-SIGN, ADR 0011 §1).
+
+    Le signe du nettage est porté par l'ORIENTATION de la `Debt` (calculé par le
+    validateur, règle (8)) — JAMAIS stocké signé sur la ligne (miroir du CHECK
+    `ck_settlement_lines_amount_positive`, S10.1). PERMISSIF comme `DebtContext` :
+    la garde `amount_cents > 0` vit dans le validateur (règle (7)), unique
+    gardien testable — sinon la branche `OverSettlementError` serait inatteignable.
+    """
+
+    model_config = ConfigDict(frozen=True, strict=True)
+
+    debt_id: UUID
+    amount_cents: int  # > 0 ; sens porté par l'orientation de la Debt (règle 8)
+
+
+class ValidatedSettlement(BaseModel):
+    """Sortie normalisée d'un règlement validé — scalaires pour S10.4 / traçabilité.
+
+    `net_transfer_cents` = `abs(net)` orienté (non-virtuel, == montant tx liée) /
+    `0` (virtuel) — D5. La comparaison net↔virement est faite ICI (domaine pur,
+    règle (8)) ; ce champ l'expose pour traçabilité/tests, et le service S10.4
+    réutilise la magnitude sans la recalculer. Le sens RÉEL débiteur→créancier du
+    virement (aligné sur payeur→bénéficiaire de la tx) reste effectful ⇒ S10.4 :
+    le domaine pur garde la MAGNITUDE, pas l'orientation réelle.
+    """
+
+    model_config = ConfigDict(frozen=True, strict=True)
+
+    type: SettlementType
+    counterparties: frozenset[UUID]  # exactement {A, B}
+    net_transfer_cents: int  # abs(net) (non-virtuel) / 0 (virtuel) — D5
+    currency: Currency  # devise unique des dettes ciblées (règle 3)
+    lines: tuple[SettlementLineInput, ...]
+
+
+class SettlementValidationError(Exception):
+    """Base de toute violation de validation d'un règlement (gabarit
+    `DebtCalculationError`).
+
+    Famille DISTINCTE de `DebtCalculationError` : deux actes métier distincts
+    (matérialisation d'une dette vs règlement) ⇒ le service S10.4 mappe TOUTE la
+    famille via un seul `except SettlementValidationError` (→ 422), séparé du 422
+    share-request de S09.3. `code` (ClassVar) est le canal client stable et SANS
+    PII : recopier `code`, JAMAIS `str(exc)` (peut contenir UUID/montant).
+    """
+
+    code: ClassVar[str] = "settlement_validation_error"
+
+
+class EmptySettlementError(SettlementValidationError):
+    """Règle (1) : un règlement sans aucune ligne n'apure rien."""
+
+    code: ClassVar[str] = "empty_settlement"
+
+
+class UnknownDebtLineError(SettlementValidationError):
+    """Règle (2) : une ligne cible un `debt_id` absent des `debt_contexts`."""
+
+    code: ClassVar[str] = "unknown_debt_line"
+
+
+class MixedCurrencyError(SettlementValidationError):
+    """Règle (3) : les dettes ciblées s'étalent sur plusieurs devises (CONTEXT.md
+    §SettlementLine : la devise est dupliquée depuis la `Debt`, garde-fou)."""
+
+    code: ClassVar[str] = "mixed_currency"
+
+
+class MultipleCounterpartiesError(SettlementValidationError):
+    """Règles (4)/(8) : les dettes ciblées n'impliquent pas EXACTEMENT deux
+    contreparties `{A, B}`. Soit l'union `{from, to}` n'est pas de cardinalité 2
+    (règle (4) : 3+ tiers, ou self-debt isolée `< 2`) ; soit une ligne cible une
+    self-debt dégénérée (`from == to`) qui a franchi (4) en combinaison et dont
+    l'orientation n'est ni `lo→hi` ni `hi→lo` (règle (8), garde de robustesse)."""
+
+    code: ClassVar[str] = "multiple_counterparties"
+
+
+class LinkedTransactionMismatchError(SettlementValidationError):
+    """Règle (5) : incohérence `linked_transaction` ⟺ `type` (miroir du CHECK
+    `ck_settlements_virtual_no_link`, ADR 0011 §2 ; défense en profondeur — le
+    domaine pur ne dépend pas de la DB pour être complet/testable Hypothesis)."""
+
+    code: ClassVar[str] = "linked_transaction_mismatch"
+
+
+class ClosedDebtError(SettlementValidationError):
+    """Règle (6) : une dette ciblée est déjà soldée (`remaining_cents <= 0`)."""
+
+    code: ClassVar[str] = "closed_debt"
+
+
+class OverSettlementError(SettlementValidationError):
+    """Règle (7) : une ligne (ou la somme des lignes d'une même dette) dépasse le
+    `remaining_cents` de la dette, ou un montant non strictement positif."""
+
+    code: ClassVar[str] = "over_settlement"
+
+
+class NetTransferMismatchError(SettlementValidationError):
+    """Règle (8) : le net orienté ne correspond pas au montant de la tx liée
+    (non-virtuel), ou n'est pas nul (virtuel — ADR 0011 §2)."""
+
+    code: ClassVar[str] = "net_transfer_mismatch"
+
+
+class SettlementValidator:
+    """Validation PURE d'un règlement avant insert (S10.4).
+
+    Aucune session, aucun `Transaction` : entrées/sorties scalaires (ADR 0002
+    affiné E09, ADR 0011). Testable Hypothesis sans DB (S10.5, `Stratégie` §4.2 ;
+    `DebtContext`/`ValidatedSettlement` sont les types que la
+    `settlement_scenario_strategy` peuplera).
+
+    `internal_transfer` et `external_transfer` sont traités à L'IDENTIQUE ici
+    (tous deux : `linked` NOT NULL, net == montant tx) : distinguer la FORME du
+    virement (intra-foyer vs sortant tiers) est effectful (charge les comptes) ⇒
+    S10.4. L'isolation foyer (ADR 0011 §4) est elle aussi effectful ⇒ S10.4.
+    """
+
+    @staticmethod
+    def validate(  # noqa: PLR0912 — 8 invariants séquentiels, ordre déterministe documenté
+        *,
+        settlement_type: SettlementType,
+        lines: Sequence[SettlementLineInput],
+        debt_contexts: Mapping[UUID, DebtContext],
+        linked_transaction_amount_cents: int | None,  # abs(montant) ; None ssi virtual
+    ) -> ValidatedSettlement:
+        """Valide les 8 invariants scalaires d'un règlement, dans un ORDRE
+        déterministe : (1) non vide → (2) ligne orpheline → (3) devise unique →
+        (4) exactement 2 contreparties → (5) lien ⟺ virtual → (6) dette close →
+        (7) over-settlement → (8) net orienté == virement.
+
+        Retourne `ValidatedSettlement` (lignes normalisées + net tracé) si valide ;
+        lève une sous-classe de `SettlementValidationError` au premier invariant
+        violé. Accepte : `internal_transfer`/`external_transfer` dont
+        `Σ ligne × signe_direction == linked (> 0)` ; `virtual` (`linked = NULL`)
+        dont le net orienté `== 0` (nettage croisé symétrique).
+        """
+        # (1) non vide → sinon `EmptySettlementError`.
+        if not lines:
+            raise EmptySettlementError("settlement must have at least one line")
+
+        # (2) chaque ligne référence un `DebtContext` connu → sinon orpheline.
+        for line in lines:
+            if line.debt_id not in debt_contexts:
+                raise UnknownDebtLineError("line targets an unknown debt")
+
+        # Contextes effectivement ciblés (déterministe : ordre des lignes).
+        targeted = [debt_contexts[line.debt_id] for line in lines]
+
+        # (3) devise unique sur tous les contextes ciblés (CONTEXT.md §SettlementLine).
+        currencies: set[Currency] = {ctx.currency for ctx in targeted}
+        if len(currencies) != 1:
+            raise MixedCurrencyError("targeted debts span multiple currencies")
+        (currency,) = currencies
+
+        # (4) exactement deux contreparties : union des `{from, to}` de cardinalité 2.
+        parties = {uid for ctx in targeted for uid in (ctx.from_user_id, ctx.to_user_id)}
+        if len(parties) != 2:  # noqa: PLR2004 — exactement 2 contreparties {A, B}
+            # Message couvrant les DEUX côtés : `> 2` (3+ tiers) et `< 2` (self-debt
+            # dégénérée, possible car `DebtContext` est permissif). La règle raisonne
+            # sur des `user_id` (orthogonale au foyer ; la garde foyer est en S10.4).
+            raise MultipleCounterpartiesError("settlement must involve exactly two parties")
+
+        # (5) biconditionnel lien ⟺ virtual (miroir `ck_settlements_virtual_no_link`).
+        is_virtual = settlement_type == "virtual"
+        if is_virtual != (linked_transaction_amount_cents is None):
+            raise LinkedTransactionMismatchError("linked tx inconsistent with type")
+        # Après le biconditionnel : non-virtuel ⇒ `linked is not None` (sinon levé
+        # ci-dessus, branche morte non re-testée) ; seul le montant non-positif reste
+        # à garder. `assert` pour narrower le type pour pyright.
+        if not is_virtual:
+            assert linked_transaction_amount_cents is not None  # garanti par (5)
+            if linked_transaction_amount_cents <= 0:
+                # Non-virtuel ⇒ montant lié strictement positif (D5, défense en profondeur).
+                raise LinkedTransactionMismatchError(
+                    "non-virtual requires a positive linked amount"
+                )
+
+        # (6) aucune dette ciblée déjà soldée (`remaining_cents <= 0`).
+        for ctx in targeted:
+            if ctx.remaining_cents <= 0:
+                raise ClosedDebtError("targeted debt is already settled")
+
+        # (7) no over-settlement (somme par dette ≤ remaining). `strict=True` ne
+        #     garantit QUE le typage `int`, PAS la positivité (value object permissif)
+        #     ⇒ la garde `> 0` est explicite ici : UNIQUE gardien testable du « > 0 »
+        #     côté domaine (le CHECK SQL `ck_settlement_lines_amount_positive` est le
+        #     miroir DB, S10.1).
+        per_debt: dict[UUID, int] = {}
+        for line in lines:
+            if line.amount_cents <= 0:
+                raise OverSettlementError("line amount must be strictly positive")
+            per_debt[line.debt_id] = per_debt.get(line.debt_id, 0) + line.amount_cents
+        for debt_id, total in per_debt.items():
+            if total > debt_contexts[debt_id].remaining_cents:
+                raise OverSettlementError("line(s) exceed the debt remaining")
+
+        # (8) net orienté canonique (D4) puis comparaison au virement (D5). Ordre
+        #     canonique déterministe par valeur d'UUID (indépendant de l'ordre
+        #     d'arrivée des lignes) : requis pour les properties S10.5.
+        lo, hi = sorted(parties, key=lambda u: u.int)
+        net = 0
+        for line in lines:
+            ctx = debt_contexts[line.debt_id]
+            if ctx.from_user_id == lo and ctx.to_user_id == hi:
+                sign = 1
+            elif ctx.from_user_id == hi and ctx.to_user_id == lo:
+                sign = -1
+            else:
+                # Dette dégénérée (self-debt `from == to`) ayant franchi (4) en
+                # COMBINAISON avec une dette réelle : l'union `{from, to}` peut valoir
+                # `{lo, hi}` (cardinalité 2) alors qu'une ligne ne relie pas les deux
+                # contreparties. Son orientation n'est NI `lo→hi` NI `hi→lo` ⇒ rejet
+                # explicite — JAMAIS un signe par défaut silencieux. `DebtContext` est
+                # permissif (pas de garde `from != to`) ⇒ unique gardien testable ici ;
+                # en prod ce cas est non-persistable (CHECK `ck_debts_no_self_debt`),
+                # garde de robustesse / défense en profondeur.
+                raise MultipleCounterpartiesError("settlement must involve exactly two parties")
+            net += sign * line.amount_cents
+        if is_virtual:
+            if net != 0:
+                raise NetTransferMismatchError("virtual settlement must net to zero")
+            net_transfer_cents = 0
+        else:
+            assert linked_transaction_amount_cents is not None  # garanti par (5)
+            if abs(net) != linked_transaction_amount_cents:
+                raise NetTransferMismatchError("net does not match linked transaction")
+            net_transfer_cents = abs(net)
+
+        return ValidatedSettlement(
+            type=settlement_type,
+            counterparties=frozenset(parties),
+            net_transfer_cents=net_transfer_cents,
+            currency=currency,
+            lines=tuple(lines),
+        )

@@ -23,7 +23,7 @@ Livrable agrégé : Bob crée un Settlement `virtual` qui apure 3 dettes en sens
 | Phase | Description | Diff |
 |---|---|---|
 | **P10.1.1** | Modèle `Settlement` : `id`, `household_id`, `created_by`, `created_at`, `settled_at` date, `type` Literal, `linked_transaction_id` FK NULL, `note` text. Modèle `SettlementLine` : `id`, `settlement_id` FK CASCADE, `debt_id` FK, `amount_cents` bigint (signé). Index `(debt_id)` | ~120 |
-| **P10.1.2** | Migration `0012_settlements.py`. Test niveau 1 schema check | ~80 |
+| **P10.1.2** | Migration `0015_settlements.py` (`0012`/`0013`/`0014` pris : budget alerts, leg_role, debts). Test niveau 1 schema check | ~80 |
 
 ---
 

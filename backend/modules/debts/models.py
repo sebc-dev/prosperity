@@ -35,11 +35,13 @@ from sqlalchemy import (
     UUID,
     BigInteger,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
     Numeric,
     String,
+    Text,
     func,
     text,
 )
@@ -287,4 +289,169 @@ class ShareRequest(Base):
         Index("ix_share_requests_requested_by", "requested_by"),
         # On ne se partage pas une dépense à soi-même (gabarit `ck_debts_no_self_debt`).
         CheckConstraint("requested_by <> requested_from", name="no_self"),
+    )
+
+
+class Settlement(Base):
+    """Règlement d'une ou plusieurs `Debt` (CONTEXT.md §Settlement, ADR 0011).
+
+    Matérialise l'apurement multi-debt. Trois `type` (set fermé verrouillé au
+    boundary Pydantic S10.2/S10.4, PAS en SQL — gabarit `Debt.origin`) :
+    `internal_transfer` / `external_transfer` (liés à une `Transaction` de
+    virement **préalable** via `linked_transaction_id`) ; `virtual`
+    (compensation comptable sans mouvement d'argent, `linked_transaction_id`
+    NULL). Aucun état ajouté sur `Debt` (ADR 0002/0011) : le solde restant se
+    calcule par différence (S10.3), `Debt` reste une projection read-only.
+
+    `household_id` → `household.id` (singleton ADR 0010) : clé de scoping foyer
+    (gabarit `accounts.household_id`, sans `ondelete` ni index — le foyer n'est
+    jamais supprimé). Le bucket sync `user_debt_{user_id}` (E13) sera dérivé des
+    `debt_id` référencés par les `SettlementLine`, pas de `household_id`
+    (glossaire §SettlementLine).
+
+    `created_by` → `users.id` `ON DELETE RESTRICT` (F02 — un user est désactivé,
+    jamais hard-deleted), indexé comme toute FK RESTRICT vers `users`.
+
+    `created_at` server_default (horodatage technique) ; `settled_at` (`Date`)
+    NOT NULL : la **date métier** du règlement, distincte de `created_at`.
+
+    `linked_transaction_id` → `transactions.id` `ON DELETE RESTRICT`,
+    **nullable**, par chaîne (aucune `relationship` inverse sur `transactions`,
+    graphe import-linter non inversé) : le virement existe comme `Transaction`
+    préalable (ADR 0011), le `Settlement` y est lié ensuite ; `RESTRICT` pour
+    qu'une suppression de tx n'efface pas silencieusement un règlement. Indexé
+    (chemin du `RESTRICT`).
+
+    `note` (`Text`, nullable) : commentaire libre — PII potentielle, à filtrer
+    dans les DTO (S10.4).
+
+    Le CHECK `ck_settlements_virtual_no_link` matérialise le **biconditionnel**
+    « `linked_transaction_id IS NULL` ⟺ `type = 'virtual'` » : rejette à la fois
+    un `virtual` lié à une tx et un non-virtuel sans lien. Le littéral `'virtual'`
+    y apparaît comme contrainte **relationnelle** type↔lien (pas une énumération
+    du set de `type`, qui reste hors SQL).
+    """
+
+    __tablename__ = "settlements"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    household_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("household.id", name="fk_settlements_household_id_household"),
+        nullable=False,
+    )
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            ondelete="RESTRICT",
+            name="fk_settlements_created_by_users",
+        ),
+        nullable=False,
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    settled_at: Mapped[dt.date] = mapped_column(Date, nullable=False)
+    # Set fermé (`internal_transfer`/`external_transfer`/`virtual`) verrouillé
+    # au boundary Pydantic, PAS en SQL (gabarit `Debt.origin`). Le littéral
+    # 'virtual' n'apparaît QUE dans le CHECK relationnel ci-dessous.
+    type: Mapped[str] = mapped_column(String, nullable=False)
+    linked_transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "transactions.id",
+            ondelete="RESTRICT",
+            name="fk_settlements_linked_transaction_id_transactions",
+        ),
+        nullable=True,
+    )
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        # FK RESTRICT indexées (sans index, un DELETE seq-scan `settlements`) :
+        # `linked_transaction_id` (chemin du RESTRICT tx) et `created_by`
+        # (gabarit de toute FK RESTRICT→users du codebase). `household_id` n'a
+        # PAS d'index (singleton jamais supprimé, gabarit `accounts.household_id`).
+        Index("ix_settlements_linked_transaction_id", "linked_transaction_id"),
+        Index("ix_settlements_created_by", "created_by"),
+        # Biconditionnel : lien NULL ⟺ type == 'virtual' (les deux sens).
+        CheckConstraint(
+            "(type = 'virtual') = (linked_transaction_id IS NULL)",
+            name="virtual_no_link",
+        ),
+    )
+
+
+class SettlementLine(Base):
+    """Ligne d'un `Settlement` apurant une portion d'une `Debt` (CONTEXT.md
+    §SettlementLine).
+
+    `amount_cents` (`BigInteger`) **strictement positif** (CHECK
+    `ck_settlement_lines_amount_positive`, décision D-SIGN affinant l'ADR 0011) :
+    apure une portion d'**une** `Debt` dans le sens propre de cette dette. Le
+    nettage bidirectionnel est porté par l'**orientation intrinsèque de chaque
+    `Debt`** (`from_user_id`/`to_user_id`), PAS par un signe sur la ligne — la
+    formule du solde restant `remaining = debt.amount_cents − SUM(lines.amount_cents)`
+    (S10.3) et l'AC « no over-settlement » exigent des lignes dans `[0, amount]`
+    par dette. Le « montant net viré » se calcule au validateur pur (S10.2) par
+    `Σ amount × signe_direction(debt)`.
+
+    `settlement_id` → `settlements.id` `ON DELETE CASCADE` : supprimer un
+    `Settlement` nettoie ses lignes (agrégat ligne-fille). Indexé.
+
+    `debt_id` → `debts.id` `ON DELETE CASCADE` : si la `Debt` source disparaît
+    (révocation de `share_request` S09.3, ou CASCADE depuis la tx d'origine),
+    ses lignes d'apurement n'ont plus de sens — la projection est régénérable
+    (cohérent avec la suppression dure des `Debt`). Indexé : clé du calcul
+    `remaining` (S10.3) **et** du CASCADE. ⚠️ Un `Settlement` non-virtuel peut
+    subsister sans lignes après ce CASCADE — le virement reste tracé par
+    `linked_transaction_id` (`RESTRICT`) ; comportement assumé (encart ADR 0011).
+
+    `currency` (`String(3)`) dupliquée depuis la `Debt` : garde-fou de cohérence
+    **applicatif** (le validateur S10.2 exige une devise unique sur tout le
+    règlement) et évite un join `debts` à l'agrégation du solde restant (S10.3).
+
+    FK par chaîne, aucune `relationship` (CASCADE = garantie DB ; doctrine
+    `models.py` SQLA pur). Le service S10.2 insère les lignes explicitement.
+    """
+
+    __tablename__ = "settlement_lines"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    settlement_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "settlements.id",
+            ondelete="CASCADE",
+            name="fk_settlement_lines_settlement_id_settlements",
+        ),
+        nullable=False,
+    )
+    debt_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "debts.id",
+            ondelete="CASCADE",
+            name="fk_settlement_lines_debt_id_debts",
+        ),
+        nullable=False,
+    )
+    amount_cents: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+
+    __table_args__ = (
+        Index("ix_settlement_lines_debt_id", "debt_id"),
+        Index("ix_settlement_lines_settlement_id", "settlement_id"),
+        CheckConstraint("amount_cents > 0", name="amount_positive"),
     )

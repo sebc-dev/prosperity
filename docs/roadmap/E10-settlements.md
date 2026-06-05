@@ -64,7 +64,7 @@ Livrable agrégé : Bob crée un Settlement `virtual` qui apure 3 dettes en sens
 
 | Phase | Description | Diff |
 |---|---|---|
-| **P10.5.1** | Strategy `debt_settlement_scenario_strategy` : génère un set de dettes entre 2 users + un set de settlements qui les apurent (somme nette = 0). Property : `sum(remaining_cents of debts between A and B) == 0` après apurement complet | ~180 |
+| **P10.5.1** | Strategy `settlement_scenario_strategy` : génère, entre 2 users, l'input scalaire réel du `SettlementValidator` — un set de `DebtContext` + les `SettlementLineInput` qui les apurent exactement (net 0 si `virtual`). Property pure : le validateur **accepte** et calcule le `net_transfer_cents` orienté conforme (conservation du solde net au sens validateur) ; la conservation **persistée** (`sum remaining == 0` / restants partiels) est assertée en intégration via `compute_remaining` (S10.5 §4b) | ~180 |
 | **P10.5.2** | Property additionnelle : pour tout settlement valide, `compute_remaining` de toutes les dettes apurées ≥ 0 (aucun over-settlement). Si une SettlementLine tente d'apurer plus que `remaining` → validation refuse | ~120 |
 
 ---

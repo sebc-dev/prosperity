@@ -71,7 +71,7 @@ class OpenDebt:
     from_user_id: UUID  # débiteur
     to_user_id: UUID  # créancier
     amount_cents: int
-    remaining_cents: int  # > 0 par construction (HAVING) ; jamais clampé (D2)
+    remaining_cents: int  # > 0 par construction (WHERE remaining > 0) ; jamais clampé (D2)
     currency: str
 
 

@@ -373,7 +373,7 @@ async def test_list_open_debts_excludes_third_parties(
 async def test_list_open_debts_deterministic_order(
     household_singleton: AsyncSession, bound_user_factory: UserFactory
 ) -> None:
-    # (viii) 3 open debts between {a, b} returned sorted by (created_at, id).
+    # (viii) 4 open debts between {a, b} returned sorted by (created_at, id).
     a, b = await bound_user_factory(), await bound_user_factory()
     d1 = await _seed_debt(
         household_singleton, from_user_id=a.id, to_user_id=b.id, amount_cents=1000
@@ -384,10 +384,14 @@ async def test_list_open_debts_deterministic_order(
     d3 = await _seed_debt(
         household_singleton, from_user_id=a.id, to_user_id=b.id, amount_cents=3000
     )
+    # d4 shares d1's created_at → exercises the `id` tiebreaker of the sort.
+    d4 = await _seed_debt(
+        household_singleton, from_user_id=a.id, to_user_id=b.id, amount_cents=4000
+    )
     # Back-date created_at out of insertion order to prove ORDER BY created_at.
     await household_singleton.execute(
         update(Debt)
-        .where(Debt.id == d1.id)
+        .where(Debt.id.in_([d1.id, d4.id]))
         .values(created_at=dt.datetime(2026, 3, 1, tzinfo=dt.UTC))
     )
     await household_singleton.execute(
@@ -403,4 +407,8 @@ async def test_list_open_debts_deterministic_order(
     await household_singleton.flush()
 
     open_debts = await list_open_debts_between(household_singleton, user_a=a.id, user_b=b.id)
-    assert [od.debt_id for od in open_debts] == [d2.id, d3.id, d1.id]
+    # d1 & d4 share created_at (2026-03-01) ⇒ the second sort key `Debt.id`
+    # decides their relative order. Dropping `, Debt.id` from ORDER BY would make
+    # this tail non-deterministic (UUIDs are random vs insertion order).
+    tied_tail = sorted([d1.id, d4.id])
+    assert [od.debt_id for od in open_debts] == [d2.id, d3.id, *tied_tail]

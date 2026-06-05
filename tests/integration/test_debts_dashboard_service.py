@@ -469,6 +469,8 @@ async def test_aggregate_uses_remaining_balance(
     assert row.user_id == seed.debtor_id
     assert row.net_amount_cents == 3000  # remaining, not the 5000 initial
     assert row.debts_count == 1
+    # D8: the net carries the debt currency through the remaining-based aggregate.
+    assert row.currency == "EUR"
 
 
 async def test_list_debts_is_single_query_no_n_plus_1(

@@ -7,9 +7,14 @@ re-implementation), with no `__all__` drift or duplicates.
 
 from __future__ import annotations
 
+from dataclasses import is_dataclass
+from uuid import uuid4
+
 import backend.modules.debts.public as debts_public
 from backend.modules.debts.public import (
+    DebtNotFoundError,
     DuplicateActiveShareRequestError,
+    OpenDebt,
     RequestedFromNotMemberError,
     SelfShareError,
     ShareRequestError,
@@ -17,10 +22,13 @@ from backend.modules.debts.public import (
     SourceAccountNotShareableError,
     SourceTransactionNotConfirmedError,
     SourceTransactionNotFoundError,
+    compute_remaining,
     create_share_request,
+    list_open_debts_between,
     revoke_share_request,
 )
 from backend.modules.debts.service import dashboard as _dashboard
+from backend.modules.debts.service import remaining as _remaining
 from backend.modules.debts.service import share_request as _service
 
 
@@ -28,8 +36,10 @@ def test_public_exports_exact_set() -> None:
     assert sorted(debts_public.__all__) == [
         "CounterpartyNet",
         "DebtDirection",
+        "DebtNotFoundError",
         "DebtWithContext",
         "DuplicateActiveShareRequestError",
+        "OpenDebt",
         "RequestedFromNotMemberError",
         "SelfShareError",
         "ShareRequestError",
@@ -38,8 +48,10 @@ def test_public_exports_exact_set() -> None:
         "SourceTransactionNotConfirmedError",
         "SourceTransactionNotFoundError",
         "aggregate_by_counterparty",
+        "compute_remaining",
         "create_share_request",
         "list_debts_for_user",
+        "list_open_debts_between",
         "revoke_share_request",
     ]
     assert len(debts_public.__all__) == len(set(debts_public.__all__))
@@ -48,6 +60,11 @@ def test_public_exports_exact_set() -> None:
 def test_public_symbols_are_callable_or_exceptions() -> None:
     assert callable(create_share_request)
     assert callable(revoke_share_request)
+    # S10.3 remaining-balance primitives (server-only, consumed by S10.4/E11).
+    assert callable(compute_remaining)
+    assert callable(list_open_debts_between)
+    assert is_dataclass(OpenDebt)
+    assert issubclass(DebtNotFoundError, Exception)
     assert issubclass(ShareRequestError, Exception)
     for sub in (
         SourceTransactionNotFoundError,
@@ -71,6 +88,11 @@ def test_error_codes_are_stable_and_pii_free() -> None:
     assert SelfShareError.code == "self_share"
     assert DuplicateActiveShareRequestError.code == "duplicate_active_share_request"
     assert ShareRequestNotFoundError.code == "share_request_not_found"
+    # `DebtNotFoundError` (S10.3): stable `code` + the instance message NEVER
+    # carries the `debt_id` (anti-PII / anti-enumeration — D3).
+    assert DebtNotFoundError.code == "debt_not_found"
+    a_debt_id = uuid4()
+    assert str(a_debt_id) not in str(DebtNotFoundError("debt does not exist"))
 
 
 def test_public_names_are_identical_objects_to_internals() -> None:
@@ -97,3 +119,8 @@ def test_public_names_are_identical_objects_to_internals() -> None:
     assert debts_public.DebtWithContext is _dashboard.DebtWithContext
     assert debts_public.CounterpartyNet is _dashboard.CounterpartyNet
     assert debts_public.DebtDirection is _dashboard.DebtDirection
+    # The S10.3 remaining-balance primitives re-export the real symbols (no stub).
+    assert debts_public.compute_remaining is _remaining.compute_remaining
+    assert debts_public.list_open_debts_between is _remaining.list_open_debts_between
+    assert debts_public.OpenDebt is _remaining.OpenDebt
+    assert debts_public.DebtNotFoundError is _remaining.DebtNotFoundError

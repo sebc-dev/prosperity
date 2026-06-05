@@ -194,3 +194,149 @@ class DebtCalculator:
                 share_ratio=share_request.ratio,
             )
         ]
+
+
+# ---------------------------------------------------------------------------
+# S10.2 — Settlement : validateur PUR (multi-line, 3 types) — ADR 0011
+# ---------------------------------------------------------------------------
+
+# Set fermé des types de règlement — verrou au boundary Pydantic (le modèle ORM
+# `Settlement.type` est `String` SANS CHECK d'énumération, S10.1 ; gabarit
+# `DebtOrigin`). Le littéral `virtual` est le seul discriminant lien↔type
+# (miroir du CHECK `ck_settlements_virtual_no_link`, ADR 0011 §2).
+SettlementType = Literal["internal_transfer", "external_transfer", "virtual"]
+
+
+class DebtContext(BaseModel):
+    """Vue scalaire d'une `Debt` ciblée — dérivée par le service S10.4.
+
+    Le `SettlementValidator` est PUR (ADR 0002 affiné E09) : comme
+    `DebtCalculator` reçoit `expense_total: Money` (jamais un `Transaction`), il
+    reçoit des `DebtContext` scalaires — JAMAIS une `Debt` ORM ni une `Session`.
+    Le service S10.4 dérive ces scalaires (charge la dette, son `remaining` via
+    S10.3, ses contreparties).
+
+    Ne porte PAS `household_id` : l'isolation foyer (`debt → account → household`)
+    est intrinsèquement effectful ⇒ gardée par le **service S10.4**, hors du
+    validateur pur (ADR 0011 §4, encart Refined-by E10 — précision de couche ;
+    AC opposable `cross_household_leak` sur #155). Ne porte pas non plus
+    `account_id`/`source_transaction_id` : aucune fuite du compte source (S09.4).
+
+    `remaining_cents` = solde restant COURANT (S10.3), AVANT ce règlement ;
+    `> 0` attendu, vérifié par la règle (6) du validateur.
+
+    PERMISSIF (gabarit `ShareRequestData`, S09.2 D4) : aucun `model_validator`
+    métier (pas de garde `from != to`) ⇒ `SettlementValidator` reste l'UNIQUE
+    gardien testable, sinon des branches d'erreur deviendraient inatteignables.
+    """
+
+    model_config = ConfigDict(frozen=True, strict=True)
+
+    debt_id: UUID
+    from_user_id: UUID  # débiteur
+    to_user_id: UUID  # créancier
+    currency: str
+    remaining_cents: int  # solde restant courant (S10.3) ; > 0 vérifié règle (6)
+
+
+class SettlementLineInput(BaseModel):
+    """Une ligne d'apurement — montant POSITIF (D-SIGN, ADR 0011 §1).
+
+    Le signe du nettage est porté par l'ORIENTATION de la `Debt` (calculé par le
+    validateur, règle (8)) — JAMAIS stocké signé sur la ligne (miroir du CHECK
+    `ck_settlement_lines_amount_positive`, S10.1). PERMISSIF comme `DebtContext` :
+    la garde `amount_cents > 0` vit dans le validateur (règle (7)), unique
+    gardien testable — sinon la branche `OverSettlementError` serait inatteignable.
+    """
+
+    model_config = ConfigDict(frozen=True, strict=True)
+
+    debt_id: UUID
+    amount_cents: int  # > 0 ; sens porté par l'orientation de la Debt (règle 8)
+
+
+class ValidatedSettlement(BaseModel):
+    """Sortie normalisée d'un règlement validé — scalaires pour S10.4 / traçabilité.
+
+    `net_transfer_cents` = `abs(net)` orienté (non-virtuel, == montant tx liée) /
+    `0` (virtuel) — D5. Exposé pour traçabilité/tests ; le service le compare déjà
+    (comparaison faite ici). Le sens RÉEL débiteur→créancier du virement (aligné
+    sur payeur→bénéficiaire de la tx) reste effectful ⇒ S10.4 : le domaine pur
+    garde la MAGNITUDE, pas l'orientation réelle.
+    """
+
+    model_config = ConfigDict(frozen=True, strict=True)
+
+    type: SettlementType
+    counterparties: frozenset[UUID]  # exactement {A, B}
+    net_transfer_cents: int  # abs(net) (non-virtuel) / 0 (virtuel) — D5
+    currency: str
+    lines: tuple[SettlementLineInput, ...]
+
+
+class SettlementValidationError(Exception):
+    """Base de toute violation de validation d'un règlement (gabarit
+    `DebtCalculationError`).
+
+    Famille DISTINCTE de `DebtCalculationError` : deux actes métier distincts
+    (matérialisation d'une dette vs règlement) ⇒ le service S10.4 mappe TOUTE la
+    famille via un seul `except SettlementValidationError` (→ 422), séparé du 422
+    share-request de S09.3. `code` (ClassVar) est le canal client stable et SANS
+    PII : recopier `code`, JAMAIS `str(exc)` (peut contenir UUID/montant).
+    """
+
+    code: ClassVar[str] = "settlement_validation_error"
+
+
+class EmptySettlementError(SettlementValidationError):
+    """Règle (1) : un règlement sans aucune ligne n'apure rien."""
+
+    code: ClassVar[str] = "empty_settlement"
+
+
+class UnknownDebtLineError(SettlementValidationError):
+    """Règle (2) : une ligne cible un `debt_id` absent des `debt_contexts`."""
+
+    code: ClassVar[str] = "unknown_debt_line"
+
+
+class MixedCurrencyError(SettlementValidationError):
+    """Règle (3) : les dettes ciblées s'étalent sur plusieurs devises (CONTEXT.md
+    §SettlementLine : la devise est dupliquée depuis la `Debt`, garde-fou)."""
+
+    code: ClassVar[str] = "mixed_currency"
+
+
+class MultipleCounterpartiesError(SettlementValidationError):
+    """Règle (4) : les dettes ciblées n'impliquent pas EXACTEMENT deux
+    contreparties `{A, B}` (3+ tiers, ou self-debt dégénérée `< 2`)."""
+
+    code: ClassVar[str] = "multiple_counterparties"
+
+
+class LinkedTransactionMismatchError(SettlementValidationError):
+    """Règle (5) : incohérence `linked_transaction` ⟺ `type` (miroir du CHECK
+    `ck_settlements_virtual_no_link`, ADR 0011 §2 ; défense en profondeur — le
+    domaine pur ne dépend pas de la DB pour être complet/testable Hypothesis)."""
+
+    code: ClassVar[str] = "linked_transaction_mismatch"
+
+
+class ClosedDebtError(SettlementValidationError):
+    """Règle (6) : une dette ciblée est déjà soldée (`remaining_cents <= 0`)."""
+
+    code: ClassVar[str] = "closed_debt"
+
+
+class OverSettlementError(SettlementValidationError):
+    """Règle (7) : une ligne (ou la somme des lignes d'une même dette) dépasse le
+    `remaining_cents` de la dette, ou un montant non strictement positif."""
+
+    code: ClassVar[str] = "over_settlement"
+
+
+class NetTransferMismatchError(SettlementValidationError):
+    """Règle (8) : le net orienté ne correspond pas au montant de la tx liée
+    (non-virtuel), ou n'est pas nul (virtuel — ADR 0011 §2)."""
+
+    code: ClassVar[str] = "net_transfer_mismatch"

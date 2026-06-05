@@ -54,7 +54,14 @@ from uuid import UUID, uuid4
 import hypothesis.strategies as st
 
 from backend.modules.accounts.domain import AccountType, MemberShare
-from backend.modules.debts.domain import Debt, DebtCalculator, ShareRequestData
+from backend.modules.debts.domain import (
+    Debt,
+    DebtCalculator,
+    DebtContext,
+    SettlementLineInput,
+    SettlementType,
+    ShareRequestData,
+)
 from backend.modules.transactions.domain import Split, Transaction, TransactionState
 from backend.shared.currency import CURRENCIES, Currency
 from backend.shared.money import Money
@@ -574,3 +581,121 @@ def transaction_draft_strategy(
         debt_generation_override="default",
         share_request_id=draw(st.none() | st.uuids()),
     )
+
+
+# ---------------------------------------------------------------------------
+# S10.5 — `settlement_scenario_strategy` : population de règlements PURS apurant
+# EXACTEMENT un ensemble de dettes entre {A, B}, SANS rejet. C'est l'aboutissement
+# de la property zero-sum non-dégénérée explicitement DIFFÉRÉE par S09.5 (#146) :
+# l'ensemble des dettes ciblées cesse d'être un singleton (≠ projection
+# `personal_share_request` de S09.2). Génère l'INPUT RÉEL du `SettlementValidator`
+# (scalaire, S10.2) : des `DebtContext` (clé `debt_id`) + des `SettlementLineInput`,
+# JAMAIS un `Debt` domaine — qui n'a pas d'`id` alors que le validateur clé par
+# `debt_id`. Réutilisable E11 (overflow F10).
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class SettlementScenario:
+    """Dettes entre {A, B} + lignes qui les apurent EXACTEMENT (full apurement).
+
+    `virtual` ⇒ totaux par direction égaux ⇒ net 0 (équilibré) ; non-virtuel ⇒
+    sens unique lo→hi ⇒ net == Σ > 0 et `linked == net`. Toutes les dettes sont
+    fraîches (`remaining_cents == montant plein`) et chaque ligne apure sa dette
+    intégralement (`amount == remaining`). L'union `{from, to}` vaut toujours
+    `{lo, hi}` (cardinalité 2) et la devise est unique (`EUR`) PAR CONSTRUCTION.
+    """
+
+    settlement_type: SettlementType
+    debt_contexts: tuple[DebtContext, ...]
+    lines: tuple[SettlementLineInput, ...]
+    linked_transaction_amount_cents: int | None  # None ssi virtual ; sinon abs(net)
+    expected_net_transfer_cents: int  # 0 (virtual) / abs(net) (non-virtuel)
+
+    @property
+    def contexts_by_id(self) -> dict[UUID, DebtContext]:
+        return {c.debt_id: c for c in self.debt_contexts}
+
+    @property
+    def counterparties(self) -> frozenset[UUID]:
+        return frozenset(u for c in self.debt_contexts for u in (c.from_user_id, c.to_user_id))
+
+
+def _partition(draw: st.DrawFn, *, total: int, n: int) -> list[int]:
+    """N entiers ≥ 1, Σ == ``total`` (cut-points distincts, requiert ``total >= n``).
+
+    Cœur entier de `share_ratios` (cut-points), sans la division /10000 : chaque
+    part ≥ 1 ⇒ ``remaining > 0`` PAR CONSTRUCTION (jamais d'`assume`).
+
+    Court-circuite ``n == 1`` : sinon `st.integers(1, total - 1)` est construit
+    avec ``total == 1`` ⇒ `st.integers(1, 0)`, que Hypothesis REJETTE à la
+    construction (`max_value < min_value`) AVANT de regarder ``min_size=0`` ⇒
+    `InvalidArgument` même si aucun cut-point n'est requis. Une seule part = total.
+    """
+    if n == 1:
+        return [total]
+    cuts = sorted(
+        draw(
+            st.lists(
+                st.integers(min_value=1, max_value=total - 1),
+                min_size=n - 1,
+                max_size=n - 1,
+                unique=True,
+            )
+        )
+    )
+    bounds = [0, *cuts, total]
+    return [bounds[i + 1] - bounds[i] for i in range(n)]
+
+
+@st.composite
+def settlement_scenario_strategy(
+    draw: st.DrawFn, *, balanced: bool | None = None
+) -> SettlementScenario:
+    """Scénario de règlement apurant EXACTEMENT un ensemble de dettes entre {A, B}.
+
+    `balanced=True` (ou tiré) ⇒ `virtual` à net 0 : deux directions, totaux par
+    direction ÉGAUX (= S), apurés intégralement ⇒ net orienté nul. `balanced=False`
+    ⇒ non-virtuel sens unique lo→hi ⇒ net == Σ > 0, `linked == net`.
+
+    SANS rejet (convention repo, S09.5) : réutilise `distinct_uuid_pair` (paire
+    {A, B} garantie distincte) et `_partition` (parts ≥ 1 par construction). Tire
+    les montants dans `(0, _MONEY_BOUND]` via la partition — aucun `.filter`,
+    aucun `assume`. Réutilisable E11 (le validateur est identique).
+    """
+    a, b = draw(distinct_uuid_pair())  # paire {A, B} garantie distincte (S09.5)
+    lo, hi = sorted((a, b), key=lambda u: u.int)  # ordre canonique = celui du validateur
+    if balanced is None:
+        balanced = draw(st.booleans())
+
+    def _debt(from_u: UUID, to_u: UUID, amount: int) -> tuple[DebtContext, SettlementLineInput]:
+        did = draw(st.uuids())  # debt_id frais (uniques : st.uuids ~ collision nulle)
+        ctx = DebtContext(
+            debt_id=did,
+            from_user_id=from_u,
+            to_user_id=to_u,
+            currency="EUR",
+            remaining_cents=amount,
+        )
+        return ctx, SettlementLineInput(debt_id=did, amount_cents=amount)  # apurement complet
+
+    if balanced:
+        # virtual, net 0 : DEUX directions, totaux égaux = S (apurement complet ⇒ net 0).
+        n_fwd = draw(st.integers(min_value=1, max_value=3))
+        n_bwd = draw(st.integers(min_value=1, max_value=3))
+        # S ≥ n par direction ⇒ `_partition` toujours satisfiable.
+        s = draw(st.integers(min_value=max(n_fwd, n_bwd), max_value=_MONEY_BOUND))
+        fwd = _partition(draw, total=s, n=n_fwd)  # lo→hi
+        bwd = _partition(draw, total=s, n=n_bwd)  # hi→lo
+        pairs = [_debt(lo, hi, m) for m in fwd] + [_debt(hi, lo, m) for m in bwd]
+        ctxs, lines = zip(*pairs, strict=True)
+        return SettlementScenario("virtual", tuple(ctxs), tuple(lines), None, 0)
+
+    # non-virtuel : sens unique lo→hi ⇒ net = Σ > 0 ⇒ linked == net (≠ 0, passe la règle 5).
+    n = draw(st.integers(min_value=1, max_value=4))
+    total = draw(st.integers(min_value=n, max_value=_MONEY_BOUND))
+    parts = _partition(draw, total=total, n=n)
+    pairs = [_debt(lo, hi, m) for m in parts]
+    ctxs, lines = zip(*pairs, strict=True)
+    stype: SettlementType = draw(st.sampled_from(["internal_transfer", "external_transfer"]))
+    return SettlementScenario(stype, tuple(ctxs), tuple(lines), total, total)

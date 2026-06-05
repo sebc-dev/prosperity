@@ -31,6 +31,7 @@ nouveau (contrat `2-debts`).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import ClassVar
 from uuid import UUID
@@ -42,7 +43,13 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from backend.modules.debts.models import Debt, SettlementLine
 
-__all__ = ["DebtNotFoundError", "OpenDebt", "compute_remaining", "list_open_debts_between"]
+__all__ = [
+    "DebtNotFoundError",
+    "OpenDebt",
+    "compute_remaining",
+    "compute_remaining_for_debts",
+    "list_open_debts_between",
+]
 
 
 class DebtNotFoundError(Exception):
@@ -118,6 +125,29 @@ async def compute_remaining(session: AsyncSession, *, debt_id: UUID) -> int:
     # Postgres `SUM(bigint)` est `numeric` ⇒ l'expression remonte un `Decimal` ;
     # on rétablit le contrat `int` (centimes) attendu par les appelants.
     return int(remaining)
+
+
+async def compute_remaining_for_debts(
+    session: AsyncSession, *, debt_ids: Sequence[UUID]
+) -> dict[UUID, int]:
+    """`{debt_id: remaining}` pour un LOT de dettes, en UNE seule requête.
+
+    Variante batchée de `compute_remaining` (évite le N+1 quand un règlement
+    multi-lignes apure plusieurs dettes — gabarit `dashboard.py` qui agrège déjà
+    `_settled_subq` en une passe). MÊME formule et MÊMES invariants : `_settled_subq`
+    partagé, restant JAMAIS clampé (D2/ADR 0011 : un over-settlement reste visible).
+
+    Contrairement à `compute_remaining`, NE lève PAS `DebtNotFoundError` : un
+    `debt_id` inexistant est simplement ABSENT du dict (l'appelant `create_settlement`
+    a déjà prouvé l'existence des dettes en (i) avant d'appeler). ⚠️ Primitive NON
+    bornée au token ni au foyer (D9) — bornage AuthZ/foyer à la charge de l'appelant.
+    """
+    if not debt_ids:
+        return {}
+    stmt = select(Debt.id, Debt.amount_cents - _settled_subq(Debt.id)).where(Debt.id.in_(debt_ids))
+    rows = (await session.execute(stmt)).all()
+    # `SUM(bigint)` est `numeric` en Postgres ⇒ cast vers le contrat int (centimes).
+    return {r[0]: int(r[1]) for r in rows}
 
 
 async def list_open_debts_between(

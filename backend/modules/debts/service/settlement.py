@@ -43,7 +43,7 @@ from backend.modules.debts.domain import (
 )
 from backend.modules.debts.models import Debt, Settlement, SettlementLine
 from backend.modules.debts.service.dashboard import DebtWithContext, project_debts_by_ids
-from backend.modules.debts.service.remaining import compute_remaining
+from backend.modules.debts.service.remaining import compute_remaining_for_debts
 from backend.modules.transactions.public import (
     TransactionState,
     get_transaction,
@@ -164,9 +164,7 @@ async def create_settlement(  # noqa: PLR0913 — paramètres d'acte keyword-onl
     """
     # (i) dettes existantes → 404 uniforme
     debt_ids = [ln.debt_id for ln in lines]
-    debts = list(
-        (await session.execute(select(Debt).where(Debt.id.in_(debt_ids)))).scalars().all()
-    )
+    debts = list((await session.execute(select(Debt).where(Debt.id.in_(debt_ids)))).scalars().all())
     by_id = {d.id: d for d in debts}
     if any(did not in by_id for did in debt_ids):
         raise SettlementDebtNotAccessibleError
@@ -192,9 +190,7 @@ async def create_settlement(  # noqa: PLR0913 — paramètres d'acte keyword-onl
     if tx is not None:
         account_ids.add(tx.account_id)  # S-M3 : racine incluse
         account_ids |= {s.account_id for s in tx.splits}
-    _assert_single_household(
-        await _resolve_households(session, account_ids), expected=HOUSEHOLD_ID
-    )
+    _assert_single_household(await _resolve_households(session, account_ids), expected=HOUSEHOLD_ID)
 
     # (iii) accessibilité user-level + état/forme de la tx liée (non-virtuel)
     linked_amount: int | None = None
@@ -214,14 +210,17 @@ async def create_settlement(  # noqa: PLR0913 — paramètres d'acte keyword-onl
         # (iv) montant viré = Σ splits positifs (helper pur, property-tested T-M3)
         linked_amount = derive_transfer_amount([s.amount.amount_cents for s in tx.splits])
 
-    # (v) DebtContext (remaining COURANT via S10.3, avant ce règlement)
+    # (v) DebtContext (remaining COURANT via S10.3, avant ce règlement). Le
+    # restant des N dettes est batché en UNE requête (pas un N+1 `compute_remaining`
+    # par dette) ; toutes existent (prouvé en (i)) ⇒ chaque `d.id` est dans le dict.
+    remaining_by_id = await compute_remaining_for_debts(session, debt_ids=[d.id for d in debts])
     debt_contexts = {
         d.id: DebtContext(
             debt_id=d.id,
             from_user_id=d.from_user_id,
             to_user_id=d.to_user_id,
             currency=d.currency,  # type: ignore[arg-type]  # projection serveur validée (A-m2)
-            remaining_cents=await compute_remaining(session, debt_id=d.id),
+            remaining_cents=remaining_by_id[d.id],
         )
         for d in debts
     }
@@ -277,6 +276,11 @@ async def list_settlements_between(
     )
     stmt = (
         select(Settlement)
+        # `.distinct()` : la double jointure `SettlementLine`→`Debt` produit une
+        # ligne PAR `SettlementLine` matchant `pair` ; un règlement multi-lignes
+        # sur le même couple apparaîtrait donc N fois. `DISTINCT` dédoublonne au
+        # niveau `Settlement` (l'ORDER BY ne porte que sur des colonnes de
+        # `Settlement`, donc compatible avec `SELECT DISTINCT`).
         .distinct()
         .join(SettlementLine, SettlementLine.settlement_id == Settlement.id)
         .join(Debt, Debt.id == SettlementLine.debt_id)

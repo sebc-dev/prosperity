@@ -32,6 +32,7 @@ from backend.modules.auth.models import User
 from backend.modules.auth.service.jwt import issue_access_token
 from backend.modules.debts.models import Debt, Settlement, SettlementLine
 from backend.modules.debts.public import compute_remaining
+from backend.modules.debts.service import settlement as settlement_svc
 from backend.modules.transactions.models import Split, Transaction
 
 pytestmark = pytest.mark.usefixtures("household_singleton")
@@ -72,14 +73,20 @@ async def _make_transfer_tx(  # noqa: PLR0913 — keyword-only seed helper
     await session.flush()
     session.add(
         Split(
-            transaction_id=tx.id, account_id=account_a, amount_cents=-amount_cents,
-            currency=currency, leg_role="funding",
+            transaction_id=tx.id,
+            account_id=account_a,
+            amount_cents=-amount_cents,
+            currency=currency,
+            leg_role="funding",
         )
     )
     session.add(
         Split(
-            transaction_id=tx.id, account_id=account_b, amount_cents=amount_cents,
-            currency=currency, leg_role="funding",
+            transaction_id=tx.id,
+            account_id=account_b,
+            amount_cents=amount_cents,
+            currency=currency,
+            leg_role="funding",
         )
     )
     await session.flush()
@@ -102,8 +109,11 @@ async def _make_external_tx(
     for sign in (-amount_cents, amount_cents):
         session.add(
             Split(
-                transaction_id=tx.id, account_id=account_id, amount_cents=sign,
-                currency=currency, leg_role="funding",
+                transaction_id=tx.id,
+                account_id=account_id,
+                amount_cents=sign,
+                currency=currency,
+                leg_role="funding",
             )
         )
     await session.flush()
@@ -121,8 +131,12 @@ async def _make_debt(  # noqa: PLR0913 — keyword-only seed helper
     currency: str = "EUR",
 ) -> Debt:
     debt = Debt(
-        from_user_id=from_user_id, to_user_id=to_user_id, amount_cents=amount_cents,
-        currency=currency, account_id=account_id, source_transaction_id=source_transaction_id,
+        from_user_id=from_user_id,
+        to_user_id=to_user_id,
+        amount_cents=amount_cents,
+        currency=currency,
+        account_id=account_id,
+        source_transaction_id=source_transaction_id,
         origin="personal_share_request",
     )
     session.add(debt)
@@ -162,12 +176,19 @@ async def test_post_internal_transfer_201(
     acc_a = await _make_account(household_singleton, creditor.id)
     acc_b = await _make_account(household_singleton, creditor.id)
     tx_id = await _make_transfer_tx(
-        household_singleton, account_a=acc_a, account_b=acc_b, created_by=creditor.id,
+        household_singleton,
+        account_a=acc_a,
+        account_b=acc_b,
+        created_by=creditor.id,
         amount_cents=5000,
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc_a,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc_a,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
     resp = await async_client.post(
         "/settlements",
@@ -190,8 +211,12 @@ async def test_post_external_transfer_201(
         household_singleton, account_id=acc, created_by=creditor.id, amount_cents=4200
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=4200,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=4200,
     )
     resp = await async_client.post(
         "/settlements",
@@ -210,17 +235,26 @@ async def test_post_virtual_201(
         household_singleton, account_id=acc, created_by=alice.id, amount_cents=1
     )
     b_to_a = await _make_debt(
-        household_singleton, from_user_id=bob.id, to_user_id=alice.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=3000,
+        household_singleton,
+        from_user_id=bob.id,
+        to_user_id=alice.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=3000,
     )
     a_to_b = await _make_debt(
-        household_singleton, from_user_id=alice.id, to_user_id=bob.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=3000,
+        household_singleton,
+        from_user_id=alice.id,
+        to_user_id=bob.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=3000,
     )
     resp = await async_client.post(
         "/settlements",
         json=_body(
-            type_="virtual", lines=[(b_to_a.id, 3000), (a_to_b.id, 3000)],
+            type_="virtual",
+            lines=[(b_to_a.id, 3000), (a_to_b.id, 3000)],
             linked_transaction_id=None,
         ),
         headers=_bearer(alice.id),
@@ -237,12 +271,20 @@ async def test_post_mono_usd_records_debt_currency_on_line(
     debtor, creditor = await bound_user_factory(), await bound_user_factory()
     acc = await _make_account(household_singleton, creditor.id, currency="USD")
     tx_id = await _make_external_tx(
-        household_singleton, account_id=acc, created_by=creditor.id, amount_cents=5000,
+        household_singleton,
+        account_id=acc,
+        created_by=creditor.id,
+        amount_cents=5000,
         currency="USD",
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=5000, currency="USD",
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
+        currency="USD",
     )
     resp = await async_client.post(
         "/settlements",
@@ -282,11 +324,37 @@ async def test_post_rejects_smuggled_by_user_id_422(
         household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
         source_transaction_id=tx_id,
     )
     body = _body(type_="virtual", lines=[(debt.id, 1000)], linked_transaction_id=None)
     body["by_user_id"] = str(debtor.id)  # smuggled → extra="forbid"
+    resp = await async_client.post("/settlements", json=body, headers=_bearer(creditor.id))
+    assert resp.status_code == 422, resp.text
+
+
+async def test_post_rejects_smuggled_created_by_422(
+    async_client: AsyncClient, household_singleton: AsyncSession, bound_user_factory: UserFactory
+) -> None:
+    # Symmetric to the `by_user_id` smuggle: `created_by` is server-set (the token),
+    # never a body field → `extra="forbid"` rejects it at the Pydantic boundary.
+    debtor, creditor = await bound_user_factory(), await bound_user_factory()
+    acc = await _make_account(household_singleton, creditor.id)
+    tx_id = await _make_external_tx(
+        household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1
+    )
+    debt = await _make_debt(
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+    )
+    body = _body(type_="virtual", lines=[(debt.id, 1000)], linked_transaction_id=None)
+    body["created_by"] = str(debtor.id)  # smuggled → extra="forbid"
     resp = await async_client.post("/settlements", json=body, headers=_bearer(creditor.id))
     assert resp.status_code == 422, resp.text
 
@@ -300,7 +368,10 @@ async def test_post_created_by_is_token_not_body(
         household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1000
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
         source_transaction_id=tx_id,
     )
     resp = await async_client.post(
@@ -342,7 +413,10 @@ async def test_post_caller_not_party_404(
         household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
         source_transaction_id=tx_id,
     )
     resp = await async_client.post(
@@ -362,13 +436,17 @@ async def test_post_unknown_linked_tx_404(
         household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
         source_transaction_id=tx_id,
     )
     resp = await async_client.post(
         "/settlements",
         json=_body(
-            type_="external_transfer", lines=[(debt.id, 1000)],
+            type_="external_transfer",
+            lines=[(debt.id, 1000)],
             linked_transaction_id=uuid.uuid4(),
         ),
         headers=_bearer(creditor.id),
@@ -390,14 +468,21 @@ async def test_post_non_confirmed_tx_422(
     for acc, sign in ((acc_a, -5000), (acc_b, 5000)):
         household_singleton.add(
             Split(
-                transaction_id=tx.id, account_id=acc, amount_cents=sign, currency="EUR",
+                transaction_id=tx.id,
+                account_id=acc,
+                amount_cents=sign,
+                currency="EUR",
                 leg_role="funding",
             )
         )
     await household_singleton.flush()
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc_a,
-        source_transaction_id=tx.id, amount_cents=5000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc_a,
+        source_transaction_id=tx.id,
+        amount_cents=5000,
     )
     resp = await async_client.post(
         "/settlements",
@@ -405,6 +490,72 @@ async def test_post_non_confirmed_tx_422(
         headers=_bearer(creditor.id),
     )
     assert resp.status_code == 422, resp.text
+
+
+async def test_post_internal_transfer_on_non_transfer_tx_422(
+    async_client: AsyncClient, household_singleton: AsyncSession, bound_user_factory: UserFactory
+) -> None:
+    # An `internal_transfer` settlement whose linked tx is single-account (NOT a
+    # transfer, `is_transfer` False) → 422 at the route (mirrors the service-level
+    # `test_internal_transfer_on_non_transfer_tx_rejected`).
+    debtor, creditor = await bound_user_factory(), await bound_user_factory()
+    acc = await _make_account(household_singleton, creditor.id)
+    tx_id = await _make_external_tx(  # single-account funding/funding → not a transfer
+        household_singleton, account_id=acc, created_by=creditor.id, amount_cents=5000
+    )
+    debt = await _make_debt(
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
+    )
+    resp = await async_client.post(
+        "/settlements",
+        json=_body(type_="internal_transfer", lines=[(debt.id, 5000)], linked_transaction_id=tx_id),
+        headers=_bearer(creditor.id),
+    )
+    assert resp.status_code == 422, resp.text
+
+
+async def test_post_cross_household_guard_404(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_user_factory: UserFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The household guard (ADR 0011 §4) on the REAL route path: the singleton
+    # (ADR 0010) makes a second foyer un-seedable, so `_resolve_households` is
+    # monkeypatched to return a divergent household id → `CrossHouseholdError` →
+    # 404 uniform (anti-oracle), and nothing is inserted.
+    debtor, creditor = await bound_user_factory(), await bound_user_factory()
+    acc = await _make_account(household_singleton, creditor.id)
+    tx_id = await _make_external_tx(
+        household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1
+    )
+    debt = await _make_debt(
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
+    )
+
+    async def _fake_resolve(_session: AsyncSession, _account_ids: set[uuid.UUID]) -> set[uuid.UUID]:
+        return {uuid.uuid4()}  # a foreign household id, divergent from HOUSEHOLD_ID
+
+    monkeypatch.setattr(settlement_svc, "_resolve_households", _fake_resolve)
+    resp = await async_client.post(
+        "/settlements",
+        json=_body(type_="virtual", lines=[(debt.id, 1000)], linked_transaction_id=None),
+        headers=_bearer(creditor.id),
+    )
+    assert resp.status_code == 404, resp.text
+    household_singleton.expire_all()
+    settlements = (await household_singleton.execute(select(Settlement))).scalars().all()
+    assert settlements == []  # nothing inserted (rollback on the guard)
 
 
 async def test_post_over_settlement_422(
@@ -416,8 +567,12 @@ async def test_post_over_settlement_422(
         household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
     resp = await async_client.post(
         "/settlements",
@@ -492,7 +647,10 @@ async def test_post_blank_note_normalised_to_none(
         household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1000
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
         source_transaction_id=tx_id,
     )
     body = _body(
@@ -517,15 +675,21 @@ async def test_post_failure_logs_no_pii(
         household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
     secret_note = "secretmemo12345"
     with caplog.at_level(logging.INFO):
         resp = await async_client.post(
             "/settlements",
             json=_body(
-                type_="virtual", lines=[(debt.id, 8000)], linked_transaction_id=None,
+                type_="virtual",
+                lines=[(debt.id, 8000)],
+                linked_transaction_id=None,
                 note=secret_note,
             ),
             headers=_bearer(creditor.id),
@@ -543,12 +707,19 @@ async def test_post_failure_logs_no_pii(
 
 
 async def _virtual_settlement_on(
-    session: AsyncSession, *, debt: Debt, created_by: uuid.UUID, amount: int,
+    session: AsyncSession,
+    *,
+    debt: Debt,
+    created_by: uuid.UUID,
+    amount: int,
     settled_at: dt.date = dt.date(2026, 6, 3),
 ) -> Settlement:
     s = Settlement(
-        household_id=HOUSEHOLD_ID, created_by=created_by, type="virtual",
-        linked_transaction_id=None, settled_at=settled_at,
+        household_id=HOUSEHOLD_ID,
+        created_by=created_by,
+        type="virtual",
+        linked_transaction_id=None,
+        settled_at=settled_at,
     )
     session.add(s)
     await session.flush()
@@ -574,14 +745,29 @@ async def test_list_idor_bounded_by_token(
         household_singleton, account_id=acc, created_by=bob.id, amount_cents=1
     )
     bob_carol = await _make_debt(
-        household_singleton, from_user_id=bob.id, to_user_id=carol.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=bob.id,
+        to_user_id=carol.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
     await _virtual_settlement_on(
         household_singleton, debt=bob_carol, created_by=bob.id, amount=2000
     )
 
     resp = await async_client.get(f"/settlements?with={carol.id}", headers=_bearer(alice.id))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["items"] == []
+
+
+async def test_list_with_unknown_user_returns_empty(
+    async_client: AsyncClient, bound_user_factory: UserFactory
+) -> None:
+    # `with=<ghost uuid>` (no debt with that counterparty) → 200 with an empty
+    # list, never a 404 (no existence oracle on the counterparty).
+    caller = await bound_user_factory()
+    resp = await async_client.get(f"/settlements?with={uuid.uuid4()}", headers=_bearer(caller.id))
     assert resp.status_code == 200, resp.text
     assert resp.json()["items"] == []
 
@@ -597,8 +783,12 @@ async def test_list_includes_fully_settled_debt(
         household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
     s = await _virtual_settlement_on(
         household_singleton, debt=debt, created_by=creditor.id, amount=5000
@@ -619,19 +809,32 @@ async def test_list_deterministic_order(
         household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=100000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=100000,
     )
     s_old = await _virtual_settlement_on(
-        household_singleton, debt=debt, created_by=creditor.id, amount=10,
+        household_singleton,
+        debt=debt,
+        created_by=creditor.id,
+        amount=10,
         settled_at=dt.date(2026, 6, 1),
     )
     s_new_a = await _virtual_settlement_on(
-        household_singleton, debt=debt, created_by=creditor.id, amount=10,
+        household_singleton,
+        debt=debt,
+        created_by=creditor.id,
+        amount=10,
         settled_at=dt.date(2026, 6, 5),
     )
     s_new_b = await _virtual_settlement_on(
-        household_singleton, debt=debt, created_by=creditor.id, amount=10,
+        household_singleton,
+        debt=debt,
+        created_by=creditor.id,
+        amount=10,
         settled_at=dt.date(2026, 6, 5),
     )
     resp = await async_client.get(f"/settlements?with={debtor.id}", headers=_bearer(creditor.id))
@@ -650,8 +853,11 @@ async def _settlement_with_lines(
     session: AsyncSession, *, created_by: uuid.UUID, lines: list[tuple[Debt, int]]
 ) -> Settlement:
     s = Settlement(
-        household_id=HOUSEHOLD_ID, created_by=created_by, type="virtual",
-        linked_transaction_id=None, settled_at=dt.date(2026, 6, 3),
+        household_id=HOUSEHOLD_ID,
+        created_by=created_by,
+        type="virtual",
+        linked_transaction_id=None,
+        settled_at=dt.date(2026, 6, 3),
     )
     session.add(s)
     await session.flush()
@@ -674,8 +880,12 @@ async def test_detail_creditor_sees_source_fields(
         household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
     s = await _settlement_with_lines(
         household_singleton, created_by=creditor.id, lines=[(debt, 2000)]
@@ -702,8 +912,12 @@ async def test_detail_debtor_is_masked(
         household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
     s = await _settlement_with_lines(
         household_singleton, created_by=creditor.id, lines=[(debt, 2000)]
@@ -715,6 +929,7 @@ async def test_detail_debtor_is_masked(
     assert d["source_transaction_id"] is None
     assert d["account_id"] is None
     assert d["remaining_cents"] == 3000  # remaining is NOT masked
+    assert "materialization_trace" not in d  # never exposed, symmetric to the creditor path
 
 
 async def test_detail_third_party_404(
@@ -730,8 +945,12 @@ async def test_detail_third_party_404(
         household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
     s = await _settlement_with_lines(
         household_singleton, created_by=creditor.id, lines=[(debt, 2000)]
@@ -769,12 +988,20 @@ async def test_detail_multi_debts_party_to_one_only(
         household_singleton, account_id=acc2, created_by=s1.id, amount_cents=1
     )
     mine = await _make_debt(
-        household_singleton, from_user_id=caller.id, to_user_id=creditor.id, account_id=acc1,
-        source_transaction_id=tx1, amount_cents=5000,
+        household_singleton,
+        from_user_id=caller.id,
+        to_user_id=creditor.id,
+        account_id=acc1,
+        source_transaction_id=tx1,
+        amount_cents=5000,
     )
     theirs = await _make_debt(
-        household_singleton, from_user_id=s1.id, to_user_id=s2.id, account_id=acc2,
-        source_transaction_id=tx2, amount_cents=9000,
+        household_singleton,
+        from_user_id=s1.id,
+        to_user_id=s2.id,
+        account_id=acc2,
+        source_transaction_id=tx2,
+        amount_cents=9000,
     )
     settlement = await _settlement_with_lines(
         household_singleton, created_by=creditor.id, lines=[(mine, 1000), (theirs, 2000)]
@@ -785,6 +1012,65 @@ async def test_detail_multi_debts_party_to_one_only(
     assert [ln["debt_id"] for ln in body["lines"]] == [str(mine.id)]
     assert [d["debt_id"] for d in body["debts"]] == [str(mine.id)]
     # The third-party debt's id/amount/counterparties never leak.
+    blob = resp.text
+    assert str(theirs.id) not in blob
+    assert str(s2.id) not in blob
+
+
+async def test_detail_multi_debts_party_to_many(
+    async_client: AsyncClient, household_singleton: AsyncSession, bound_user_factory: UserFactory
+) -> None:
+    # S-M1 (complement): the caller is party to TWO of the three debts of a
+    # settlement → both of theirs are visible (lines + debts), the third (between
+    # two strangers) stays filtered out.
+    caller, creditor, s1, s2 = (
+        await bound_user_factory(),
+        await bound_user_factory(),
+        await bound_user_factory(),
+        await bound_user_factory(),
+    )
+    acc1 = await _make_account(household_singleton, creditor.id)
+    acc2 = await _make_account(household_singleton, s1.id)
+    tx1 = await _make_external_tx(
+        household_singleton, account_id=acc1, created_by=creditor.id, amount_cents=1
+    )
+    tx2 = await _make_external_tx(
+        household_singleton, account_id=acc2, created_by=s1.id, amount_cents=1
+    )
+    mine_a = await _make_debt(
+        household_singleton,
+        from_user_id=caller.id,
+        to_user_id=creditor.id,
+        account_id=acc1,
+        source_transaction_id=tx1,
+        amount_cents=5000,
+    )
+    mine_b = await _make_debt(
+        household_singleton,
+        from_user_id=creditor.id,
+        to_user_id=caller.id,
+        account_id=acc1,
+        source_transaction_id=tx1,
+        amount_cents=4000,
+    )
+    theirs = await _make_debt(
+        household_singleton,
+        from_user_id=s1.id,
+        to_user_id=s2.id,
+        account_id=acc2,
+        source_transaction_id=tx2,
+        amount_cents=9000,
+    )
+    settlement = await _settlement_with_lines(
+        household_singleton,
+        created_by=creditor.id,
+        lines=[(mine_a, 1000), (mine_b, 1000), (theirs, 2000)],
+    )
+    resp = await async_client.get(f"/settlements/{settlement.id}", headers=_bearer(caller.id))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert {ln["debt_id"] for ln in body["lines"]} == {str(mine_a.id), str(mine_b.id)}
+    assert {d["debt_id"] for d in body["debts"]} == {str(mine_a.id), str(mine_b.id)}
     blob = resp.text
     assert str(theirs.id) not in blob
     assert str(s2.id) not in blob

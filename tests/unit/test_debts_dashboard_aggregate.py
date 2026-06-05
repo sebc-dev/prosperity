@@ -50,6 +50,7 @@ def _debt(
     settled debt — the aggregate sums the REMAINING, not the initial amount (D6).
     """
     return DebtWithContext(
+        debt_id=uuid4(),
         from_user_id=frm,
         to_user_id=to,
         amount_cents=amount_cents,

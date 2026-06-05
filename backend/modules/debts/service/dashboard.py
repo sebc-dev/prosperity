@@ -30,8 +30,9 @@ from enum import StrEnum
 from typing import Any  # pour Row[Any] (pyright strict : Row non paramétré → warning)
 from uuid import UUID
 
-from sqlalchemy import Row, and_, column, or_, select, table
+from sqlalchemy import ColumnElement, Row, and_, column, or_, select, table
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import Select
 
 from backend.modules.debts.models import Debt, ShareRequest
 from backend.modules.debts.service.remaining import (
@@ -45,6 +46,7 @@ __all__ = [
     "DebtWithContext",
     "aggregate_by_counterparty",
     "list_debts_for_user",
+    "project_debts_by_ids",
 ]
 
 # Handle Core léger sur la table PEER `transactions` (contrat 1 : debts > transactions,
@@ -67,8 +69,14 @@ class DebtWithContext:
     `materialization_trace` est ABSENT par construction (pas de champ) ⇒
     impossible à fuiter. `source_transaction_id`/`account_id` sont nullables :
     `None` quand masqués au débiteur (D5).
+
+    `debt_id` est l'identité de la dette : VISIBLE des deux parties (non masquée —
+    seuls `source_transaction_id`/`account_id` le sont). Requis par
+    `GET /settlements/{id}` (S10.4) pour corréler chaque `SettlementLine` à sa
+    dette projetée ; additif et inoffensif au dashboard.
     """
 
+    debt_id: UUID
     from_user_id: UUID
     to_user_id: UUID
     amount_cents: int
@@ -115,6 +123,7 @@ def _project_debt(  # noqa: PLR0913 — flat keyword-only allowlist constructor
     """
     owns = _reader_owns_source(origin=debt.origin, reader_id=reader_id, to_user_id=debt.to_user_id)
     return DebtWithContext(
+        debt_id=debt.id,
         from_user_id=debt.from_user_id,
         to_user_id=debt.to_user_id,
         amount_cents=debt.amount_cents,
@@ -134,44 +143,19 @@ def _project_debt(  # noqa: PLR0913 — flat keyword-only allowlist constructor
     )
 
 
-async def list_debts_for_user(
-    session: AsyncSession,
-    *,
-    user_id: UUID,
-    direction: DebtDirection = DebtDirection.ALL,
-    counterparty: UUID | None = None,
-) -> list[DebtWithContext]:
-    """Dettes où `user_id` (= token) est créancier OU débiteur, jamais d'un tiers.
+def _debts_context_select(*, where: ColumnElement[bool]) -> Select[Any]:
+    """Constructeur PARTAGÉ du SELECT enrichi+masquable, paramétré par `where` (D10).
 
-    Bornage TOUJOURS appliqué (`from_user_id == user_id OR to_user_id == user_id`).
-    `direction` restreint au sens ; `counterparty` (= `with`) filtre la contrepartie
-    APRÈS bornage — jamais un sélecteur de propriétaire (anti-IDOR, D9).
-
-    Enrichissement : LEFT JOIN `share_requests` actif (short_label, sur la paire
-    (tx, débiteur)) + LEFT JOIN Core `transactions` (category_id, date frais).
+    Joins LEFT `share_requests` actif (short_label + `requested_by` autoritatif) et
+    Core `transactions` (category_id/date frais), `remaining_cents` via le helper
+    PARTAGÉ `_settled_subq` (sous-requête scalaire corrélée, expression identique à
+    `remaining.py` — D1 ; pas un appel `compute_remaining` par dette ⇒ aucun N+1).
+    Tri déterministe `(created_at, id)`. Réutilisé par `list_debts_for_user` ET
+    `project_debts_by_ids` : un SEUL chemin de lecture/masquage (review #22, A-m4),
+    aucune copie du SELECT à faire diverger.
     """
-    bornage = or_(Debt.from_user_id == user_id, Debt.to_user_id == user_id)
-    if direction is DebtDirection.OWED_TO_ME:
-        bornage = Debt.to_user_id == user_id
-    elif direction is DebtDirection.OWED_BY_ME:
-        bornage = Debt.from_user_id == user_id
-
-    conds = [bornage]
-    if counterparty is not None:
-        # contrepartie APRÈS bornage : la dette relie le token et `counterparty`
-        conds.append(
-            or_(
-                and_(Debt.from_user_id == user_id, Debt.to_user_id == counterparty),
-                and_(Debt.to_user_id == user_id, Debt.from_user_id == counterparty),
-            )
-        )
-
-    # Solde restant (S10.3) calculé dans la MÊME requête via le helper PARTAGÉ
-    # `_settled_subq` (sous-requête scalaire corrélée, expression identique à
-    # `remaining.py` — D1) : pas un appel `compute_remaining` par dette ⇒ aucun
-    # N+1 (verrouillé par un compteur SQL en intégration).
     remaining_cents = (Debt.amount_cents - _settled_subq(Debt.id)).label("remaining_cents")
-    stmt = (
+    return (
         select(
             Debt,
             ShareRequest.short_label,
@@ -189,14 +173,17 @@ async def list_debts_for_user(
             ),
         )
         .outerjoin(_transactions, _transactions.c.id == Debt.source_transaction_id)
-        .where(*conds)
+        .where(where)
         .order_by(Debt.created_at, Debt.id)  # ordre déterministe (tests + UX)
     )
-    rows: Sequence[Row[Any]] = (await session.execute(stmt)).all()
+
+
+def _project_rows(rows: Sequence[Row[Any]], *, reader_id: UUID) -> list[DebtWithContext]:
+    """Projette les rows du SELECT partagé via l'UNIQUE constructeur masqué `_project_debt`."""
     return [
         _project_debt(
             r[0],
-            reader_id=user_id,
+            reader_id=reader_id,
             # autoritatif depuis la SR active jointe ; repli `to_user_id` si le
             # LEFT JOIN défensif ne ramène pas de SR (inatteignable en V1).
             requested_by=r[2] if r[2] is not None else r[0].to_user_id,
@@ -209,6 +196,57 @@ async def list_debts_for_user(
         )
         for r in rows
     ]
+
+
+async def list_debts_for_user(
+    session: AsyncSession,
+    *,
+    user_id: UUID,
+    direction: DebtDirection = DebtDirection.ALL,
+    counterparty: UUID | None = None,
+) -> list[DebtWithContext]:
+    """Dettes où `user_id` (= token) est créancier OU débiteur, jamais d'un tiers.
+
+    Bornage TOUJOURS appliqué (`from_user_id == user_id OR to_user_id == user_id`).
+    `direction` restreint au sens ; `counterparty` (= `with`) filtre la contrepartie
+    APRÈS bornage — jamais un sélecteur de propriétaire (anti-IDOR, D9). Passe par
+    le constructeur PARTAGÉ `_debts_context_select` (A-m4).
+    """
+    bornage = or_(Debt.from_user_id == user_id, Debt.to_user_id == user_id)
+    if direction is DebtDirection.OWED_TO_ME:
+        bornage = Debt.to_user_id == user_id
+    elif direction is DebtDirection.OWED_BY_ME:
+        bornage = Debt.from_user_id == user_id
+
+    conds = [bornage]
+    if counterparty is not None:
+        # contrepartie APRÈS bornage : la dette relie le token et `counterparty`
+        conds.append(
+            or_(
+                and_(Debt.from_user_id == user_id, Debt.to_user_id == counterparty),
+                and_(Debt.to_user_id == user_id, Debt.from_user_id == counterparty),
+            )
+        )
+
+    rows = (await session.execute(_debts_context_select(where=and_(*conds)))).all()
+    return _project_rows(rows, reader_id=user_id)
+
+
+async def project_debts_by_ids(
+    session: AsyncSession, *, debt_ids: Sequence[UUID], reader_id: UUID
+) -> list[DebtWithContext]:
+    """Projette un ENSEMBLE de dettes (par id) via le MÊME `_debts_context_select`
+    et le MÊME constructeur masqué `_project_debt` (D10) — aucun chemin de lecture
+    parallèle (review #22). Consommé par `GET /settlements/{id}` (S10.4) : le
+    masquage débiteur (`source_transaction_id`/`account_id`) et l'absence de
+    `materialization_trace` y sont garantis par construction, comme au dashboard.
+
+    ⚠️ NON borné au token : l'appelant (`get_settlement_detail`) DOIT filtrer
+    `debt_ids` aux dettes dont le caller est partie AVANT d'appeler (S-M1) — le
+    masquage ne couvre QUE le débiteur, pas un tiers ni-from-ni-to.
+    """
+    rows = (await session.execute(_debts_context_select(where=Debt.id.in_(debt_ids)))).all()
+    return _project_rows(rows, reader_id=reader_id)
 
 
 # --- Agrégat par contrepartie (P09.4.3) ------------------------------------

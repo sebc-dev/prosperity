@@ -71,12 +71,16 @@ from backend.modules.debts.schemas import (
     DebtListResponse,
     DebtResponse,
     SettlementCreate,
+    SettlementDetailResponse,
     SettlementListResponse,
     SettlementResponse,
     ShareRequestCreate,
     ShareRequestResponse,
 )
-from backend.modules.debts.service.settlement import list_settlements_between
+from backend.modules.debts.service.settlement import (
+    get_settlement_detail,
+    list_settlements_between,
+)
 from backend.shared.db import get_db
 
 logger = logging.getLogger(__name__)
@@ -340,3 +344,26 @@ async def list_settlements_route(
     """
     rows = await list_settlements_between(session, caller_id=user.id, with_user_id=with_)
     return SettlementListResponse(items=[SettlementResponse.from_model(s) for s in rows])
+
+
+@settlements_router.get("/{settlement_id}", response_model=SettlementDetailResponse)
+async def get_settlement_route(
+    settlement_id: UUID,
+    user: CurrentUser,
+    session: SessionDep,
+) -> SettlementDetailResponse:
+    """Detail of a settlement (meta + visible lines + masked referenced debts).
+
+    RBAC: the caller must be party to AT LEAST ONE debt of the settlement → else a
+    uniform 404 (anti-oracle). The lines AND debts returned are restricted to the
+    debts the caller is party to (S-M1); referenced debts are masked via the
+    centralised S09.4 path (debtor never sees `source_transaction_id`/`account_id`;
+    `materialization_trace` never exposed).
+    """
+    try:
+        settlement, lines, debts = await get_settlement_detail(
+            session, settlement_id=settlement_id, by_user_id=user.id
+        )
+    except SettlementServiceError as exc:
+        raise _map_exc(exc) from exc
+    return SettlementDetailResponse.build(settlement, lines, debts)

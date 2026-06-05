@@ -639,3 +639,152 @@ async def test_list_deterministic_order(
     ids = [item["id"] for item in resp.json()["items"]]
     same_date_tail = sorted([str(s_new_a.id), str(s_new_b.id)])
     assert ids == [*same_date_tail, str(s_old.id)]
+
+
+# ---------------------------------------------------------------------------
+# GET /settlements/{id} — detail, masking, per-debt RBAC (P10.4.3)
+# ---------------------------------------------------------------------------
+
+
+async def _settlement_with_lines(
+    session: AsyncSession, *, created_by: uuid.UUID, lines: list[tuple[Debt, int]]
+) -> Settlement:
+    s = Settlement(
+        household_id=HOUSEHOLD_ID, created_by=created_by, type="virtual",
+        linked_transaction_id=None, settled_at=dt.date(2026, 6, 3),
+    )
+    session.add(s)
+    await session.flush()
+    for debt, amount in lines:
+        session.add(
+            SettlementLine(
+                settlement_id=s.id, debt_id=debt.id, amount_cents=amount, currency=debt.currency
+            )
+        )
+    await session.flush()
+    return s
+
+
+async def test_detail_creditor_sees_source_fields(
+    async_client: AsyncClient, household_singleton: AsyncSession, bound_user_factory: UserFactory
+) -> None:
+    debtor, creditor = await bound_user_factory(), await bound_user_factory()
+    acc = await _make_account(household_singleton, creditor.id)
+    tx_id = await _make_external_tx(
+        household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1
+    )
+    debt = await _make_debt(
+        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
+        source_transaction_id=tx_id, amount_cents=5000,
+    )
+    s = await _settlement_with_lines(
+        household_singleton, created_by=creditor.id, lines=[(debt, 2000)]
+    )
+    resp = await async_client.get(f"/settlements/{s.id}", headers=_bearer(creditor.id))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert [ln["debt_id"] for ln in body["lines"]] == [str(debt.id)]
+    [d] = body["debts"]
+    assert d["debt_id"] == str(debt.id)
+    # creditor owns the source account → source fields visible; remaining enriched.
+    assert d["source_transaction_id"] == str(tx_id)
+    assert d["account_id"] == str(acc)
+    assert d["remaining_cents"] == 3000
+    assert "materialization_trace" not in d
+
+
+async def test_detail_debtor_is_masked(
+    async_client: AsyncClient, household_singleton: AsyncSession, bound_user_factory: UserFactory
+) -> None:
+    debtor, creditor = await bound_user_factory(), await bound_user_factory()
+    acc = await _make_account(household_singleton, creditor.id)
+    tx_id = await _make_external_tx(
+        household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1
+    )
+    debt = await _make_debt(
+        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
+        source_transaction_id=tx_id, amount_cents=5000,
+    )
+    s = await _settlement_with_lines(
+        household_singleton, created_by=creditor.id, lines=[(debt, 2000)]
+    )
+    # The debtor is a party → 200, but the source fields are masked (S09.4).
+    resp = await async_client.get(f"/settlements/{s.id}", headers=_bearer(debtor.id))
+    assert resp.status_code == 200, resp.text
+    [d] = resp.json()["debts"]
+    assert d["source_transaction_id"] is None
+    assert d["account_id"] is None
+    assert d["remaining_cents"] == 3000  # remaining is NOT masked
+
+
+async def test_detail_third_party_404(
+    async_client: AsyncClient, household_singleton: AsyncSession, bound_user_factory: UserFactory
+) -> None:
+    debtor, creditor, stranger = (
+        await bound_user_factory(),
+        await bound_user_factory(),
+        await bound_user_factory(),
+    )
+    acc = await _make_account(household_singleton, creditor.id)
+    tx_id = await _make_external_tx(
+        household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1
+    )
+    debt = await _make_debt(
+        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
+        source_transaction_id=tx_id, amount_cents=5000,
+    )
+    s = await _settlement_with_lines(
+        household_singleton, created_by=creditor.id, lines=[(debt, 2000)]
+    )
+    resp = await async_client.get(f"/settlements/{s.id}", headers=_bearer(stranger.id))
+    assert resp.status_code == 404, resp.text
+
+
+async def test_detail_unknown_settlement_404(
+    async_client: AsyncClient, bound_user_factory: UserFactory
+) -> None:
+    user = await bound_user_factory()
+    resp = await async_client.get(f"/settlements/{uuid.uuid4()}", headers=_bearer(user.id))
+    assert resp.status_code == 404, resp.text
+
+
+async def test_detail_multi_debts_party_to_one_only(
+    async_client: AsyncClient, household_singleton: AsyncSession, bound_user_factory: UserFactory
+) -> None:
+    # S-M1: a multi-debt settlement where the caller is party to only ONE debt →
+    # 200, but the OTHER debt (between two third parties) never appears — neither
+    # its debt_id (lines) nor its context (debts).
+    caller, creditor, s1, s2 = (
+        await bound_user_factory(),
+        await bound_user_factory(),
+        await bound_user_factory(),
+        await bound_user_factory(),
+    )
+    acc1 = await _make_account(household_singleton, creditor.id)
+    acc2 = await _make_account(household_singleton, s1.id)
+    tx1 = await _make_external_tx(
+        household_singleton, account_id=acc1, created_by=creditor.id, amount_cents=1
+    )
+    tx2 = await _make_external_tx(
+        household_singleton, account_id=acc2, created_by=s1.id, amount_cents=1
+    )
+    mine = await _make_debt(
+        household_singleton, from_user_id=caller.id, to_user_id=creditor.id, account_id=acc1,
+        source_transaction_id=tx1, amount_cents=5000,
+    )
+    theirs = await _make_debt(
+        household_singleton, from_user_id=s1.id, to_user_id=s2.id, account_id=acc2,
+        source_transaction_id=tx2, amount_cents=9000,
+    )
+    settlement = await _settlement_with_lines(
+        household_singleton, created_by=creditor.id, lines=[(mine, 1000), (theirs, 2000)]
+    )
+    resp = await async_client.get(f"/settlements/{settlement.id}", headers=_bearer(caller.id))
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert [ln["debt_id"] for ln in body["lines"]] == [str(mine.id)]
+    assert [d["debt_id"] for d in body["debts"]] == [str(mine.id)]
+    # The third-party debt's id/amount/counterparties never leak.
+    blob = resp.text
+    assert str(theirs.id) not in blob
+    assert str(s2.id) not in blob

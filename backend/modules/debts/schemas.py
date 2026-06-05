@@ -22,7 +22,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from backend.modules.debts.domain import SettlementType
-from backend.modules.debts.models import Settlement, ShareRequest
+from backend.modules.debts.models import Settlement, SettlementLine, ShareRequest
 from backend.modules.debts.service.dashboard import (
     CounterpartyNet,
     DebtWithContext,
@@ -111,6 +111,7 @@ class DebtResponse(BaseModel):
     `DebtWithContext` : tout champ ajouté d'un seul côté casse le build.
     """
 
+    debt_id: UUID
     from_user_id: UUID
     to_user_id: UUID
     amount_cents: int
@@ -250,3 +251,83 @@ class SettlementResponse(BaseModel):
 
 class SettlementListResponse(BaseModel):
     items: list[SettlementResponse]
+
+
+class SettlementLineResponse(BaseModel):
+    """A line of a settlement detail (the netting amount on one debt)."""
+
+    debt_id: UUID
+    amount_cents: int
+    currency: str
+
+
+class SettledDebtResponse(BaseModel):
+    """A referenced `Debt` enriched with `remaining_cents`, MASKING already applied.
+
+    Mirror of `DebtWithContext` (the masked DTO from `_project_debt`, S09.4):
+    `source_transaction_id`/`account_id` are `null` when the caller is the debtor;
+    `materialization_trace` is absent by construction. Built from the masked DTO
+    so the single S09.4 masking path is reused (no parallel read).
+    """
+
+    debt_id: UUID
+    from_user_id: UUID
+    to_user_id: UUID
+    amount_cents: int
+    currency: str
+    origin: str
+    requested_by: UUID
+    short_label: str | None
+    category_id: UUID | None
+    date: dt.date | None
+    created_at: dt.datetime
+    source_transaction_id: UUID | None
+    account_id: UUID | None
+    remaining_cents: int
+
+    @classmethod
+    def from_context(cls, d: DebtWithContext) -> SettledDebtResponse:
+        return cls(**{f.name: getattr(d, f.name) for f in fields(d)})
+
+
+class SettlementDetailResponse(BaseModel):
+    """Detail of a settlement: meta + (visible) lines + (masked) referenced debts.
+
+    `lines` and `debts` are BOTH restricted to the debts the caller is party to
+    (S-M1): a third party's debt id / context never appears.
+    """
+
+    id: UUID
+    type: SettlementType
+    linked_transaction_id: UUID | None
+    settled_at: dt.date
+    note: str | None
+    created_by: UUID
+    created_at: dt.datetime
+    lines: list[SettlementLineResponse]
+    debts: list[SettledDebtResponse]
+
+    @classmethod
+    def build(
+        cls,
+        settlement: Settlement,
+        lines: list[SettlementLine],
+        debts: list[DebtWithContext],
+    ) -> SettlementDetailResponse:
+        meta = SettlementResponse.from_model(settlement)
+        return cls(
+            id=meta.id,
+            type=meta.type,
+            linked_transaction_id=meta.linked_transaction_id,
+            settled_at=meta.settled_at,
+            note=meta.note,
+            created_by=meta.created_by,
+            created_at=meta.created_at,
+            lines=[
+                SettlementLineResponse(
+                    debt_id=ln.debt_id, amount_cents=ln.amount_cents, currency=ln.currency
+                )
+                for ln in lines
+            ],
+            debts=[SettledDebtResponse.from_context(d) for d in debts],
+        )

@@ -42,6 +42,7 @@ from backend.modules.debts.domain import (
     SettlementValidator,
 )
 from backend.modules.debts.models import Debt, Settlement, SettlementLine
+from backend.modules.debts.service.dashboard import DebtWithContext, project_debts_by_ids
 from backend.modules.debts.service.remaining import compute_remaining
 from backend.modules.transactions.public import (
     TransactionState,
@@ -283,3 +284,54 @@ async def list_settlements_between(
         .order_by(Settlement.settled_at.desc(), Settlement.id)
     )
     return list((await session.execute(stmt)).scalars().all())
+
+
+async def get_settlement_detail(
+    session: AsyncSession, *, settlement_id: UUID, by_user_id: UUID
+) -> tuple[Settlement, list[SettlementLine], list[DebtWithContext]]:
+    """Détail d'un règlement : méta + lignes (restreintes) + dettes masquées.
+
+    RBAC (D11) : le caller doit être partie d'AU MOINS UNE dette du règlement →
+    sinon **404 uniforme** (anti-oracle, jamais 403). **S-M1 (défense en
+    profondeur)** : ne projeter QUE les dettes dont le caller est partie — la
+    garantie « 2 contreparties » du validateur de CRÉATION n'est PAS maintenue en
+    SQL, et `_project_debt` ne masque que `source_transaction_id`/`account_id` du
+    DÉBITEUR ; pour une dette dont le caller n'est ni `from` ni `to`,
+    `from/to/amount/remaining/label/cat/date` fuiteraient. Le filtre par-dette est
+    la barrière de lecture. Les `lines` renvoyées sont elles aussi restreintes aux
+    dettes visibles (pas de fuite du `debt_id` d'un tiers).
+
+    Le masquage est délégué au helper centralisé S09.4 (`project_debts_by_ids` →
+    `_project_debt`) : aucun chemin de lecture parallèle ; `materialization_trace`
+    jamais exposé (absent du DTO par construction).
+    """
+    settlement = await session.get(Settlement, settlement_id)
+    if settlement is None:
+        raise SettlementDebtNotAccessibleError  # 404 uniforme (anti-oracle)
+    all_lines = list(
+        (
+            await session.execute(
+                select(SettlementLine).where(SettlementLine.settlement_id == settlement_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    debt_ids = [ln.debt_id for ln in all_lines]
+    debts: list[Debt] = []
+    if debt_ids:
+        debts = list(
+            (await session.execute(select(Debt).where(Debt.id.in_(debt_ids)))).scalars().all()
+        )
+    # RBAC : partie d'AU MOINS UNE dette → sinon 404 (S-M1 : filtre par-dette).
+    visible_debt_ids: set[UUID] = {
+        d.id for d in debts if by_user_id in (d.from_user_id, d.to_user_id)
+    }
+    if not visible_debt_ids:
+        raise SettlementDebtNotAccessibleError  # 404 uniforme (anti-oracle)
+    # Ne projeter / renvoyer QUE les dettes (et lignes) dont le caller est partie.
+    projected = await project_debts_by_ids(
+        session, debt_ids=list(visible_debt_ids), reader_id=by_user_id
+    )
+    visible_lines = [ln for ln in all_lines if ln.debt_id in visible_debt_ids]
+    return settlement, visible_lines, projected

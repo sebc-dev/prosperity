@@ -83,6 +83,22 @@ def test_type_is_plain_string_no_check_enumerating_set() -> None:
     assert checks == {"ck_settlements_virtual_no_link"}
 
 
+def test_virtual_no_link_check_is_biconditional() -> None:
+    # Pin the CHECK *expression*, not just its name (gabarit
+    # `test_active_unique_index_is_partial`, which asserts `str(where)`): the
+    # decision is the biconditional — it must reject BOTH a `virtual` with a
+    # link AND a non-virtual without one. A refactor degrading it to a one-way
+    # implication (`virtual ⟹ link NULL`) would keep the name and pass every
+    # other unit test; only this assertion catches it.
+    table = cast(Table, Settlement.__table__)
+    check = next(
+        c
+        for c in table.constraints
+        if isinstance(c, CheckConstraint) and c.name == "ck_settlements_virtual_no_link"
+    )
+    assert str(check.sqltext) == "(type = 'virtual') = (linked_transaction_id IS NULL)"
+
+
 def test_settlement_indexes() -> None:
     # Exact set doubles as the anti-surnumerary guard + create_all/Alembic parity
     # pin. Both indexed columns back a FK RESTRICT (tx + creator); `household_id`

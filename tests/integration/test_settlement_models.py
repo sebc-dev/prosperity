@@ -160,16 +160,12 @@ async def test_settlement_persists_with_defaults(
         linked_transaction_id=tx_id,
         settled_at=dt.date(2026, 6, 3),
     )
-    await _make_line(
-        household_singleton, settlement_id=settlement.id, debt_id=debt.id
-    )
+    await _make_line(household_singleton, settlement_id=settlement.id, debt_id=debt.id)
     settlement_id = settlement.id
 
     household_singleton.expire_all()
     reloaded = (
-        await household_singleton.execute(
-            select(Settlement).where(Settlement.id == settlement_id)
-        )
+        await household_singleton.execute(select(Settlement).where(Settlement.id == settlement_id))
     ).scalar_one()
     assert reloaded.created_at is not None
     assert reloaded.note is None
@@ -224,7 +220,7 @@ async def test_virtual_with_link_violates_check(
     tx_id = await _make_transaction(
         household_singleton, account_id=account_id, created_by=creator.id
     )
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError, match="ck_settlements_virtual_no_link"):
         await _make_settlement(
             household_singleton,
             created_by=creator.id,
@@ -240,7 +236,7 @@ async def test_non_virtual_with_null_link_violates_check(
     # `ck_settlements_virtual_no_link`, sens 2 du biconditionnel : un type
     # non-virtuel SANS lien est rejeté.
     creator = await bound_user_factory()
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError, match="ck_settlements_virtual_no_link"):
         await _make_settlement(
             household_singleton,
             created_by=creator.id,
@@ -270,9 +266,7 @@ async def test_delete_settlement_cascades_lines(
     settlement = await _make_settlement(
         household_singleton, created_by=creditor.id, linked_transaction_id=tx_id
     )
-    await _make_line(
-        household_singleton, settlement_id=settlement.id, debt_id=debt.id
-    )
+    await _make_line(household_singleton, settlement_id=settlement.id, debt_id=debt.id)
     settlement_id = settlement.id
 
     await household_singleton.delete(settlement)
@@ -309,9 +303,7 @@ async def test_delete_debt_cascades_lines(
     settlement = await _make_settlement(
         household_singleton, created_by=creditor.id, linked_transaction_id=tx_id
     )
-    await _make_line(
-        household_singleton, settlement_id=settlement.id, debt_id=debt.id
-    )
+    await _make_line(household_singleton, settlement_id=settlement.id, debt_id=debt.id)
     debt_id = debt.id
 
     await household_singleton.delete(debt)
@@ -351,7 +343,7 @@ async def test_non_positive_line_amount_violates_check(
     settlement = await _make_settlement(
         household_singleton, created_by=creditor.id, linked_transaction_id=tx_id
     )
-    with pytest.raises(IntegrityError):
+    with pytest.raises(IntegrityError, match="ck_settlement_lines_amount_positive"):
         await _make_line(
             household_singleton,
             settlement_id=settlement.id,
@@ -372,15 +364,14 @@ async def test_delete_linked_transaction_is_restricted(
     tx_id = await _make_transaction(
         household_singleton, account_id=account_id, created_by=creator.id
     )
-    await _make_settlement(
-        household_singleton, created_by=creator.id, linked_transaction_id=tx_id
-    )
+    await _make_settlement(household_singleton, created_by=creator.id, linked_transaction_id=tx_id)
 
     tx = (
         await household_singleton.execute(select(Transaction).where(Transaction.id == tx_id))
     ).scalar_one()
     await household_singleton.delete(tx)
-    with pytest.raises(IntegrityError):  # ON DELETE RESTRICT
+    # ON DELETE RESTRICT — pin the exact FK so a different constraint can't pass.
+    with pytest.raises(IntegrityError, match="fk_settlements_linked_transaction_id_transactions"):
         await household_singleton.flush()
 
 
@@ -397,9 +388,7 @@ async def test_delete_creator_is_restricted(
     debtor = await bound_user_factory()
     creator = await bound_user_factory()
     account_id = await _make_account(household_singleton, owner.id)
-    tx_id = await _make_transaction(
-        household_singleton, account_id=account_id, created_by=owner.id
-    )
+    tx_id = await _make_transaction(household_singleton, account_id=account_id, created_by=owner.id)
     await _make_debt(
         household_singleton,
         from_user_id=debtor.id,
@@ -407,12 +396,11 @@ async def test_delete_creator_is_restricted(
         account_id=account_id,
         source_transaction_id=tx_id,
     )
-    await _make_settlement(
-        household_singleton, created_by=creator.id, linked_transaction_id=tx_id
-    )
+    await _make_settlement(household_singleton, created_by=creator.id, linked_transaction_id=tx_id)
 
     await household_singleton.delete(creator)
-    with pytest.raises(IntegrityError):  # ON DELETE RESTRICT
+    # ON DELETE RESTRICT — pin the exact FK so a different constraint can't pass.
+    with pytest.raises(IntegrityError, match="fk_settlements_created_by_users"):
         await household_singleton.flush()
 
 
@@ -441,9 +429,7 @@ async def test_delete_debt_orphans_non_virtual_settlement(
     settlement = await _make_settlement(
         household_singleton, created_by=creditor.id, linked_transaction_id=tx_id
     )
-    await _make_line(
-        household_singleton, settlement_id=settlement.id, debt_id=debt.id
-    )
+    await _make_line(household_singleton, settlement_id=settlement.id, debt_id=debt.id)
     settlement_id = settlement.id
 
     await household_singleton.delete(debt)
@@ -458,9 +444,7 @@ async def test_delete_debt_orphans_non_virtual_settlement(
     assert line_count == 0  # line CASCADEd away with the debt
     # ... but the settlement itself survives.
     survivor = (
-        await household_singleton.execute(
-            select(Settlement).where(Settlement.id == settlement_id)
-        )
+        await household_singleton.execute(select(Settlement).where(Settlement.id == settlement_id))
     ).scalar_one_or_none()
     assert survivor is not None
     assert survivor.linked_transaction_id == tx_id  # wire transfer still traced

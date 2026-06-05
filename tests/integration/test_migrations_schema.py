@@ -213,9 +213,7 @@ def test_baseline_migration_round_trip(postgres_container: PostgresContainer) ->
     assert "table share_requests" not in post, (
         f"share_requests table leaked after downgrade:\n{post}"
     )
-    assert "table settlements" not in post, (
-        f"settlements table leaked after downgrade:\n{post}"
-    )
+    assert "table settlements" not in post, f"settlements table leaked after downgrade:\n{post}"
     assert "table settlement_lines" not in post, (
         f"settlement_lines table leaked after downgrade:\n{post}"
     )

@@ -559,9 +559,10 @@ forbidden_modules =
 # the same block as `2-accounts`/`2-budget`/`2-transactions`; the four
 # `accounts.public → accounts.X` arcs cover its re-exports (`accounts.events`
 # imports only `shared.events`, so it is not forbidden and stays out). The three
-# `transactions.public → transactions.X` arcs cover `domain` (`TransactionState`),
+# `transactions.public → transactions.X` arcs cover `domain` (`TransactionState`
+# AND `is_transfer`, the latter consumed by `debts.service.settlement` since S10.4),
 # `service.queries` (`get_transaction`), AND `service.lifecycle`: the service
-# consumes only the first two, but `find_shortest_chains` routes `debts →
+# consumes only the `domain` and `service.queries` symbols, but `find_shortest_chains` routes `debts →
 # transactions.public → transactions.service.lifecycle` as soon as `debts` imports
 # `transactions.public` as a module (independent of the symbols consumed) — DO NOT
 # drop the `lifecycle` arc believing it unused, it would break the lint.

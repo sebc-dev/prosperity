@@ -22,6 +22,7 @@ from backend.modules.transactions.domain import (
     TransactionState,
     UnbalancedTransactionError,
     UncategorizedExpenseError,
+    is_transfer,
 )
 from backend.modules.transactions.events import (
     TransactionConfirmedEvent,
@@ -55,6 +56,7 @@ __all__ = [
     "add_split",
     "create_draft",
     "get_transaction",
+    "is_transfer",
     "list_transactions",
     "remove_split",
     "transition_to_confirmed",

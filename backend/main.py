@@ -27,6 +27,7 @@ from backend.modules.budget.transports.budgets_http import budgets_router
 from backend.modules.budget.transports.http import categories_router
 from backend.modules.debts.transports.http import (
     debts_router,
+    settlements_router,
     share_requests_router,
     tx_share_requests_router,
 )
@@ -99,6 +100,7 @@ app.include_router(transactions_router)
 app.include_router(tx_share_requests_router)
 app.include_router(share_requests_router)
 app.include_router(debts_router)
+app.include_router(settlements_router)
 
 
 @app.get("/healthz")

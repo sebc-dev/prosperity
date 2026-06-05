@@ -12,36 +12,50 @@ from uuid import uuid4
 
 import backend.modules.debts.public as debts_public
 from backend.modules.debts.public import (
+    CrossHouseholdError,
     DebtNotFoundError,
     DuplicateActiveShareRequestError,
+    LinkedTransactionNotAccessibleError,
+    LinkedTransactionNotConfirmedError,
+    LinkedTransactionNotTransferError,
     OpenDebt,
     RequestedFromNotMemberError,
     SelfShareError,
+    SettlementDebtNotAccessibleError,
+    SettlementServiceError,
     ShareRequestError,
     ShareRequestNotFoundError,
     SourceAccountNotShareableError,
     SourceTransactionNotConfirmedError,
     SourceTransactionNotFoundError,
     compute_remaining,
+    create_settlement,
     create_share_request,
     list_open_debts_between,
     revoke_share_request,
 )
 from backend.modules.debts.service import dashboard as _dashboard
 from backend.modules.debts.service import remaining as _remaining
+from backend.modules.debts.service import settlement as _settlement
 from backend.modules.debts.service import share_request as _service
 
 
 def test_public_exports_exact_set() -> None:
     assert sorted(debts_public.__all__) == [
         "CounterpartyNet",
+        "CrossHouseholdError",
         "DebtDirection",
         "DebtNotFoundError",
         "DebtWithContext",
         "DuplicateActiveShareRequestError",
+        "LinkedTransactionNotAccessibleError",
+        "LinkedTransactionNotConfirmedError",
+        "LinkedTransactionNotTransferError",
         "OpenDebt",
         "RequestedFromNotMemberError",
         "SelfShareError",
+        "SettlementDebtNotAccessibleError",
+        "SettlementServiceError",
         "ShareRequestError",
         "ShareRequestNotFoundError",
         "SourceAccountNotShareableError",
@@ -49,6 +63,7 @@ def test_public_exports_exact_set() -> None:
         "SourceTransactionNotFoundError",
         "aggregate_by_counterparty",
         "compute_remaining",
+        "create_settlement",
         "create_share_request",
         "list_debts_for_user",
         "list_open_debts_between",
@@ -78,6 +93,21 @@ def test_public_symbols_are_callable_or_exceptions() -> None:
         assert issubclass(sub, ShareRequestError)
 
 
+def test_settlement_service_surface() -> None:
+    # S10.4 `create_settlement` + its access/state error taxonomy.
+    assert callable(create_settlement)
+    assert issubclass(SettlementServiceError, Exception)
+    for sub in (
+        SettlementDebtNotAccessibleError,
+        LinkedTransactionNotAccessibleError,
+        LinkedTransactionNotConfirmedError,
+        LinkedTransactionNotTransferError,
+    ):
+        assert issubclass(sub, SettlementServiceError)
+    # CrossHouseholdError is a SUB-case of "debt not accessible" → same 404.
+    assert issubclass(CrossHouseholdError, SettlementDebtNotAccessibleError)
+
+
 def test_error_codes_are_stable_and_pii_free() -> None:
     # `code` is the client channel (copied as-is, never `str(exc)`): pin it.
     assert ShareRequestError.code == "share_request_error"
@@ -93,6 +123,13 @@ def test_error_codes_are_stable_and_pii_free() -> None:
     assert DebtNotFoundError.code == "debt_not_found"
     a_debt_id = uuid4()
     assert str(a_debt_id) not in str(DebtNotFoundError("debt does not exist"))
+    # S10.4 settlement-service codes: stable + PII-free (no UUID in the message).
+    assert SettlementServiceError.code == "settlement_service_error"
+    assert SettlementDebtNotAccessibleError.code == "settlement_debt_not_accessible"
+    assert CrossHouseholdError.code == "cross_household_leak"
+    assert LinkedTransactionNotAccessibleError.code == "linked_transaction_not_accessible"
+    assert LinkedTransactionNotConfirmedError.code == "linked_transaction_not_confirmed"
+    assert LinkedTransactionNotTransferError.code == "linked_transaction_not_transfer"
 
 
 def test_public_names_are_identical_objects_to_internals() -> None:
@@ -124,3 +161,23 @@ def test_public_names_are_identical_objects_to_internals() -> None:
     assert debts_public.list_open_debts_between is _remaining.list_open_debts_between
     assert debts_public.OpenDebt is _remaining.OpenDebt
     assert debts_public.DebtNotFoundError is _remaining.DebtNotFoundError
+    # The S10.4 settlement service re-exports the real symbols (no stub).
+    assert debts_public.create_settlement is _settlement.create_settlement
+    assert debts_public.SettlementServiceError is _settlement.SettlementServiceError
+    assert (
+        debts_public.SettlementDebtNotAccessibleError
+        is _settlement.SettlementDebtNotAccessibleError
+    )
+    assert debts_public.CrossHouseholdError is _settlement.CrossHouseholdError
+    assert (
+        debts_public.LinkedTransactionNotAccessibleError
+        is _settlement.LinkedTransactionNotAccessibleError
+    )
+    assert (
+        debts_public.LinkedTransactionNotConfirmedError
+        is _settlement.LinkedTransactionNotConfirmedError
+    )
+    assert (
+        debts_public.LinkedTransactionNotTransferError
+        is _settlement.LinkedTransactionNotTransferError
+    )

@@ -38,6 +38,15 @@ from backend.modules.debts.service.remaining import (
     compute_remaining,
     list_open_debts_between,
 )
+from backend.modules.debts.service.settlement import (
+    CrossHouseholdError,
+    LinkedTransactionNotAccessibleError,
+    LinkedTransactionNotConfirmedError,
+    LinkedTransactionNotTransferError,
+    SettlementDebtNotAccessibleError,
+    SettlementServiceError,
+    create_settlement,
+)
 from backend.modules.debts.service.share_request import (
     DuplicateActiveShareRequestError,
     RequestedFromNotMemberError,
@@ -53,13 +62,19 @@ from backend.modules.debts.service.share_request import (
 
 __all__ = [
     "CounterpartyNet",
+    "CrossHouseholdError",
     "DebtDirection",
     "DebtNotFoundError",
     "DebtWithContext",
     "DuplicateActiveShareRequestError",
+    "LinkedTransactionNotAccessibleError",
+    "LinkedTransactionNotConfirmedError",
+    "LinkedTransactionNotTransferError",
     "OpenDebt",
     "RequestedFromNotMemberError",
     "SelfShareError",
+    "SettlementDebtNotAccessibleError",
+    "SettlementServiceError",
     "ShareRequestError",
     "ShareRequestNotFoundError",
     "SourceAccountNotShareableError",
@@ -67,6 +82,7 @@ __all__ = [
     "SourceTransactionNotFoundError",
     "aggregate_by_counterparty",
     "compute_remaining",
+    "create_settlement",
     "create_share_request",
     "list_debts_for_user",
     "list_open_debts_between",

@@ -26,6 +26,7 @@ from backend.modules.transactions.public import (
     add_split,
     create_draft,
     get_transaction,
+    is_transfer,
     list_transactions,
     remove_split,
     transition_to_confirmed,
@@ -52,6 +53,7 @@ _EXPECTED = {
     "add_split",
     "create_draft",
     "get_transaction",
+    "is_transfer",
     "list_transactions",
     "remove_split",
     "transition_to_confirmed",
@@ -75,6 +77,7 @@ def test_service_functions_are_identical_re_exports() -> None:
     assert void is _lifecycle.void
     assert get_transaction is _queries.get_transaction
     assert list_transactions is _queries.list_transactions
+    assert is_transfer is _domain.is_transfer
 
 
 def test_errors_and_state_are_identical_re_exports() -> None:

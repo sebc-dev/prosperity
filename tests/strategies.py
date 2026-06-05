@@ -89,24 +89,25 @@ class GeneratedAccount:
     members: list[MemberShare]  # [] ⇔ personnel ; ≥ 2 ⇔ commun
 
 
-@st.composite
-def share_ratios(draw: st.DrawFn, *, n: int, total: int = _BASIS_POINTS) -> list[Decimal]:
-    """N ratios `Decimal` strictement positifs, Σ == ``Decimal(total) / 10000``.
+def _partition(draw: st.DrawFn, *, total: int, n: int) -> list[int]:
+    """N entiers ≥ 1, Σ == ``total`` (cut-points distincts, requiert ``total >= n``).
 
-    Partitionne ``total`` en N parts entières ≥ 1 (cut-points distincts, requiert
-    ``total >= n``), puis mappe chaque part ``p`` → ``Decimal(p) / Decimal(10000)``.
-    Exact à l'échelle 4, jamais de ``float`` ; chaque part ≥ 1 ⇒ ratio > 0.
+    Cœur entier PARTAGÉ des partitions par cut-points : `share_ratios` (mappe vers
+    des ratios `Decimal`) ET `settlement_scenario_strategy` (montants en centimes)
+    délèguent ici ⇒ une seule source de vérité de la formule. Chaque part ≥ 1 ⇒
+    ratio > 0 / ``remaining > 0`` PAR CONSTRUCTION (jamais d'`assume`).
 
-    ``total == 10000`` (défaut) ⇒ Σ == ``Decimal("1.0000")`` ; ``total != 10000``
-    ⇒ Σ != 1 (alimente le test de rejet Σ≠1, S05.5 D3). Généralise le composite
-    inline `_members_summing_to` de `test_accounts_validator.py`.
-
-    `ValueError` si ``total < n`` : N parts entières ≥ 1 imposent ``total >= n``
-    (sinon partition impossible). Garde explicite car le helper est public et
-    réutilisable hors de ses appelants S05.5.
+    `ValueError` si ``total < n`` : N parts ≥ 1 imposent ``total >= n`` (garde
+    explicite, helper public réutilisable). Court-circuite ``n == 1`` : sinon
+    `st.integers(1, total - 1)` serait construit avec ``total == 1`` ⇒
+    `st.integers(1, 0)`, que Hypothesis REJETTE à la construction
+    (`max_value < min_value`) AVANT de regarder ``min_size=0`` ⇒ `InvalidArgument`
+    même si aucun cut-point n'est requis. Une seule part = total.
     """
     if total < n:
-        raise ValueError(f"share_ratios requiert total >= n, reçu total={total}, n={n}")
+        raise ValueError(f"_partition requiert total >= n, reçu total={total}, n={n}")
+    if n == 1:
+        return [total]
     cuts = sorted(
         draw(
             st.lists(
@@ -118,7 +119,26 @@ def share_ratios(draw: st.DrawFn, *, n: int, total: int = _BASIS_POINTS) -> list
         )
     )
     bounds = [0, *cuts, total]
-    return [Decimal(bounds[i + 1] - bounds[i]) / Decimal(_BASIS_POINTS) for i in range(n)]
+    return [bounds[i + 1] - bounds[i] for i in range(n)]
+
+
+@st.composite
+def share_ratios(draw: st.DrawFn, *, n: int, total: int = _BASIS_POINTS) -> list[Decimal]:
+    """N ratios `Decimal` strictement positifs, Σ == ``Decimal(total) / 10000``.
+
+    Délègue le partitionnement entier de ``total`` en N parts ≥ 1 à `_partition`
+    (cut-points distincts, requiert ``total >= n``), puis mappe chaque part ``p``
+    → ``Decimal(p) / Decimal(10000)``. Exact à l'échelle 4, jamais de ``float`` ;
+    chaque part ≥ 1 ⇒ ratio > 0.
+
+    ``total == 10000`` (défaut) ⇒ Σ == ``Decimal("1.0000")`` ; ``total != 10000``
+    ⇒ Σ != 1 (alimente le test de rejet Σ≠1, S05.5 D3). Généralise le composite
+    inline `_members_summing_to` de `test_accounts_validator.py`.
+
+    `ValueError` (via `_partition`) si ``total < n`` : N parts entières ≥ 1
+    imposent ``total >= n`` (sinon partition impossible).
+    """
+    return [Decimal(p) / Decimal(_BASIS_POINTS) for p in _partition(draw, total=total, n=n)]
 
 
 @st.composite
@@ -600,10 +620,12 @@ class SettlementScenario:
     """Dettes entre {A, B} + lignes qui les apurent EXACTEMENT (full apurement).
 
     `virtual` ⇒ totaux par direction égaux ⇒ net 0 (équilibré) ; non-virtuel ⇒
-    sens unique lo→hi ⇒ net == Σ > 0 et `linked == net`. Toutes les dettes sont
-    fraîches (`remaining_cents == montant plein`) et chaque ligne apure sa dette
-    intégralement (`amount == remaining`). L'union `{from, to}` vaut toujours
-    `{lo, hi}` (cardinalité 2) et la devise est unique (`EUR`) PAR CONSTRUCTION.
+    une SEULE direction (lo→hi) par construction ⇒ net == Σ > 0 (la magnitude vaut
+    la somme uniquement parce qu'aucune dette ne va en sens inverse) et
+    `linked == net`. Toutes les dettes sont fraîches (`remaining_cents == montant
+    plein`) et chaque ligne apure sa dette intégralement (`amount == remaining`).
+    L'union `{from, to}` vaut toujours `{lo, hi}` (cardinalité 2) et la devise est
+    unique (`EUR`) PAR CONSTRUCTION.
     """
 
     settlement_type: SettlementType
@@ -619,33 +641,6 @@ class SettlementScenario:
     @property
     def counterparties(self) -> frozenset[UUID]:
         return frozenset(u for c in self.debt_contexts for u in (c.from_user_id, c.to_user_id))
-
-
-def _partition(draw: st.DrawFn, *, total: int, n: int) -> list[int]:
-    """N entiers ≥ 1, Σ == ``total`` (cut-points distincts, requiert ``total >= n``).
-
-    Cœur entier de `share_ratios` (cut-points), sans la division /10000 : chaque
-    part ≥ 1 ⇒ ``remaining > 0`` PAR CONSTRUCTION (jamais d'`assume`).
-
-    Court-circuite ``n == 1`` : sinon `st.integers(1, total - 1)` est construit
-    avec ``total == 1`` ⇒ `st.integers(1, 0)`, que Hypothesis REJETTE à la
-    construction (`max_value < min_value`) AVANT de regarder ``min_size=0`` ⇒
-    `InvalidArgument` même si aucun cut-point n'est requis. Une seule part = total.
-    """
-    if n == 1:
-        return [total]
-    cuts = sorted(
-        draw(
-            st.lists(
-                st.integers(min_value=1, max_value=total - 1),
-                min_size=n - 1,
-                max_size=n - 1,
-                unique=True,
-            )
-        )
-    )
-    bounds = [0, *cuts, total]
-    return [bounds[i + 1] - bounds[i] for i in range(n)]
 
 
 @st.composite
@@ -669,7 +664,10 @@ def settlement_scenario_strategy(
         balanced = draw(st.booleans())
 
     def _debt(from_u: UUID, to_u: UUID, amount: int) -> tuple[DebtContext, SettlementLineInput]:
-        did = draw(st.uuids())  # debt_id frais (uniques : st.uuids ~ collision nulle)
+        # debt_id frais via st.uuids() : collision entre deux lignes du même scénario
+        # négligeable (probabiliste, PAS garantie par construction) et SANS impact —
+        # le validateur agrège par debt_id (règle 7), un doublon resterait correct.
+        did = draw(st.uuids())
         ctx = DebtContext(
             debt_id=did,
             from_user_id=from_u,

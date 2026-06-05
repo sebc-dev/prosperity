@@ -177,11 +177,19 @@ async def test_conservation_persisted_partial_cross_direction(
 
     # Conservation : chaque restant apuré = 5000 − 2000 = 3000 (NON trivial), la 3e
     # dette reste à son plein montant. compute_remaining NE filtre PAS → vrai oracle.
-    assert await compute_remaining(household_singleton, debt_id=a_to_b.id) == 3000
-    assert await compute_remaining(household_singleton, debt_id=b_to_a.id) == 3000
-    assert await compute_remaining(household_singleton, debt_id=witness.id) == 3000
-    # Net orienté du restant sur la PAIRE {alice, bob} INCHANGÉ par un règlement
-    # virtual (3000 a→b − 3000 b→a == 0 avant ET après) : conservation du solde net.
+    rem_a_to_b = await compute_remaining(household_singleton, debt_id=a_to_b.id)
+    rem_b_to_a = await compute_remaining(household_singleton, debt_id=b_to_a.id)
+    rem_witness = await compute_remaining(household_singleton, debt_id=witness.id)
+    assert rem_a_to_b == 3000
+    assert rem_b_to_a == 3000
+    assert rem_witness == 3000
+    # Conservation du solde NET orienté sur la paire {alice, bob} : un règlement
+    # virtual ne déplace pas le net — désormais ASSERVI (pas seulement commenté).
+    # Net alice→bob == Σ(restants alice→bob) − Σ(restants bob→alice), inchangé
+    # avant/après le règlement.
+    net_alice_to_bob_before = 5000 + 3000 - 5000  # a_to_b + witness − b_to_a (montants pleins)
+    net_alice_to_bob_after = rem_a_to_b + rem_witness - rem_b_to_a
+    assert net_alice_to_bob_after == net_alice_to_bob_before == 3000
 
 
 # ---------------------------------------------------------------------------

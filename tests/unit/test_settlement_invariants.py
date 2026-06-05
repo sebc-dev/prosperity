@@ -101,6 +101,85 @@ _INT_PARTIAL = SettlementScenario(
     30,
 )
 
+# Borne BASSE — partition serrée (`total == n` ⇒ TOUTES les parts = 1) : virtual à
+# net 0, 3 dettes lo→hi de 1 + 3 dettes hi→lo de 1 (+3 − 3 == 0). Épingle le cas
+# limite des montants minimaux que la génération aléatoire n'atteint que rarement.
+_VIRT_TIGHT = SettlementScenario(
+    "virtual",
+    (
+        DebtContext(
+            debt_id=UUID(int=30),
+            from_user_id=UUID(int=1),
+            to_user_id=UUID(int=2),
+            currency="EUR",
+            remaining_cents=1,
+        ),
+        DebtContext(
+            debt_id=UUID(int=31),
+            from_user_id=UUID(int=1),
+            to_user_id=UUID(int=2),
+            currency="EUR",
+            remaining_cents=1,
+        ),
+        DebtContext(
+            debt_id=UUID(int=32),
+            from_user_id=UUID(int=1),
+            to_user_id=UUID(int=2),
+            currency="EUR",
+            remaining_cents=1,
+        ),
+        DebtContext(
+            debt_id=UUID(int=33),
+            from_user_id=UUID(int=2),
+            to_user_id=UUID(int=1),
+            currency="EUR",
+            remaining_cents=1,
+        ),
+        DebtContext(
+            debt_id=UUID(int=34),
+            from_user_id=UUID(int=2),
+            to_user_id=UUID(int=1),
+            currency="EUR",
+            remaining_cents=1,
+        ),
+        DebtContext(
+            debt_id=UUID(int=35),
+            from_user_id=UUID(int=2),
+            to_user_id=UUID(int=1),
+            currency="EUR",
+            remaining_cents=1,
+        ),
+    ),
+    (
+        SettlementLineInput(debt_id=UUID(int=30), amount_cents=1),
+        SettlementLineInput(debt_id=UUID(int=31), amount_cents=1),
+        SettlementLineInput(debt_id=UUID(int=32), amount_cents=1),
+        SettlementLineInput(debt_id=UUID(int=33), amount_cents=1),
+        SettlementLineInput(debt_id=UUID(int=34), amount_cents=1),
+        SettlementLineInput(debt_id=UUID(int=35), amount_cents=1),
+    ),
+    None,
+    0,
+)
+
+# Borne HAUTE — montant à `_MONEY_BOUND` (10⁹ centimes, la borne sup. de la strategy) :
+# single dette non-virtuelle lo→hi, net == montant viré (pas d'overflow, entiers Python).
+_EXT_LARGE = SettlementScenario(
+    "external_transfer",
+    (
+        DebtContext(
+            debt_id=UUID(int=40),
+            from_user_id=UUID(int=1),
+            to_user_id=UUID(int=2),
+            currency="EUR",
+            remaining_cents=1_000_000_000,
+        ),
+    ),
+    (SettlementLineInput(debt_id=UUID(int=40), amount_cents=1_000_000_000),),
+    1_000_000_000,
+    1_000_000_000,
+)
+
 
 class TestConservationProperty:
     # `max_examples` n'est PAS fixé ici : hérité du profil chargé au boot par
@@ -109,6 +188,8 @@ class TestConservationProperty:
     @settings(deadline=None, suppress_health_check=[HealthCheck.too_slow])
     @example(scenario=_VIRT_SYM)  # nettage croisé symétrique virtual (net 0)
     @example(scenario=_INT_PARTIAL)  # non-virtuel, net 30 ≠ 0 (discriminant)
+    @example(scenario=_VIRT_TIGHT)  # borne basse : partition serrée, parts == 1
+    @example(scenario=_EXT_LARGE)  # borne haute : montant == _MONEY_BOUND (10⁹)
     @given(scenario=settlement_scenario_strategy())
     def test_validator_accepts_balanced_scenario_with_conserved_net(
         self, scenario: SettlementScenario

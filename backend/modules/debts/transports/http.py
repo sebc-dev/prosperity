@@ -291,9 +291,7 @@ async def list_debts_route(
 # ---------------------------------------------------------------------------
 
 
-@settlements_router.post(
-    "", response_model=SettlementResponse, status_code=status.HTTP_201_CREATED
-)
+@settlements_router.post("", response_model=SettlementResponse, status_code=status.HTTP_201_CREATED)
 async def create_settlement_route(
     body: SettlementCreate,
     user: CurrentUser,

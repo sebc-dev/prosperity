@@ -126,11 +126,17 @@ async def _make_transfer_tx(  # noqa: PLR0913 — keyword-only seed helper
     """
     tx = await _make_bare_tx(session, account_id=account_a, created_by=created_by, state=state)
     await _add_split(
-        session, transaction_id=tx.id, account_id=account_a, amount_cents=-amount_cents,
+        session,
+        transaction_id=tx.id,
+        account_id=account_a,
+        amount_cents=-amount_cents,
         currency=currency,
     )
     await _add_split(
-        session, transaction_id=tx.id, account_id=account_b, amount_cents=amount_cents,
+        session,
+        transaction_id=tx.id,
+        account_id=account_b,
+        amount_cents=amount_cents,
         currency=currency,
     )
     return tx.id
@@ -152,11 +158,17 @@ async def _make_external_tx(  # noqa: PLR0913 — keyword-only seed helper
     """
     tx = await _make_bare_tx(session, account_id=account_id, created_by=created_by, state=state)
     await _add_split(
-        session, transaction_id=tx.id, account_id=account_id, amount_cents=-amount_cents,
+        session,
+        transaction_id=tx.id,
+        account_id=account_id,
+        amount_cents=-amount_cents,
         currency=currency,
     )
     await _add_split(
-        session, transaction_id=tx.id, account_id=account_id, amount_cents=amount_cents,
+        session,
+        transaction_id=tx.id,
+        account_id=account_id,
+        amount_cents=amount_cents,
         currency=currency,
     )
     return tx.id
@@ -214,12 +226,19 @@ async def test_internal_transfer_success(
     acc_a = await _make_account(household_singleton, creditor.id)
     acc_b = await _make_account(household_singleton, creditor.id)
     tx_id = await _make_transfer_tx(
-        household_singleton, account_a=acc_a, account_b=acc_b, created_by=creditor.id,
+        household_singleton,
+        account_a=acc_a,
+        account_b=acc_b,
+        created_by=creditor.id,
         amount_cents=5000,
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc_a,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc_a,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
 
     s = await create_settlement(
@@ -235,10 +254,14 @@ async def test_internal_transfer_success(
     assert s.linked_transaction_id == tx_id
     assert s.created_by == creditor.id  # T-m3: invariant frozen at the service
     lines = (
-        await household_singleton.execute(
-            select(SettlementLine).where(SettlementLine.settlement_id == s.id)
+        (
+            await household_singleton.execute(
+                select(SettlementLine).where(SettlementLine.settlement_id == s.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(lines) == 1
     assert await compute_remaining(household_singleton, debt_id=debt.id) == 0
 
@@ -250,11 +273,18 @@ async def test_external_transfer_success_and_derivation(
     debtor, creditor = await bound_user_factory(), await bound_user_factory()
     acc = await _make_account(household_singleton, creditor.id)
     tx_id = await _make_external_tx(
-        household_singleton, account_id=acc, created_by=creditor.id, amount_cents=4200,
+        household_singleton,
+        account_id=acc,
+        created_by=creditor.id,
+        amount_cents=4200,
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=4200,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=4200,
     )
 
     s = await create_settlement(
@@ -277,15 +307,26 @@ async def test_virtual_success_cross_direction_nets_to_zero(
     alice, bob = await bound_user_factory(), await bound_user_factory()
     acc = await _make_account(household_singleton, alice.id)
     tx_id = await _make_external_tx(
-        household_singleton, account_id=acc, created_by=alice.id, amount_cents=1,
+        household_singleton,
+        account_id=acc,
+        created_by=alice.id,
+        amount_cents=1,
     )
     b_to_a = await _make_debt(
-        household_singleton, from_user_id=bob.id, to_user_id=alice.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=3000,
+        household_singleton,
+        from_user_id=bob.id,
+        to_user_id=alice.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=3000,
     )
     a_to_b = await _make_debt(
-        household_singleton, from_user_id=alice.id, to_user_id=bob.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=3000,
+        household_singleton,
+        from_user_id=alice.id,
+        to_user_id=bob.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=3000,
     )
 
     s = await create_settlement(
@@ -311,16 +352,27 @@ async def test_multi_debts_same_direction_two_lines(
     acc_a = await _make_account(household_singleton, creditor.id)
     acc_b = await _make_account(household_singleton, creditor.id)
     tx_id = await _make_transfer_tx(
-        household_singleton, account_a=acc_a, account_b=acc_b, created_by=creditor.id,
+        household_singleton,
+        account_a=acc_a,
+        account_b=acc_b,
+        created_by=creditor.id,
         amount_cents=5000,
     )
     d1 = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc_a,
-        source_transaction_id=tx_id, amount_cents=2000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc_a,
+        source_transaction_id=tx_id,
+        amount_cents=2000,
     )
     d2 = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc_a,
-        source_transaction_id=tx_id, amount_cents=3000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc_a,
+        source_transaction_id=tx_id,
+        amount_cents=3000,
     )
 
     s = await create_settlement(
@@ -333,10 +385,14 @@ async def test_multi_debts_same_direction_two_lines(
         by_user_id=creditor.id,
     )
     lines = (
-        await household_singleton.execute(
-            select(SettlementLine).where(SettlementLine.settlement_id == s.id)
+        (
+            await household_singleton.execute(
+                select(SettlementLine).where(SettlementLine.settlement_id == s.id)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(lines) == 2
 
 
@@ -350,12 +406,19 @@ async def test_transfer_amount_derivation_must_match_net(
     acc_a = await _make_account(household_singleton, creditor.id)
     acc_b = await _make_account(household_singleton, creditor.id)
     tx_id = await _make_transfer_tx(
-        household_singleton, account_a=acc_a, account_b=acc_b, created_by=creditor.id,
+        household_singleton,
+        account_a=acc_a,
+        account_b=acc_b,
+        created_by=creditor.id,
         amount_cents=5000,
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc_a,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc_a,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
 
     with pytest.raises(NetTransferMismatchError):
@@ -404,10 +467,16 @@ async def test_caller_not_party_rejected_indistinctly(
     )
     acc = await _make_account(household_singleton, creditor.id)
     tx_id = await _make_external_tx(
-        household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1,
+        household_singleton,
+        account_id=acc,
+        created_by=creditor.id,
+        amount_cents=1,
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
         source_transaction_id=tx_id,
     )
     with pytest.raises(SettlementDebtNotAccessibleError):
@@ -429,10 +498,16 @@ async def test_non_virtual_without_or_unknown_linked_tx_rejected(
     debtor, creditor = await bound_user_factory(), await bound_user_factory()
     acc = await _make_account(household_singleton, creditor.id)
     tx_id = await _make_external_tx(
-        household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1,
+        household_singleton,
+        account_id=acc,
+        created_by=creditor.id,
+        amount_cents=1,
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
         source_transaction_id=tx_id,
     )
     # No linked_transaction_id at all.
@@ -472,12 +547,19 @@ async def test_inaccessible_tx_account_rejected(
     acc_own = await _make_account(household_singleton, creditor.id)
     acc_foreign = await _make_account(household_singleton, stranger.id)  # same foyer, not caller's
     tx_id = await _make_transfer_tx(
-        household_singleton, account_a=acc_own, account_b=acc_foreign, created_by=creditor.id,
+        household_singleton,
+        account_a=acc_own,
+        account_b=acc_foreign,
+        created_by=creditor.id,
         amount_cents=5000,
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc_own,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc_own,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
     with pytest.raises(LinkedTransactionNotAccessibleError):
         await create_settlement(
@@ -499,12 +581,20 @@ async def test_non_confirmed_tx_rejected(
     acc_a = await _make_account(household_singleton, creditor.id)
     acc_b = await _make_account(household_singleton, creditor.id)
     tx_id = await _make_transfer_tx(
-        household_singleton, account_a=acc_a, account_b=acc_b, created_by=creditor.id,
-        amount_cents=5000, state="draft",
+        household_singleton,
+        account_a=acc_a,
+        account_b=acc_b,
+        created_by=creditor.id,
+        amount_cents=5000,
+        state="draft",
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc_a,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc_a,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
     with pytest.raises(LinkedTransactionNotConfirmedError):
         await create_settlement(
@@ -525,11 +615,18 @@ async def test_internal_transfer_on_non_transfer_tx_rejected(
     debtor, creditor = await bound_user_factory(), await bound_user_factory()
     acc = await _make_account(household_singleton, creditor.id)
     tx_id = await _make_external_tx(
-        household_singleton, account_id=acc, created_by=creditor.id, amount_cents=5000,
+        household_singleton,
+        account_id=acc,
+        created_by=creditor.id,
+        amount_cents=5000,
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
     with pytest.raises(LinkedTransactionNotTransferError):
         await create_settlement(
@@ -554,11 +651,18 @@ async def test_over_settlement_propagates(
     debtor, creditor = await bound_user_factory(), await bound_user_factory()
     acc = await _make_account(household_singleton, creditor.id)
     tx_id = await _make_external_tx(
-        household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1,
+        household_singleton,
+        account_id=acc,
+        created_by=creditor.id,
+        amount_cents=1,
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
     with pytest.raises(OverSettlementError):
         await create_settlement(
@@ -579,16 +683,26 @@ async def test_closed_debt_propagates(
     debtor, creditor = await bound_user_factory(), await bound_user_factory()
     acc = await _make_account(household_singleton, creditor.id)
     tx_id = await _make_external_tx(
-        household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1,
+        household_singleton,
+        account_id=acc,
+        created_by=creditor.id,
+        amount_cents=1,
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
     # Pre-settle it fully via a first virtual settlement.
     pre = Settlement(
-        household_id=HOUSEHOLD_ID, created_by=creditor.id, type="virtual",
-        linked_transaction_id=None, settled_at=dt.date(2026, 6, 2),
+        household_id=HOUSEHOLD_ID,
+        created_by=creditor.id,
+        type="virtual",
+        linked_transaction_id=None,
+        settled_at=dt.date(2026, 6, 2),
     )
     household_singleton.add(pre)
     await household_singleton.flush()
@@ -617,19 +731,35 @@ async def test_mixed_currency_propagates(
     acc_eur = await _make_account(household_singleton, creditor.id)
     acc_usd = await _make_account(household_singleton, creditor.id, currency="USD")
     tx_eur = await _make_external_tx(
-        household_singleton, account_id=acc_eur, created_by=creditor.id, amount_cents=1,
+        household_singleton,
+        account_id=acc_eur,
+        created_by=creditor.id,
+        amount_cents=1,
     )
     tx_usd = await _make_external_tx(
-        household_singleton, account_id=acc_usd, created_by=creditor.id, amount_cents=1,
+        household_singleton,
+        account_id=acc_usd,
+        created_by=creditor.id,
+        amount_cents=1,
         currency="USD",
     )
     d_eur = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc_eur,
-        source_transaction_id=tx_eur, amount_cents=5000, currency="EUR",
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc_eur,
+        source_transaction_id=tx_eur,
+        amount_cents=5000,
+        currency="EUR",
     )
     d_usd = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc_usd,
-        source_transaction_id=tx_usd, amount_cents=5000, currency="USD",
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc_usd,
+        source_transaction_id=tx_usd,
+        amount_cents=5000,
+        currency="USD",
     )
     with pytest.raises(MixedCurrencyError):
         await create_settlement(
@@ -653,15 +783,26 @@ async def test_more_than_two_counterparties_propagates(
     )
     acc = await _make_account(household_singleton, a.id)
     tx_id = await _make_external_tx(
-        household_singleton, account_id=acc, created_by=a.id, amount_cents=1,
+        household_singleton,
+        account_id=acc,
+        created_by=a.id,
+        amount_cents=1,
     )
     a_to_b = await _make_debt(
-        household_singleton, from_user_id=a.id, to_user_id=b.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=a.id,
+        to_user_id=b.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
     a_to_c = await _make_debt(
-        household_singleton, from_user_id=a.id, to_user_id=c.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=a.id,
+        to_user_id=c.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
     with pytest.raises(MultipleCounterpartiesError):
         await create_settlement(
@@ -697,11 +838,18 @@ async def test_insert_is_atomic_across_two_flushes(
     debtor, creditor = await bound_user_factory(), await bound_user_factory()
     acc = await _make_account(household_singleton, creditor.id)
     tx_id = await _make_external_tx(
-        household_singleton, account_id=acc, created_by=creditor.id, amount_cents=1,
+        household_singleton,
+        account_id=acc,
+        created_by=creditor.id,
+        amount_cents=1,
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
     before = await _settlement_count(household_singleton)
 
@@ -737,11 +885,18 @@ async def test_cross_household_guard_bites_on_real_path(
     debtor, creditor = await bound_user_factory(), await bound_user_factory()
     acc = await _make_account(household_singleton, creditor.id)
     tx_id = await _make_external_tx(
-        household_singleton, account_id=acc, created_by=creditor.id, amount_cents=5000,
+        household_singleton,
+        account_id=acc,
+        created_by=creditor.id,
+        amount_cents=5000,
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
     before = await _settlement_count(household_singleton)
 
@@ -766,11 +921,18 @@ async def test_happy_path_household_resolution_passes(
     debtor, creditor = await bound_user_factory(), await bound_user_factory()
     acc = await _make_account(household_singleton, creditor.id)
     tx_id = await _make_external_tx(
-        household_singleton, account_id=acc, created_by=creditor.id, amount_cents=5000,
+        household_singleton,
+        account_id=acc,
+        created_by=creditor.id,
+        amount_cents=5000,
     )
     debt = await _make_debt(
-        household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, account_id=acc,
-        source_transaction_id=tx_id, amount_cents=5000,
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=acc,
+        source_transaction_id=tx_id,
+        amount_cents=5000,
     )
     s = await create_settlement(
         household_singleton,

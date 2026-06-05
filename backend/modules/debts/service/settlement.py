@@ -31,7 +31,7 @@ from collections.abc import Sequence
 from typing import ClassVar
 from uuid import UUID
 
-from sqlalchemy import column, select, table
+from sqlalchemy import and_, column, or_, select, table
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.accounts.public import HOUSEHOLD_ID, account_is_accessible
@@ -255,3 +255,31 @@ async def create_settlement(  # noqa: PLR0913 — paramètres d'acte keyword-onl
         )
     await session.flush()
     return settlement
+
+
+async def list_settlements_between(
+    session: AsyncSession, *, caller_id: UUID, with_user_id: UUID
+) -> list[Settlement]:
+    """Règlements touchant une dette entre `{caller, with}` (TOUT restant — D9).
+
+    Bornage du périmètre = token (`caller_id`) ; `with_user_id` = filtre de
+    contrepartie APRÈS bornage (anti-IDOR, gabarit `list_debts_for_user`). Inclut
+    les règlements de dettes SOLDÉES (`remaining == 0`) — `list_open_debts_between`
+    les exclurait (filtre `remaining > 0`, S10.3 D7) alors que c'est justement là
+    qu'un règlement a eu lieu (D9). Requête dédiée, distincte de
+    `list_open_debts_between` (réservé au calcul du restant ouvert). Tri
+    déterministe `(settled_at DESC, id)` — contrat observable (tiebreaker `id`).
+    """
+    pair = or_(
+        and_(Debt.from_user_id == caller_id, Debt.to_user_id == with_user_id),
+        and_(Debt.from_user_id == with_user_id, Debt.to_user_id == caller_id),
+    )
+    stmt = (
+        select(Settlement)
+        .distinct()
+        .join(SettlementLine, SettlementLine.settlement_id == Settlement.id)
+        .join(Debt, Debt.id == SettlementLine.debt_id)
+        .where(pair)
+        .order_by(Settlement.settled_at.desc(), Settlement.id)
+    )
+    return list((await session.execute(stmt)).scalars().all())

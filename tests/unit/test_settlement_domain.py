@@ -17,6 +17,7 @@ l'ordre `lo/hi` pour exercer LES DEUX branches de signe (`A→B` et `B→A`).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from uuid import UUID
 
 import pytest
@@ -66,6 +67,105 @@ def _ctx(
 def _line(*, debt_id: UUID, amount_cents: int) -> SettlementLineInput:
     """Fabrique une `SettlementLineInput`."""
     return SettlementLineInput(debt_id=debt_id, amount_cents=amount_cents)
+
+
+# ---------------------------------------------------------------------------
+# Sentinelles PII : un `debt_id` (424242) et un montant (999999) distinctifs,
+# injectés dans CHAQUE scénario d'erreur (cf. `test_error_messages_carry_no_pii`).
+# Un thunk par sous-classe déclenche son erreur via `validate`, en respectant
+# l'ordre des règles pour que l'erreur CIBLE soit la première levée.
+# ---------------------------------------------------------------------------
+_PII_DEBT = UUID(int=424242)
+_PII_D2 = UUID(int=424243)
+_PII_AMOUNT = 999999
+
+
+def _raise_empty() -> None:  # (1)
+    SettlementValidator.validate(
+        settlement_type="virtual",
+        lines=[],
+        debt_contexts={},
+        linked_transaction_amount_cents=None,
+    )
+
+
+def _raise_unknown() -> None:  # (2)
+    SettlementValidator.validate(
+        settlement_type="virtual",
+        lines=[_line(debt_id=_PII_DEBT, amount_cents=_PII_AMOUNT)],
+        debt_contexts={},
+        linked_transaction_amount_cents=None,
+    )
+
+
+def _raise_mixed_currency() -> None:  # (3)
+    SettlementValidator.validate(
+        settlement_type="virtual",
+        lines=[
+            _line(debt_id=_PII_DEBT, amount_cents=_PII_AMOUNT),
+            _line(debt_id=_PII_D2, amount_cents=_PII_AMOUNT),
+        ],
+        debt_contexts={
+            _PII_DEBT: _ctx(debt_id=_PII_DEBT, currency="EUR", remaining_cents=_PII_AMOUNT),
+            _PII_D2: _ctx(debt_id=_PII_D2, currency="USD", remaining_cents=_PII_AMOUNT),
+        },
+        linked_transaction_amount_cents=None,
+    )
+
+
+def _raise_multiple_parties() -> None:  # (4)
+    SettlementValidator.validate(
+        settlement_type="virtual",
+        lines=[
+            _line(debt_id=_PII_DEBT, amount_cents=_PII_AMOUNT),
+            _line(debt_id=_PII_D2, amount_cents=_PII_AMOUNT),
+        ],
+        debt_contexts={
+            _PII_DEBT: _ctx(
+                debt_id=_PII_DEBT, from_user_id=A, to_user_id=B, remaining_cents=_PII_AMOUNT
+            ),
+            _PII_D2: _ctx(
+                debt_id=_PII_D2, from_user_id=A, to_user_id=C, remaining_cents=_PII_AMOUNT
+            ),
+        },
+        linked_transaction_amount_cents=None,
+    )
+
+
+def _raise_linked_mismatch() -> None:  # (5)
+    SettlementValidator.validate(
+        settlement_type="virtual",
+        lines=[_line(debt_id=_PII_DEBT, amount_cents=50)],
+        debt_contexts={_PII_DEBT: _ctx(debt_id=_PII_DEBT)},
+        linked_transaction_amount_cents=_PII_AMOUNT,
+    )
+
+
+def _raise_closed_debt() -> None:  # (6)
+    SettlementValidator.validate(
+        settlement_type="virtual",
+        lines=[_line(debt_id=_PII_DEBT, amount_cents=_PII_AMOUNT)],
+        debt_contexts={_PII_DEBT: _ctx(debt_id=_PII_DEBT, remaining_cents=0)},
+        linked_transaction_amount_cents=None,
+    )
+
+
+def _raise_over_settlement() -> None:  # (7)
+    SettlementValidator.validate(
+        settlement_type="internal_transfer",
+        lines=[_line(debt_id=_PII_DEBT, amount_cents=_PII_AMOUNT)],
+        debt_contexts={_PII_DEBT: _ctx(debt_id=_PII_DEBT, remaining_cents=100)},
+        linked_transaction_amount_cents=_PII_AMOUNT,
+    )
+
+
+def _raise_net_mismatch() -> None:  # (8)
+    SettlementValidator.validate(
+        settlement_type="internal_transfer",
+        lines=[_line(debt_id=_PII_DEBT, amount_cents=100)],
+        debt_contexts={_PII_DEBT: _ctx(debt_id=_PII_DEBT, remaining_cents=100)},
+        linked_transaction_amount_cents=_PII_AMOUNT,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +266,24 @@ class TestSettlementValidatorHappyPath:
             linked_transaction_amount_cents=80,
         )
         assert result.net_transfer_cents == 80
+        # Les deux lignes sont préservées telles quelles dans la sortie normalisée.
+        assert result.lines == (
+            _line(debt_id=d, amount_cents=40),
+            _line(debt_id=d, amount_cents=40),
+        )
+
+    def test_single_reverse_debt_non_virtual(self) -> None:
+        # Dette UNIQUE `hi→lo` (B→A) : net global négatif (−60) ⇒ `abs(net) == 60`
+        # accepté en non-virtuel (linked=60). Exerce `abs()` sur un net globalement
+        # négatif (le seul signe en jeu est `-1`), pendant non-virtuel du nettage.
+        d = UUID(int=10)
+        result = SettlementValidator.validate(
+            settlement_type="internal_transfer",
+            lines=[_line(debt_id=d, amount_cents=60)],
+            debt_contexts={d: _ctx(debt_id=d, from_user_id=B, to_user_id=A, remaining_cents=60)},
+            linked_transaction_amount_cents=60,
+        )
+        assert result.net_transfer_cents == 60
 
 
 # ---------------------------------------------------------------------------
@@ -240,6 +358,29 @@ class TestSettlementValidatorRejections:
                 settlement_type="virtual",
                 lines=[_line(debt_id=d, amount_cents=50)],
                 debt_contexts={d: _ctx(debt_id=d, from_user_id=A, to_user_id=A)},
+                linked_transaction_amount_cents=None,
+            )
+        assert exc.value.code == "multiple_counterparties"
+
+    def test_rejects_self_debt_mixed_with_real_debt(self) -> None:  # (4c) / (8) garde
+        # Self-debt `A→A` COMBINÉE à une dette réelle `A→B` : l'union `{from, to}`
+        # vaut `{A, B}` (cardinalité 2) et franchit donc la règle (4). La garde de
+        # robustesse de la règle (8) rejette explicitement la ligne `A→A` (orientation
+        # ni `lo→hi` ni `hi→lo`) plutôt que de lui affecter un signe par défaut
+        # silencieux (qui ferait netter `A→A 50 + A→B 50` à 0, accepté à tort en
+        # virtuel). Cas non-persistable en prod (CHECK `ck_debts_no_self_debt`).
+        d_self, d_real = UUID(int=10), UUID(int=11)
+        with pytest.raises(MultipleCounterpartiesError) as exc:
+            SettlementValidator.validate(
+                settlement_type="virtual",
+                lines=[
+                    _line(debt_id=d_self, amount_cents=50),
+                    _line(debt_id=d_real, amount_cents=50),
+                ],
+                debt_contexts={
+                    d_self: _ctx(debt_id=d_self, from_user_id=A, to_user_id=A, remaining_cents=50),
+                    d_real: _ctx(debt_id=d_real, from_user_id=A, to_user_id=B, remaining_cents=50),
+                },
                 linked_transaction_amount_cents=None,
             )
         assert exc.value.code == "multiple_counterparties"
@@ -412,45 +553,32 @@ class TestSettlementValidatorEdgeCases:
         ):
             assert issubclass(err, SettlementValidationError)
 
-    def test_error_messages_carry_no_pii(self) -> None:
-        # Canal client = `code` seul ; ni `debt_id` ni montant-sentinelle ne doivent
-        # apparaître dans `str(exc)` (garde anti-régression si un futur dev enrichit
-        # un message en f"debt {debt_id} exceeds {remaining}").
-        debt_id = UUID(int=424242)
-        sentinel = 999999
-
-        # UnknownDebtLineError
-        with pytest.raises(UnknownDebtLineError) as exc_unknown:
-            SettlementValidator.validate(
-                settlement_type="virtual",
-                lines=[_line(debt_id=debt_id, amount_cents=sentinel)],
-                debt_contexts={},
-                linked_transaction_amount_cents=None,
-            )
-        assert str(debt_id) not in str(exc_unknown.value)
-        assert str(sentinel) not in str(exc_unknown.value)
-
-        # OverSettlementError
-        with pytest.raises(OverSettlementError) as exc_over:
-            SettlementValidator.validate(
-                settlement_type="internal_transfer",
-                lines=[_line(debt_id=debt_id, amount_cents=sentinel)],
-                debt_contexts={debt_id: _ctx(debt_id=debt_id, remaining_cents=100)},
-                linked_transaction_amount_cents=sentinel,
-            )
-        assert str(debt_id) not in str(exc_over.value)
-        assert str(sentinel) not in str(exc_over.value)
-
-        # NetTransferMismatchError
-        with pytest.raises(NetTransferMismatchError) as exc_net:
-            SettlementValidator.validate(
-                settlement_type="internal_transfer",
-                lines=[_line(debt_id=debt_id, amount_cents=100)],
-                debt_contexts={debt_id: _ctx(debt_id=debt_id, remaining_cents=100)},
-                linked_transaction_amount_cents=sentinel,
-            )
-        assert str(debt_id) not in str(exc_net.value)
-        assert str(sentinel) not in str(exc_net.value)
+    @pytest.mark.parametrize(
+        ("error_cls", "trigger"),
+        [
+            (EmptySettlementError, _raise_empty),
+            (UnknownDebtLineError, _raise_unknown),
+            (MixedCurrencyError, _raise_mixed_currency),
+            (MultipleCounterpartiesError, _raise_multiple_parties),
+            (LinkedTransactionMismatchError, _raise_linked_mismatch),
+            (ClosedDebtError, _raise_closed_debt),
+            (OverSettlementError, _raise_over_settlement),
+            (NetTransferMismatchError, _raise_net_mismatch),
+        ],
+    )
+    def test_error_messages_carry_no_pii(
+        self,
+        error_cls: type[SettlementValidationError],
+        trigger: Callable[[], None],
+    ) -> None:
+        # Canal client = `code` seul ; ni le `debt_id` (424242) ni le montant-sentinelle
+        # (999999) injectés ne doivent apparaître dans `str(exc)`. Couvre LES 8
+        # sous-classes (garde anti-régression si un futur dev enrichit un message en
+        # f"debt {debt_id} exceeds {remaining}").
+        with pytest.raises(error_cls) as exc:
+            trigger()
+        assert str(_PII_DEBT) not in str(exc.value)
+        assert str(_PII_AMOUNT) not in str(exc.value)
 
 
 # ---------------------------------------------------------------------------

@@ -53,7 +53,7 @@ Livrable agrégé : Bob crée un Settlement `virtual` qui apure 3 dettes en sens
 
 | Phase | Description | Diff |
 |---|---|---|
-| **P10.4.1** | Schemas + route `POST /settlements` (créer settlement) + `GET /settlements?with_user=…` (lister settlements d'un user avec une contrepartie). RBAC : le user doit être impliqué dans toutes les dettes apurées (créancier ou débiteur). Tests httpx | ~200 |
+| **P10.4.1** | Schemas + route `POST /settlements` (créer settlement) + `GET /settlements?with_user=…` (lister settlements d'un user avec une contrepartie). RBAC : le user doit être impliqué dans toutes les dettes apurées (créancier ou débiteur). **🔒 Isolation foyer (effectful, déportée de S10.2)** : le service DOIT vérifier que tous les `debt_id` **et** le `linked_transaction_id` résolvent au même `household_id` que le `Settlement` (ADR 0011 §4) — AC opposable `cross_household_leak` (cf. #155). Tests httpx | ~200 |
 | **P10.4.2** | Route `GET /settlements/{id}` détaillé (avec les SettlementLine et les Debt référencées). Tests | ~100 |
 
 ---

@@ -221,7 +221,12 @@ class DebtContext(BaseModel):
     est intrinsèquement effectful ⇒ gardée par le **service S10.4**, hors du
     validateur pur (ADR 0011 §4, encart Refined-by E10 — précision de couche ;
     AC opposable `cross_household_leak` sur #155). Ne porte pas non plus
-    `account_id`/`source_transaction_id` : aucune fuite du compte source (S09.4).
+    `account_id`/`source_transaction_id` : aucune fuite du compte source (principe
+    d'allowlist DTO posé en S09.4 ; la garde DTO du Settlement est portée par S10.4).
+
+    `currency` n'est PAS normalisée/validée ici (forme libre, permissif) : la
+    cohérence cross-debt (devise unique sur les dettes ciblées) est portée par la
+    règle (3) `MixedCurrencyError` du validateur.
 
     `remaining_cents` = solde restant COURANT (S10.3), AVANT ce règlement ;
     `> 0` attendu, vérifié par la règle (6) du validateur.
@@ -236,7 +241,7 @@ class DebtContext(BaseModel):
     debt_id: UUID
     from_user_id: UUID  # débiteur
     to_user_id: UUID  # créancier
-    currency: str
+    currency: str  # non normalisée ici (permissif) ; cohérence cross-debt = règle (3)
     remaining_cents: int  # solde restant courant (S10.3) ; > 0 vérifié règle (6)
 
 
@@ -260,10 +265,11 @@ class ValidatedSettlement(BaseModel):
     """Sortie normalisée d'un règlement validé — scalaires pour S10.4 / traçabilité.
 
     `net_transfer_cents` = `abs(net)` orienté (non-virtuel, == montant tx liée) /
-    `0` (virtuel) — D5. Exposé pour traçabilité/tests ; le service le compare déjà
-    (comparaison faite ici). Le sens RÉEL débiteur→créancier du virement (aligné
-    sur payeur→bénéficiaire de la tx) reste effectful ⇒ S10.4 : le domaine pur
-    garde la MAGNITUDE, pas l'orientation réelle.
+    `0` (virtuel) — D5. La comparaison net↔virement est faite ICI (domaine pur,
+    règle (8)) ; ce champ l'expose pour traçabilité/tests, et le service S10.4
+    réutilise la magnitude sans la recalculer. Le sens RÉEL débiteur→créancier du
+    virement (aligné sur payeur→bénéficiaire de la tx) reste effectful ⇒ S10.4 :
+    le domaine pur garde la MAGNITUDE, pas l'orientation réelle.
     """
 
     model_config = ConfigDict(frozen=True, strict=True)
@@ -309,8 +315,11 @@ class MixedCurrencyError(SettlementValidationError):
 
 
 class MultipleCounterpartiesError(SettlementValidationError):
-    """Règle (4) : les dettes ciblées n'impliquent pas EXACTEMENT deux
-    contreparties `{A, B}` (3+ tiers, ou self-debt dégénérée `< 2`)."""
+    """Règles (4)/(8) : les dettes ciblées n'impliquent pas EXACTEMENT deux
+    contreparties `{A, B}`. Soit l'union `{from, to}` n'est pas de cardinalité 2
+    (règle (4) : 3+ tiers, ou self-debt isolée `< 2`) ; soit une ligne cible une
+    self-debt dégénérée (`from == to`) qui a franchi (4) en combinaison et dont
+    l'orientation n'est ni `lo→hi` ni `hi→lo` (règle (8), garde de robustesse)."""
 
     code: ClassVar[str] = "multiple_counterparties"
 
@@ -443,7 +452,20 @@ class SettlementValidator:
         net = 0
         for line in lines:
             ctx = debt_contexts[line.debt_id]
-            sign = 1 if (ctx.from_user_id == lo and ctx.to_user_id == hi) else -1
+            if ctx.from_user_id == lo and ctx.to_user_id == hi:
+                sign = 1
+            elif ctx.from_user_id == hi and ctx.to_user_id == lo:
+                sign = -1
+            else:
+                # Dette dégénérée (self-debt `from == to`) ayant franchi (4) en
+                # COMBINAISON avec une dette réelle : l'union `{from, to}` peut valoir
+                # `{lo, hi}` (cardinalité 2) alors qu'une ligne ne relie pas les deux
+                # contreparties. Son orientation n'est NI `lo→hi` NI `hi→lo` ⇒ rejet
+                # explicite — JAMAIS un signe par défaut silencieux. `DebtContext` est
+                # permissif (pas de garde `from != to`) ⇒ unique gardien testable ici ;
+                # en prod ce cas est non-persistable (CHECK `ck_debts_no_self_debt`),
+                # garde de robustesse / défense en profondeur.
+                raise MultipleCounterpartiesError("settlement must involve exactly two parties")
             net += sign * line.amount_cents
         if is_virtual:
             if net != 0:

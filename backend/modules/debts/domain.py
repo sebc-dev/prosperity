@@ -24,6 +24,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
+from backend.shared.currency import Currency
 from backend.shared.money import Money
 
 # Set fermé des origines de dette (gabarit `DebtGenerationOverride`/`LegRole`).
@@ -224,9 +225,11 @@ class DebtContext(BaseModel):
     `account_id`/`source_transaction_id` : aucune fuite du compte source (principe
     d'allowlist DTO posé en S09.4 ; la garde DTO du Settlement est portée par S10.4).
 
-    `currency` n'est PAS normalisée/validée ici (forme libre, permissif) : la
-    cohérence cross-debt (devise unique sur les dettes ciblées) est portée par la
-    règle (3) `MixedCurrencyError` du validateur.
+    `currency` est typée `Currency` (set fermé du kernel `backend.shared`, gabarit
+    `SettlementType`/`Money.currency`) : verrou au boundary Pydantic contre un code
+    devise hors-ISO. La cohérence cross-debt (devise UNIQUE sur les dettes ciblées)
+    reste portée par la règle (3) `MixedCurrencyError` du validateur — la garde de
+    set fermé est orthogonale et ne rend aucune branche d'erreur inatteignable.
 
     `remaining_cents` = solde restant COURANT (S10.3), AVANT ce règlement ;
     `> 0` attendu, vérifié par la règle (6) du validateur.
@@ -241,7 +244,7 @@ class DebtContext(BaseModel):
     debt_id: UUID
     from_user_id: UUID  # débiteur
     to_user_id: UUID  # créancier
-    currency: str  # non normalisée ici (permissif) ; cohérence cross-debt = règle (3)
+    currency: Currency  # set fermé (boundary) ; cohérence cross-debt = règle (3)
     remaining_cents: int  # solde restant courant (S10.3) ; > 0 vérifié règle (6)
 
 
@@ -277,7 +280,7 @@ class ValidatedSettlement(BaseModel):
     type: SettlementType
     counterparties: frozenset[UUID]  # exactement {A, B}
     net_transfer_cents: int  # abs(net) (non-virtuel) / 0 (virtuel) — D5
-    currency: str
+    currency: Currency  # devise unique des dettes ciblées (règle 3)
     lines: tuple[SettlementLineInput, ...]
 
 
@@ -398,7 +401,7 @@ class SettlementValidator:
         targeted = [debt_contexts[line.debt_id] for line in lines]
 
         # (3) devise unique sur tous les contextes ciblés (CONTEXT.md §SettlementLine).
-        currencies = {ctx.currency for ctx in targeted}
+        currencies: set[Currency] = {ctx.currency for ctx in targeted}
         if len(currencies) != 1:
             raise MixedCurrencyError("targeted debts span multiple currencies")
         (currency,) = currencies

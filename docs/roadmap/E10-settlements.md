@@ -96,8 +96,8 @@ Livrable agrégé : Bob crée un Settlement `virtual` qui apure 3 dettes en sens
 
 ## Notes pour l'implémenteur
 
-- Le `Settlement.type == 'internal_transfer'` exige que `linked_transaction_id` pointe vers une `Transaction` confirmed qui est un transfert intra-foyer (deux splits sur deux comptes du foyer, montants opposés). Validation à ajouter au `SettlementValidator`.
+- Le `Settlement.type == 'internal_transfer'` exige que `linked_transaction_id` pointe vers une `Transaction` confirmed qui est un transfert intra-foyer (deux splits sur deux comptes du foyer, montants opposés). Cette distinction `internal`/`external` (forme du virement) est **effectful** (charge les comptes) ⇒ portée par le **service `create_settlement` (S10.4)**, pas par le `SettlementValidator` pur scalaire de S10.2 (qui les traite à l'identique : `linked` NOT NULL, net == montant tx — cf. D2/D3).
 - `external_transfer` : la `Transaction` source a un split sortant et un split sur une catégorie "Transfert vers tiers" ou similaire (non-foyer). À documenter dans le runbook utilisateur.
-- Les `SettlementLine.amount_cents` peuvent être négatifs pour les dettes en sens inverse (nettage cross-direction). Le validateur doit calculer la somme algébrique alignée sur le sens du virement.
+- Les `SettlementLine.amount_cents` sont **strictement positifs** (D-SIGN, ADR 0011 §1 ; CHECK `ck_settlement_lines_amount_positive`) : le sens du nettage cross-direction est porté par l'**orientation intrinsèque de chaque `Debt`** (`from_user_id`/`to_user_id`), jamais par un signe sur la ligne. Le validateur calcule la somme **signée** via le sens canonique des dettes (`Σ amount × signe_direction`, ADR 0011 §2 / D4), pas via des montants négatifs.
 - La suggestion UX automatique des dettes à netter est repoussée en V2 (cf. Q16). En E10, l'utilisateur sélectionne manuellement les dettes à apurer dans son UI.
 - E11 (overflow F10) bénéficiera des helpers `compute_remaining` et `list_open_debts_between` — anticiper leur signature utilisable.

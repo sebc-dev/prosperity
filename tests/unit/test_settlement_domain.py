@@ -39,6 +39,7 @@ from backend.modules.debts.domain import (
     SettlementValidator,
     UnknownDebtLineError,
 )
+from backend.shared.currency import Currency
 
 # UUID fixes et ordonnés : A < B < C par valeur entière (contrôle du tri D4).
 A = UUID(int=1)
@@ -51,7 +52,7 @@ def _ctx(
     debt_id: UUID,
     from_user_id: UUID = A,
     to_user_id: UUID = B,
-    currency: str = "EUR",
+    currency: Currency = "EUR",
     remaining_cents: int = 100,
 ) -> DebtContext:
     """Fabrique un `DebtContext` valide ; dette A→B EUR remaining 100 par défaut."""
@@ -535,6 +536,10 @@ class TestSettlementValidatorEdgeCases:
             validated.net_transfer_cents = 0  # type: ignore[misc]
         with pytest.raises(ValidationError):
             _ctx(debt_id=d).remaining_cents = 0  # type: ignore[misc]
+        # `frozen` épinglé sur les 3 value objects (le 3e directement, pas seulement
+        # via le `model_config` partagé) : mutation post-construction refusée.
+        with pytest.raises(ValidationError):
+            _line(debt_id=d, amount_cents=100).amount_cents = 0  # type: ignore[misc]
         # strict=True : une coercion str → int est refusée.
         with pytest.raises(ValidationError):
             SettlementLineInput(debt_id=d, amount_cents="100")  # type: ignore[arg-type]
@@ -552,6 +557,12 @@ class TestSettlementValidatorEdgeCases:
             NetTransferMismatchError,
         ):
             assert issubclass(err, SettlementValidationError)
+
+    def test_base_error_code_is_stable(self) -> None:
+        # La base n'est jamais levée par le validateur (il lève toujours une
+        # sous-classe), donc son `code` par défaut — canal client stable — n'est
+        # exercé par aucun chemin : on l'épingle explicitement contre une régression.
+        assert SettlementValidationError.code == "settlement_validation_error"
 
     @pytest.mark.parametrize(
         ("error_cls", "trigger"),
@@ -592,11 +603,21 @@ class TestSettlementValidatorEdgeCases:
 class TestSettlementValidatorProperties:
     @given(perm=st.permutations([0, 1, 2]))
     def test_net_invariant_under_line_permutation(self, perm: list[int]) -> None:
-        # 3 dettes A→B (40, 30, 10) ⇒ net = 80 quel que soit l'ordre d'arrivée.
+        # 3 dettes entre A et B en directions MIXTES (A→B 70, B→A 30, A→B 40) ⇒
+        # net orienté = +70 − 30 + 40 = 80 quel que soit l'ordre d'arrivée. En
+        # mêlant les deux signes (+1 `lo→hi`, −1 `hi→lo`), la property discrimine
+        # vraiment D4 (déterminisme du sens canonique sous permutation) — au-delà
+        # de la simple commutativité de l'addition à signe uniforme.
         d = [UUID(int=10), UUID(int=11), UUID(int=12)]
-        amounts = [40, 30, 10]
+        directions = [(A, B), (B, A), (A, B)]
+        amounts = [70, 30, 40]
         contexts = {
-            d[i]: _ctx(debt_id=d[i], from_user_id=A, to_user_id=B, remaining_cents=amounts[i])
+            d[i]: _ctx(
+                debt_id=d[i],
+                from_user_id=directions[i][0],
+                to_user_id=directions[i][1],
+                remaining_cents=amounts[i],
+            )
             for i in range(3)
         }
         lines = [_line(debt_id=d[i], amount_cents=amounts[i]) for i in perm]

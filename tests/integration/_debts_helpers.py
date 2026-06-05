@@ -7,6 +7,12 @@ module de test (couplage test→test + `reportPrivateUsage`). Module NON collect
 import-linter. Aucun comportement modifié : mêmes corps, noms rendus publics
 (`seed` ex-`_seed`, `Scenario` ex-`_Scenario`, `debt_count` ex-`_debt_count`),
 plus `share_request_count` (nouveau, typé) pour le consommateur S09.5.
+
+S10.3 ajoute `settle_debt`/`debt_id_between` (seed d'un `Settlement` virtuel +
+`SettlementLine`), factorisés depuis `test_debts_dashboard_service.py` et
+`test_debts_routes.py` (review S10.3 — un seul corps à maintenir au lieu de deux
+copies). Aucun service `create_settlement` n'existe encore (S10.4) : la ligne est
+insérée directement, ce qui suffit au chemin de lecture S10.3.
 """
 
 from __future__ import annotations
@@ -22,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from backend.modules.accounts.models import AccountMember
-from backend.modules.debts.models import Debt, ShareRequest
+from backend.modules.debts.models import Debt, Settlement, SettlementLine, ShareRequest
 from tests.factories.sqlalchemy import (
     AccountFactory,
     CategoryFactory,
@@ -129,3 +135,53 @@ async def share_request_count(session: AsyncSession, *, tx_id: uuid.UUID) -> int
         .where(ShareRequest.source_transaction_id == tx_id)
     )
     return int((await session.execute(stmt)).scalar_one())
+
+
+# Singleton household FK target seeded by the `household_singleton` fixture
+# (ADR 0010) — every `Settlement` row scopes to it.
+HOUSEHOLD_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
+
+async def debt_id_between(
+    session: AsyncSession, *, debtor_id: uuid.UUID, creditor_id: uuid.UUID
+) -> uuid.UUID:
+    """The materialised debt id for a (debtor → creditor) pair."""
+    return (
+        await session.execute(
+            select(Debt.id).where(Debt.from_user_id == debtor_id, Debt.to_user_id == creditor_id)
+        )
+    ).scalar_one()
+
+
+async def settle_debt(
+    session: AsyncSession, *, debt_id: uuid.UUID, amount_cents: int, created_by: uuid.UUID
+) -> None:
+    """Insert a virtual `Settlement` + one `SettlementLine` apurant `debt_id`.
+
+    No `create_settlement` service exists yet (S10.4) — the line is inserted
+    directly, which is all the S10.3 read path needs. The `virtual` type keeps
+    the seed self-contained (no linked transaction): the remaining formula is
+    orthogonal to the settlement `type`.
+    """
+
+    def _do(s: Session) -> None:
+        settlement = Settlement(
+            household_id=HOUSEHOLD_ID,
+            created_by=created_by,
+            type="virtual",
+            linked_transaction_id=None,
+            settled_at=dt.date(2026, 6, 3),
+        )
+        s.add(settlement)
+        s.flush()
+        s.add(
+            SettlementLine(
+                settlement_id=settlement.id,
+                debt_id=debt_id,
+                amount_cents=amount_cents,
+                currency="EUR",
+            )
+        )
+        s.flush()
+
+    await session.run_sync(_do)

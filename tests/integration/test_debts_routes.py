@@ -25,8 +25,22 @@ from sqlalchemy.orm import Session
 from backend.config import get_settings
 from backend.modules.auth.service.jwt import issue_access_token
 from tests.factories.sqlalchemy import CategoryFactory
+from tests.integration._debts_helpers import debt_id_between, settle_debt
 
 _settings = get_settings()
+
+
+async def _settle_debt(
+    session: AsyncSession, *, debtor_id: uuid.UUID, creditor_id: uuid.UUID, amount_cents: int
+) -> None:
+    """Settle the (debtor → creditor) debt — resolves its id then inserts a line.
+
+    Thin convenience wrapper over the shared `debt_id_between` + `settle_debt`
+    helpers (no duplicated settlement-insert body). The creditor is the settler.
+    """
+    debt_id = await debt_id_between(session, debtor_id=debtor_id, creditor_id=creditor_id)
+    await settle_debt(session, debt_id=debt_id, amount_cents=amount_cents, created_by=creditor_id)
+
 
 TxFactoryBundle = Callable[[], Awaitable[tuple[type, type, type, type]]]
 
@@ -384,3 +398,69 @@ async def test_by_counterparty_empty_for_user_without_debts(
     resp = await async_client.get("/debts/by-counterparty", headers=_bearer(s.alice_id))
     assert resp.status_code == 200
     assert resp.json()["items"] == []
+
+
+# ---------------------------------------------------------------------------
+# remaining_cents (S10.3) over HTTP
+# ---------------------------------------------------------------------------
+
+
+async def test_get_debts_exposes_remaining_cents_for_both_parties(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # 50€ debt − 30€ settled → remaining_cents 2000, exposed to creditor AND debtor.
+    s = await _seed(household_singleton, bound_transaction_factories, amount_cents=5000)
+    await _materialise_debt(async_client, s)
+    await _settle_debt(
+        household_singleton, debtor_id=s.bob_id, creditor_id=s.alice_id, amount_cents=3000
+    )
+
+    for uid in (s.alice_id, s.bob_id):
+        resp = await async_client.get("/debts", headers=_bearer(uid))
+        assert resp.status_code == 200, resp.text
+        [item] = resp.json()["items"]
+        assert item["remaining_cents"] == 2000
+
+
+async def test_get_debts_debtor_sees_remaining_but_source_still_masked(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # Non-regression masking (S09.4): the debtor sees remaining_cents (D5) yet
+    # source_transaction_id/account_id stay null and materialization_trace absent.
+    s = await _seed(household_singleton, bound_transaction_factories, amount_cents=5000)
+    await _materialise_debt(async_client, s)
+    await _settle_debt(
+        household_singleton, debtor_id=s.bob_id, creditor_id=s.alice_id, amount_cents=2000
+    )
+
+    resp = await async_client.get("/debts", headers=_bearer(s.bob_id))
+    [item] = resp.json()["items"]
+    assert item["remaining_cents"] == 3000  # visible to debtor
+    assert item["source_transaction_id"] is None  # still masked
+    assert item["account_id"] is None
+    assert "materialization_trace" not in item
+
+
+async def test_by_counterparty_aggregates_net_of_remainings(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # D6: by-counterparty nets the REMAINING (3000), not the 5000 initial amount;
+    # the partially settled debt still counts toward debts_count.
+    s = await _seed(household_singleton, bound_transaction_factories, amount_cents=5000)
+    await _materialise_debt(async_client, s)
+    await _settle_debt(
+        household_singleton, debtor_id=s.bob_id, creditor_id=s.alice_id, amount_cents=2000
+    )
+
+    resp = await async_client.get("/debts/by-counterparty", headers=_bearer(s.alice_id))
+    assert resp.status_code == 200, resp.text
+    [row] = resp.json()["items"]
+    assert row["user_id"] == str(s.bob_id)
+    assert row["net_amount"] == 3000
+    assert row["debts_count"] == 1

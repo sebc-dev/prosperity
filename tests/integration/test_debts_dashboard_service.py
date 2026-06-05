@@ -13,21 +13,50 @@ the production ones (active SR, tx-level `category_id`/`date`).
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass
 from decimal import Decimal
 
-from sqlalchemy import select, update
+from sqlalchemy import event, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from backend.modules.debts.models import Debt
-from backend.modules.debts.public import DebtDirection, list_debts_for_user
+from backend.modules.debts.public import (
+    DebtDirection,
+    aggregate_by_counterparty,
+    list_debts_for_user,
+)
 from backend.modules.debts.service.share_request import create_share_request
 from backend.modules.transactions.models import Transaction
 from tests.factories.sqlalchemy import CategoryFactory
+from tests.integration._debts_helpers import debt_id_between, settle_debt
+
+
+@contextlib.asynccontextmanager
+async def _count_select_debts(session: AsyncSession) -> AsyncGenerator[list[str]]:
+    """Capture every SQL statement executed on the session's connection.
+
+    Listens on the underlying sync connection (`before_cursor_execute`) so a
+    re-introduced N+1 (one `compute_remaining` per debt) would surface as extra
+    `SELECT ... FROM debts` statements. The N+1 lock is a real executable assert,
+    not a documented invariant.
+    """
+    sync_conn = (await session.connection()).sync_connection
+    statements: list[str] = []
+
+    def _before(conn, cursor, statement, parameters, ctx, executemany) -> None:  # noqa: ANN001, PLR0913
+        statements.append(statement)
+
+    event.listen(sync_conn, "before_cursor_execute", _before)
+    try:
+        yield statements
+    finally:
+        event.remove(sync_conn, "before_cursor_execute", _before)
+
 
 TxFactoryBundle = Callable[[], Awaitable[tuple[type, type, type, type]]]
 
@@ -374,3 +403,101 @@ async def test_order_tie_break_by_id_on_equal_created_at(
 
     debts = await list_debts_for_user(household_singleton, user_id=alice)
     assert [d.from_user_id for d in debts] == expected
+
+
+# ---------------------------------------------------------------------------
+# remaining_cents (S10.3) — read path enrichment + aggregate on the net balance
+# ---------------------------------------------------------------------------
+
+
+async def test_remaining_cents_visible_to_both_parties(
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # 50€ debt − 30€ settled → remaining 2000, visible to creditor AND debtor.
+    b = await _builder(household_singleton, bound_transaction_factories)
+    seed = await b.debt(creditor="alice@example.com", debtor="bob@example.com", amount_cents=5000)
+    debt_id = await debt_id_between(
+        household_singleton, creditor_id=seed.creditor_id, debtor_id=seed.debtor_id
+    )
+    await settle_debt(
+        household_singleton, debt_id=debt_id, amount_cents=3000, created_by=seed.creditor_id
+    )
+
+    [as_creditor] = await list_debts_for_user(household_singleton, user_id=seed.creditor_id)
+    [as_debtor] = await list_debts_for_user(household_singleton, user_id=seed.debtor_id)
+    assert as_creditor.remaining_cents == 2000
+    assert as_debtor.remaining_cents == 2000  # legitimate debtor info (D5)
+
+
+async def test_settled_debt_listed_with_zero_remaining(
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # D7: a fully settled debt stays in GET /debts (complete register) with
+    # remaining_cents = 0 — only list_open_debts_between filters it out.
+    b = await _builder(household_singleton, bound_transaction_factories)
+    seed = await b.debt(creditor="alice@example.com", debtor="bob@example.com", amount_cents=5000)
+    debt_id = await debt_id_between(
+        household_singleton, creditor_id=seed.creditor_id, debtor_id=seed.debtor_id
+    )
+    await settle_debt(
+        household_singleton, debt_id=debt_id, amount_cents=5000, created_by=seed.creditor_id
+    )
+
+    [debt] = await list_debts_for_user(household_singleton, user_id=seed.creditor_id)
+    assert debt.remaining_cents == 0
+
+
+async def test_aggregate_uses_remaining_balance(
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # D6: by-counterparty aggregates the NET of remainings — a partially settled
+    # debt contributes its remaining (3000), not its initial amount (5000), yet
+    # still counts toward debts_count.
+    b = await _builder(household_singleton, bound_transaction_factories)
+    seed = await b.debt(creditor="alice@example.com", debtor="bob@example.com", amount_cents=5000)
+    debt_id = await debt_id_between(
+        household_singleton, creditor_id=seed.creditor_id, debtor_id=seed.debtor_id
+    )
+    await settle_debt(
+        household_singleton, debt_id=debt_id, amount_cents=2000, created_by=seed.creditor_id
+    )
+
+    [row] = await aggregate_by_counterparty(household_singleton, user_id=seed.creditor_id)
+    assert row.user_id == seed.debtor_id
+    assert row.net_amount_cents == 3000  # remaining, not the 5000 initial
+    assert row.debts_count == 1
+    # D8: the net carries the debt currency through the remaining-based aggregate.
+    assert row.currency == "EUR"
+
+
+async def test_list_debts_is_single_query_no_n_plus_1(
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # K = 2 debts (Alice creditor on Bob AND Charlie), each partially settled.
+    # The remaining is computed in the SAME query (shared `_settled_subq`), so a
+    # SINGLE `SELECT ... FROM debts` is issued regardless of the row count — a
+    # re-introduced per-debt `compute_remaining` (N+1) would fail this.
+    b = await _builder(household_singleton, bound_transaction_factories)
+    alice = await b.user("alice@example.com")
+    bob = await b.debt(creditor="alice@example.com", debtor="bob@example.com", amount_cents=5000)
+    charlie = await b.debt(
+        creditor="alice@example.com", debtor="charlie@example.com", amount_cents=4000
+    )
+    for seed in (bob, charlie):
+        debt_id = await debt_id_between(
+            household_singleton, creditor_id=seed.creditor_id, debtor_id=seed.debtor_id
+        )
+        await settle_debt(
+            household_singleton, debt_id=debt_id, amount_cents=1000, created_by=seed.creditor_id
+        )
+
+    async with _count_select_debts(household_singleton) as statements:
+        debts = await list_debts_for_user(household_singleton, user_id=alice)
+
+    assert len(debts) == 2  # K ≥ 2, so an N+1 would be observable
+    select_debts = [s for s in statements if "FROM debts" in s]
+    assert len(select_debts) == 1, select_debts

@@ -121,6 +121,7 @@ class DebtResponse(BaseModel):
     created_at: dt.datetime
     source_transaction_id: UUID | None
     account_id: UUID | None
+    remaining_cents: int  # solde restant (S10.3) — visible des deux parties
 
     @classmethod
     def from_context(cls, d: DebtWithContext) -> DebtResponse:

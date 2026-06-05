@@ -102,7 +102,7 @@ Entité du module `debts` qui matérialise un règlement d'une ou plusieurs dett
 _Avoid_: remboursement, paiement, règlement (en français mixte)
 
 **`SettlementLine`** :
-Ligne d'un `Settlement` qui apure une portion (`amount_cents`, peut être négatif si la dette pointe dans l'autre sens) d'une `Debt` donnée. **Solde restant d'une dette = `debt.amount_cents - sum(settlement_lines.amount_cents)`** : pas d'état sur `Debt`, le statut "réglée / partielle / ouverte" se déduit du calcul. Compatible avec ADR 0002 (Debt projection read-only).
+Ligne d'un `Settlement` qui apure une portion (`amount_cents` strictement positif ; le sens du nettage est porté par l'orientation de la `Debt`, pas par un signe sur la ligne — décision D-SIGN, ADR 0011) d'une `Debt` donnée. **Solde restant d'une dette = `debt.amount_cents - sum(settlement_lines.amount_cents)`** : pas d'état sur `Debt`, le statut "réglée / partielle / ouverte" se déduit du calcul. Compatible avec ADR 0002 (Debt projection read-only).
 
 ### Budgets
 

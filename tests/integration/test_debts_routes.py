@@ -19,57 +19,27 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from httpx import AsyncClient
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
 from backend.modules.auth.service.jwt import issue_access_token
-from backend.modules.debts.models import Debt, Settlement, SettlementLine
 from tests.factories.sqlalchemy import CategoryFactory
+from tests.integration._debts_helpers import debt_id_between, settle_debt
 
 _settings = get_settings()
 
-HOUSEHOLD_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
-
 
 async def _settle_debt(
-    session: AsyncSession,
-    *,
-    debtor_id: uuid.UUID,
-    creditor_id: uuid.UUID,
-    amount_cents: int,
+    session: AsyncSession, *, debtor_id: uuid.UUID, creditor_id: uuid.UUID, amount_cents: int
 ) -> None:
-    """Insert a virtual `Settlement` + line apurant the (debtor → creditor) debt.
+    """Settle the (debtor → creditor) debt — resolves its id then inserts a line.
 
-    No `create_settlement` service exists yet (S10.4); the line is inserted
-    directly — enough for the S10.3 read path under test.
+    Thin convenience wrapper over the shared `debt_id_between` + `settle_debt`
+    helpers (no duplicated settlement-insert body). The creditor is the settler.
     """
-
-    def _do(s: Session) -> None:
-        debt_id = s.execute(
-            select(Debt.id).where(Debt.from_user_id == debtor_id, Debt.to_user_id == creditor_id)
-        ).scalar_one()
-        settlement = Settlement(
-            household_id=HOUSEHOLD_ID,
-            created_by=creditor_id,
-            type="virtual",
-            linked_transaction_id=None,
-            settled_at=dt.date(2026, 6, 3),
-        )
-        s.add(settlement)
-        s.flush()
-        s.add(
-            SettlementLine(
-                settlement_id=settlement.id,
-                debt_id=debt_id,
-                amount_cents=amount_cents,
-                currency="EUR",
-            )
-        )
-        s.flush()
-
-    await session.run_sync(_do)
+    debt_id = await debt_id_between(session, debtor_id=debtor_id, creditor_id=creditor_id)
+    await settle_debt(session, debt_id=debt_id, amount_cents=amount_cents, created_by=creditor_id)
 
 
 TxFactoryBundle = Callable[[], Awaitable[tuple[type, type, type, type]]]

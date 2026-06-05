@@ -94,7 +94,7 @@ def _reader_owns_source(*, origin: str, reader_id: UUID, to_user_id: UUID) -> bo
     return origin == "personal_share_request" and reader_id == to_user_id
 
 
-def _project_debt(  # noqa: PLR0913 — flat keyword-only allowlist constructor (D6)
+def _project_debt(  # noqa: PLR0913 — flat keyword-only allowlist constructor
     debt: Debt,
     *,
     reader_id: UUID,
@@ -104,7 +104,7 @@ def _project_debt(  # noqa: PLR0913 — flat keyword-only allowlist constructor 
     date: dt.date | None,
     remaining_cents: int,
 ) -> DebtWithContext:
-    """UNIQUE constructeur de `DebtWithContext` : allowlist + masquage (D6).
+    """UNIQUE constructeur de `DebtWithContext` : allowlist + masquage.
 
     `requested_by` est la valeur AUTORITATIVE lue sur le `ShareRequest` actif
     joint à la lecture (créancier = owner du compte source pour

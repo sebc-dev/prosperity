@@ -126,15 +126,16 @@ async def list_open_debts_between(
     """Dettes (les DEUX sens) entre {user_a, user_b} dont remaining > 0.
 
     Symétrique : (from=a,to=b) OU (from=b,to=a). Orientation (`from`/`to`)
-    préservée. Tri déterministe `(created_at, id)`. `GROUP BY/HAVING` (D1).
+    préservée. Tri déterministe `(created_at, id)`. Filtre `remaining > 0` en
+    `WHERE` (D1).
 
     ⚠️ Primitive serveur NON bornée au foyer (D9) : accepte un couple ARBITRAIRE
     d'utilisateurs. L'appelant (S10.4/E11) DOIT vérifier que les deux users
     appartiennent au même foyer que le token avant usage. NE JAMAIS router
     directement.
     """
-    # Expression `remaining` STOCKÉE UNE FOIS : réutilisée par `.label()` ET
-    # `.having()` — pas de ré-écriture divergente.
+    # Expression `remaining` STOCKÉE UNE FOIS : réutilisée par le `.label()` du
+    # SELECT ET le filtre `.where()` — pas de ré-écriture divergente.
     remaining_expr = Debt.amount_cents - _settled_subq(Debt.id)
     remaining = remaining_expr.label("remaining")
     stmt = (
@@ -145,10 +146,14 @@ async def list_open_debts_between(
             or_(
                 and_(Debt.from_user_id == user_a, Debt.to_user_id == user_b),
                 and_(Debt.from_user_id == user_b, Debt.to_user_id == user_a),
-            )
+            ),
+            # `remaining > 0` est un filtre ligne-à-ligne : la requête externe ne
+            # contient AUCUN agrégat (la somme vit dans la sous-requête scalaire
+            # corrélée `_settled_subq`), et sans JOIN aucune duplication de ligne
+            # n'est possible ⇒ `WHERE` est l'idiome correct (ni `GROUP BY` ni
+            # `HAVING` nécessaires).
+            remaining_expr > 0,
         )
-        .group_by(Debt.id)  # Postgres : debts.* fonctionnellement dépendant de la PK
-        .having(remaining_expr > 0)
         .order_by(Debt.created_at, Debt.id)
     )
     rows = (await session.execute(stmt)).all()

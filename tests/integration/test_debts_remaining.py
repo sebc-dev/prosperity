@@ -272,10 +272,13 @@ async def test_lines_of_other_debt_do_not_affect_remaining(
         household_singleton, from_user_id=debtor.id, to_user_id=creditor.id, amount_cents=9000
     )
     s = await _make_settlement(household_singleton, created_by=creditor.id)
-    await _make_line(household_singleton, settlement_id=s.id, debt_id=d2.id, amount_cents=4000)
+    await _make_line(household_singleton, settlement_id=s.id, debt_id=d2.id, amount_cents=3000)
 
+    # Distinct expected remainings (5000 vs 6000) remove any value-collision
+    # ambiguity: D1 stays at its full 5000 (untouched), D2 reflects only its OWN
+    # line (9000 − 3000 = 6000).
     assert await compute_remaining(household_singleton, debt_id=d1.id) == 5000  # untouched
-    assert await compute_remaining(household_singleton, debt_id=d2.id) == 5000
+    assert await compute_remaining(household_singleton, debt_id=d2.id) == 6000  # 9000 − 3000
 
 
 # ---------------------------------------------------------------------------
@@ -308,18 +311,44 @@ async def test_list_open_debts_is_symmetric_and_oriented(
 async def test_list_open_debts_carries_remaining_and_currency(
     household_singleton: AsyncSession, bound_user_factory: UserFactory
 ) -> None:
-    # (xi) currency reported as-is from Debt; remaining is the partial balance.
+    # (xi) currency reported AS-IS from the Debt row; remaining is the partial
+    # balance. A non-EUR currency ("USD") locks that `OpenDebt.currency` is read
+    # from `Debt.currency` and not coincidentally matching a single seeded EUR.
     a, b = await bound_user_factory(), await bound_user_factory()
     debt = await _seed_debt(
-        household_singleton, from_user_id=a.id, to_user_id=b.id, amount_cents=5000, currency="EUR"
+        household_singleton, from_user_id=a.id, to_user_id=b.id, amount_cents=5000, currency="USD"
     )
     s = await _make_settlement(household_singleton, created_by=b.id)
-    await _make_line(household_singleton, settlement_id=s.id, debt_id=debt.id, amount_cents=2000)
+    await _make_line(
+        household_singleton, settlement_id=s.id, debt_id=debt.id, amount_cents=2000, currency="USD"
+    )
 
     [od] = await list_open_debts_between(household_singleton, user_a=a.id, user_b=b.id)
     assert od.amount_cents == 5000
     assert od.remaining_cents == 3000
-    assert od.currency == "EUR"
+    assert od.currency == "USD"
+
+
+async def test_list_open_debts_excludes_over_settled_debt(
+    household_singleton: AsyncSession, bound_user_factory: UserFactory
+) -> None:
+    # An over-settled debt (Σ lines > amount → remaining < 0) is NOT "open": the
+    # `WHERE remaining > 0` filter excludes it, just like a fully settled one
+    # (remaining == 0). Locks the strict `> 0` boundary on the negative side.
+    a, b = await bound_user_factory(), await bound_user_factory()
+    over = await _seed_debt(
+        household_singleton, from_user_id=a.id, to_user_id=b.id, amount_cents=5000
+    )
+    still_open = await _seed_debt(
+        household_singleton, from_user_id=a.id, to_user_id=b.id, amount_cents=4000
+    )
+    s = await _make_settlement(household_singleton, created_by=b.id)
+    await _make_line(household_singleton, settlement_id=s.id, debt_id=over.id, amount_cents=8000)
+
+    # Sanity: the over-settled debt really has a negative remaining (D2).
+    assert await compute_remaining(household_singleton, debt_id=over.id) == -3000
+    open_debts = await list_open_debts_between(household_singleton, user_a=a.id, user_b=b.id)
+    assert [od.debt_id for od in open_debts] == [still_open.id]  # over-settled excluded
 
 
 async def test_list_open_debts_excludes_third_parties(

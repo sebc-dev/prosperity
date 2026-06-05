@@ -24,7 +24,7 @@ from sqlalchemy import event, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
-from backend.modules.debts.models import Debt, Settlement, SettlementLine
+from backend.modules.debts.models import Debt
 from backend.modules.debts.public import (
     DebtDirection,
     aggregate_by_counterparty,
@@ -33,51 +33,7 @@ from backend.modules.debts.public import (
 from backend.modules.debts.service.share_request import create_share_request
 from backend.modules.transactions.models import Transaction
 from tests.factories.sqlalchemy import CategoryFactory
-
-HOUSEHOLD_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
-
-
-async def _debt_id(
-    session: AsyncSession, *, creditor_id: uuid.UUID, debtor_id: uuid.UUID
-) -> uuid.UUID:
-    """The materialised debt id for a (debtor → creditor) pair."""
-    return (
-        await session.execute(
-            select(Debt.id).where(Debt.from_user_id == debtor_id, Debt.to_user_id == creditor_id)
-        )
-    ).scalar_one()
-
-
-async def _settle(
-    session: AsyncSession, *, debt_id: uuid.UUID, amount_cents: int, created_by: uuid.UUID
-) -> None:
-    """Insert a virtual `Settlement` + one `SettlementLine` apurant `debt_id`.
-
-    No `create_settlement` service exists yet (S10.4) — the line is inserted
-    directly, which is all S10.3's read path needs.
-    """
-
-    def _do(s: Session) -> None:
-        settlement = Settlement(
-            household_id=HOUSEHOLD_ID,
-            created_by=created_by,
-            type="virtual",
-            linked_transaction_id=None,
-            settled_at=dt.date(2026, 6, 3),
-        )
-        s.add(settlement)
-        s.flush()
-        s.add(
-            SettlementLine(
-                settlement_id=settlement.id,
-                debt_id=debt_id,
-                amount_cents=amount_cents,
-                currency="EUR",
-            )
-        )
-        s.flush()
-
-    await session.run_sync(_do)
+from tests.integration._debts_helpers import debt_id_between, settle_debt
 
 
 @contextlib.asynccontextmanager
@@ -461,10 +417,10 @@ async def test_remaining_cents_visible_to_both_parties(
     # 50€ debt − 30€ settled → remaining 2000, visible to creditor AND debtor.
     b = await _builder(household_singleton, bound_transaction_factories)
     seed = await b.debt(creditor="alice@example.com", debtor="bob@example.com", amount_cents=5000)
-    debt_id = await _debt_id(
+    debt_id = await debt_id_between(
         household_singleton, creditor_id=seed.creditor_id, debtor_id=seed.debtor_id
     )
-    await _settle(
+    await settle_debt(
         household_singleton, debt_id=debt_id, amount_cents=3000, created_by=seed.creditor_id
     )
 
@@ -482,10 +438,10 @@ async def test_settled_debt_listed_with_zero_remaining(
     # remaining_cents = 0 — only list_open_debts_between filters it out.
     b = await _builder(household_singleton, bound_transaction_factories)
     seed = await b.debt(creditor="alice@example.com", debtor="bob@example.com", amount_cents=5000)
-    debt_id = await _debt_id(
+    debt_id = await debt_id_between(
         household_singleton, creditor_id=seed.creditor_id, debtor_id=seed.debtor_id
     )
-    await _settle(
+    await settle_debt(
         household_singleton, debt_id=debt_id, amount_cents=5000, created_by=seed.creditor_id
     )
 
@@ -502,10 +458,10 @@ async def test_aggregate_uses_remaining_balance(
     # still counts toward debts_count.
     b = await _builder(household_singleton, bound_transaction_factories)
     seed = await b.debt(creditor="alice@example.com", debtor="bob@example.com", amount_cents=5000)
-    debt_id = await _debt_id(
+    debt_id = await debt_id_between(
         household_singleton, creditor_id=seed.creditor_id, debtor_id=seed.debtor_id
     )
-    await _settle(
+    await settle_debt(
         household_singleton, debt_id=debt_id, amount_cents=2000, created_by=seed.creditor_id
     )
 
@@ -530,10 +486,10 @@ async def test_list_debts_is_single_query_no_n_plus_1(
         creditor="alice@example.com", debtor="charlie@example.com", amount_cents=4000
     )
     for seed in (bob, charlie):
-        debt_id = await _debt_id(
+        debt_id = await debt_id_between(
             household_singleton, creditor_id=seed.creditor_id, debtor_id=seed.debtor_id
         )
-        await _settle(
+        await settle_debt(
             household_singleton, debt_id=debt_id, amount_cents=1000, created_by=seed.creditor_id
         )
 

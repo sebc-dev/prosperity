@@ -19,14 +19,58 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from backend.config import get_settings
 from backend.modules.auth.service.jwt import issue_access_token
+from backend.modules.debts.models import Debt, Settlement, SettlementLine
 from tests.factories.sqlalchemy import CategoryFactory
 
 _settings = get_settings()
+
+HOUSEHOLD_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
+
+async def _settle_debt(
+    session: AsyncSession,
+    *,
+    debtor_id: uuid.UUID,
+    creditor_id: uuid.UUID,
+    amount_cents: int,
+) -> None:
+    """Insert a virtual `Settlement` + line apurant the (debtor → creditor) debt.
+
+    No `create_settlement` service exists yet (S10.4); the line is inserted
+    directly — enough for the S10.3 read path under test.
+    """
+
+    def _do(s: Session) -> None:
+        debt_id = s.execute(
+            select(Debt.id).where(Debt.from_user_id == debtor_id, Debt.to_user_id == creditor_id)
+        ).scalar_one()
+        settlement = Settlement(
+            household_id=HOUSEHOLD_ID,
+            created_by=creditor_id,
+            type="virtual",
+            linked_transaction_id=None,
+            settled_at=dt.date(2026, 6, 3),
+        )
+        s.add(settlement)
+        s.flush()
+        s.add(
+            SettlementLine(
+                settlement_id=settlement.id,
+                debt_id=debt_id,
+                amount_cents=amount_cents,
+                currency="EUR",
+            )
+        )
+        s.flush()
+
+    await session.run_sync(_do)
+
 
 TxFactoryBundle = Callable[[], Awaitable[tuple[type, type, type, type]]]
 
@@ -384,3 +428,69 @@ async def test_by_counterparty_empty_for_user_without_debts(
     resp = await async_client.get("/debts/by-counterparty", headers=_bearer(s.alice_id))
     assert resp.status_code == 200
     assert resp.json()["items"] == []
+
+
+# ---------------------------------------------------------------------------
+# remaining_cents (S10.3) over HTTP
+# ---------------------------------------------------------------------------
+
+
+async def test_get_debts_exposes_remaining_cents_for_both_parties(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # 50€ debt − 30€ settled → remaining_cents 2000, exposed to creditor AND debtor.
+    s = await _seed(household_singleton, bound_transaction_factories, amount_cents=5000)
+    await _materialise_debt(async_client, s)
+    await _settle_debt(
+        household_singleton, debtor_id=s.bob_id, creditor_id=s.alice_id, amount_cents=3000
+    )
+
+    for uid in (s.alice_id, s.bob_id):
+        resp = await async_client.get("/debts", headers=_bearer(uid))
+        assert resp.status_code == 200, resp.text
+        [item] = resp.json()["items"]
+        assert item["remaining_cents"] == 2000
+
+
+async def test_get_debts_debtor_sees_remaining_but_source_still_masked(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # Non-regression masking (S09.4): the debtor sees remaining_cents (D5) yet
+    # source_transaction_id/account_id stay null and materialization_trace absent.
+    s = await _seed(household_singleton, bound_transaction_factories, amount_cents=5000)
+    await _materialise_debt(async_client, s)
+    await _settle_debt(
+        household_singleton, debtor_id=s.bob_id, creditor_id=s.alice_id, amount_cents=2000
+    )
+
+    resp = await async_client.get("/debts", headers=_bearer(s.bob_id))
+    [item] = resp.json()["items"]
+    assert item["remaining_cents"] == 3000  # visible to debtor
+    assert item["source_transaction_id"] is None  # still masked
+    assert item["account_id"] is None
+    assert "materialization_trace" not in item
+
+
+async def test_by_counterparty_aggregates_net_of_remainings(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+) -> None:
+    # D6: by-counterparty nets the REMAINING (3000), not the 5000 initial amount;
+    # the partially settled debt still counts toward debts_count.
+    s = await _seed(household_singleton, bound_transaction_factories, amount_cents=5000)
+    await _materialise_debt(async_client, s)
+    await _settle_debt(
+        household_singleton, debtor_id=s.bob_id, creditor_id=s.alice_id, amount_cents=2000
+    )
+
+    resp = await async_client.get("/debts/by-counterparty", headers=_bearer(s.alice_id))
+    assert resp.status_code == 200, resp.text
+    [row] = resp.json()["items"]
+    assert row["user_id"] == str(s.bob_id)
+    assert row["net_amount"] == 3000
+    assert row["debts_count"] == 1

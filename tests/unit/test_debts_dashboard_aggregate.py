@@ -35,8 +35,20 @@ from backend.shared.money import IncompatibleCurrencyError
 _CREATED_AT = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
 
 
-def _debt(*, frm: UUID, to: UUID, amount_cents: int, currency: str = "EUR") -> DebtWithContext:
-    """A minimal `DebtWithContext` for the aggregate (masked fields irrelevant here)."""
+def _debt(
+    *,
+    frm: UUID,
+    to: UUID,
+    amount_cents: int,
+    currency: str = "EUR",
+    remaining_cents: int | None = None,
+) -> DebtWithContext:
+    """A minimal `DebtWithContext` for the aggregate (masked fields irrelevant here).
+
+    `remaining_cents` defaults to `amount_cents` (no settlement → remaining ==
+    amount, S09.4 non-regression). Pass it explicitly to model a partially
+    settled debt — the aggregate sums the REMAINING, not the initial amount (D6).
+    """
     return DebtWithContext(
         from_user_id=frm,
         to_user_id=to,
@@ -50,6 +62,7 @@ def _debt(*, frm: UUID, to: UUID, amount_cents: int, currency: str = "EUR") -> D
         created_at=_CREATED_AT,
         source_transaction_id=None,
         account_id=None,
+        remaining_cents=amount_cents if remaining_cents is None else remaining_cents,
     )
 
 
@@ -91,6 +104,30 @@ def test_net_offsets_two_directions() -> None:
     assert rows[0].user_id == bob
     assert rows[0].net_amount_cents == 2500
     assert rows[0].debts_count == 2
+
+
+def test_net_uses_remaining_not_initial_amount() -> None:
+    # D6: a partially settled debt contributes its REMAINING, not its initial
+    # `amount_cents`. Bob owes Alice 40€ initially, 15€ already settled → net 25€.
+    me, bob = uuid4(), uuid4()
+    rows = _aggregate_net(
+        [_debt(frm=bob, to=me, amount_cents=4000, remaining_cents=1500)], viewer_id=me
+    )
+    assert len(rows) == 1
+    assert rows[0].user_id == bob
+    assert rows[0].net_amount_cents == 1500  # remaining, not the 4000 initial
+
+
+def test_zero_remaining_debt_still_counts() -> None:
+    # D7: a fully settled debt (remaining 0) contributes 0 to the net but still
+    # increments `debts_count` (the dashboard is the complete register).
+    me, bob = uuid4(), uuid4()
+    rows = _aggregate_net(
+        [_debt(frm=bob, to=me, amount_cents=4000, remaining_cents=0)], viewer_id=me
+    )
+    assert len(rows) == 1
+    assert rows[0].net_amount_cents == 0
+    assert rows[0].debts_count == 1
 
 
 def test_net_zero_on_exact_offset() -> None:
@@ -150,26 +187,31 @@ def test_aggregate_net_raises_on_mixed_currency() -> None:
 _A = UUID("00000000-0000-0000-0000-0000000000aa")
 _B = UUID("00000000-0000-0000-0000-0000000000bb")
 
-# (a_is_creditor, amount_cents): if True the debt is B→A (A is creditor), else A→B.
+# (a_is_creditor, remaining_cents): if True the debt is B→A (A is creditor), else
+# A→B. `remaining_cents` spans NEGATIVE values (∈ [−10⁹, 10⁹]) to lock D2 at the
+# unit level: `_aggregate_net` sums the remaining via `Money(-x)` which must not
+# raise on a negative balance (no clamp — an over-settlement stays visible).
 _debt_specs = st.lists(
-    st.tuples(st.booleans(), st.integers(min_value=1, max_value=10**9)),
+    st.tuples(st.booleans(), st.integers(min_value=-(10**9), max_value=10**9)),
     max_size=20,
 )
 
 
 @given(specs=_debt_specs)
 @example(specs=[(True, 4000), (False, 1500)])  # pins the concrete offset case (#3)
+@example(specs=[(True, -2500)])  # pins a negative-remaining debt (D2)
 def test_property_net_is_antisymmetric_by_viewer(specs: list[tuple[bool, int]]) -> None:
     """net(A sees B) == -net(B sees A), and the counts match (D10).
 
     Non-tautological: relates two independent calls with swapped viewers, not a
-    restatement of the implementation.
+    restatement of the implementation. The aggregate sums `remaining_cents`, so
+    the spec generates remaining balances (incl. negative — D2).
     """
     debts = [
-        _debt(frm=_B, to=_A, amount_cents=amt)
+        _debt(frm=_B, to=_A, amount_cents=abs(rem) + 1, remaining_cents=rem)
         if a_creditor
-        else _debt(frm=_A, to=_B, amount_cents=amt)
-        for a_creditor, amt in specs
+        else _debt(frm=_A, to=_B, amount_cents=abs(rem) + 1, remaining_cents=rem)
+        for a_creditor, rem in specs
     ]
     from_a = _aggregate_net(debts, viewer_id=_A)
     from_b = _aggregate_net(debts, viewer_id=_B)

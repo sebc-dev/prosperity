@@ -47,6 +47,7 @@ def _project(debt: Debt, *, reader: UUID) -> DebtWithContext:
         short_label="x",
         category_id=None,
         date=None,
+        remaining_cents=debt.amount_cents,
     )
 
 
@@ -91,5 +92,6 @@ def test_short_label_none_propagates() -> None:
         short_label=None,
         category_id=None,
         date=None,
+        remaining_cents=debt.amount_cents,
     )
     assert view.short_label is None

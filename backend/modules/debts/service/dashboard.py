@@ -34,6 +34,9 @@ from sqlalchemy import Row, and_, column, or_, select, table
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.debts.models import Debt, ShareRequest
+from backend.modules.debts.service.remaining import (
+    _settled_subq,  # pyright: ignore[reportPrivateUsage]  # expression PARTAGÉE intra-debts.service (D1)
+)
 from backend.shared.money import Money
 
 __all__ = [
@@ -78,6 +81,7 @@ class DebtWithContext:
     created_at: dt.datetime
     source_transaction_id: UUID | None  # masqué (None) si reader != owner
     account_id: UUID | None  # masqué (None) si reader != owner
+    remaining_cents: int  # solde restant (S10.3) — VISIBLE des deux parties (non masqué)
 
 
 def _reader_owns_source(*, origin: str, reader_id: UUID, to_user_id: UUID) -> bool:
@@ -98,6 +102,7 @@ def _project_debt(  # noqa: PLR0913 — flat keyword-only allowlist constructor 
     short_label: str | None,
     category_id: UUID | None,
     date: dt.date | None,
+    remaining_cents: int,
 ) -> DebtWithContext:
     """UNIQUE constructeur de `DebtWithContext` : allowlist + masquage (D6).
 
@@ -122,6 +127,10 @@ def _project_debt(  # noqa: PLR0913 — flat keyword-only allowlist constructor 
         created_at=debt.created_at,
         source_transaction_id=debt.source_transaction_id if owns else None,
         account_id=debt.account_id if owns else None,
+        # `remaining_cents` n'est PAS masqué (D5) : information légitime du
+        # débiteur (glossaire) — il voit déjà `amount`, le restant n'expose pas
+        # le détail des lignes.
+        remaining_cents=remaining_cents,
     )
 
 
@@ -157,6 +166,11 @@ async def list_debts_for_user(
             )
         )
 
+    # Solde restant (S10.3) calculé dans la MÊME requête via le helper PARTAGÉ
+    # `_settled_subq` (sous-requête scalaire corrélée, expression identique à
+    # `remaining.py` — D1) : pas un appel `compute_remaining` par dette ⇒ aucun
+    # N+1 (verrouillé par un compteur SQL en intégration).
+    remaining_cents = (Debt.amount_cents - _settled_subq(Debt.id)).label("remaining_cents")
     stmt = (
         select(
             Debt,
@@ -164,6 +178,7 @@ async def list_debts_for_user(
             ShareRequest.requested_by,
             _transactions.c.category_id,
             _transactions.c.date,
+            remaining_cents,
         )
         .outerjoin(
             ShareRequest,
@@ -188,6 +203,9 @@ async def list_debts_for_user(
             short_label=r[1],
             category_id=r[3],
             date=r[4],
+            # `SUM(bigint)` est `numeric` en Postgres ⇒ l'expression remonte un
+            # `Decimal` ; cast vers le contrat int (centimes) du DTO.
+            remaining_cents=int(r[5]),
         )
         for r in rows
     ]
@@ -214,9 +232,14 @@ class CounterpartyNet:
 def _aggregate_net(debts: list[DebtWithContext], *, viewer_id: UUID) -> list[CounterpartyNet]:
     """PUR : agrège par contrepartie le net orienté (testable example-based).
 
-    net(C) = Σ(dettes C→moi) − Σ(dettes moi→C). `+` quand C me doit, `−` quand
-    je dois à C. Centimes via `Money` (lève `IncompatibleCurrencyError` sur
-    devises mixtes — fail-safe ADR 0008). Tri déterministe par `user_id`.
+    net(C) = Σ(restant C→moi) − Σ(restant moi→C). `+` quand C me doit, `−` quand
+    je dois à C. Agrège le **solde restant** (S10.3, D6), pas le montant initial :
+    une dette réglée contribue 0 (et n'apparaît plus au net), une dette
+    partiellement réglée contribue son `remaining_cents`. Sans settlement,
+    `remaining == amount` ⇒ comportement S09.4 identique (non-régression). Une
+    dette soldée incrémente tout de même `debts_count` (registre complet, D7).
+    Centimes via `Money` (lève `IncompatibleCurrencyError` sur devises mixtes —
+    fail-safe ADR 0008). Tri déterministe par `user_id`.
 
     Précondition : chaque dette a `viewer_id` ∈ {from_user_id, to_user_id}
     (garanti par `list_debts_for_user`, borné au token). La branche `else`
@@ -228,9 +251,9 @@ def _aggregate_net(debts: list[DebtWithContext], *, viewer_id: UUID) -> list[Cou
     counts: dict[UUID, int] = {}
     for d in debts:
         if d.to_user_id == viewer_id:  # C = from_user_id me doit
-            cp, signed = d.from_user_id, Money(d.amount_cents, d.currency)  # type: ignore[arg-type]
+            cp, signed = d.from_user_id, Money(d.remaining_cents, d.currency)  # type: ignore[arg-type]
         else:  # je dois à C = to_user_id
-            cp, signed = d.to_user_id, Money(-d.amount_cents, d.currency)  # type: ignore[arg-type]
+            cp, signed = d.to_user_id, Money(-d.remaining_cents, d.currency)  # type: ignore[arg-type]
         nets[cp] = nets[cp] + signed if cp in nets else signed
         counts[cp] = counts.get(cp, 0) + 1
     return [

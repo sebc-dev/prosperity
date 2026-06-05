@@ -162,6 +162,36 @@ table refresh_tokens
   idx ix_refresh_tokens_user_id INDEX: user_id
   idx uq_refresh_tokens_token_hash UNIQUE: token_hash
 
+table settlement_lines
+  col amount_cents: BIGINT NOT NULL
+  col currency: VARCHAR(3) NOT NULL
+  col debt_id: UUID NOT NULL
+  col id: UUID NOT NULL
+  col settlement_id: UUID NOT NULL
+  pk pk_settlement_lines(id)
+  fk fk_settlement_lines_debt_id_debts: (debt_id) -> debts(id) ON DELETE CASCADE
+  fk fk_settlement_lines_settlement_id_settlements: (settlement_id) -> settlements(id) ON DELETE CASCADE
+  ck ck_settlement_lines_amount_positive: (amount_cents > 0)
+  idx ix_settlement_lines_debt_id INDEX: debt_id
+  idx ix_settlement_lines_settlement_id INDEX: settlement_id
+
+table settlements
+  col created_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col created_by: UUID NOT NULL
+  col household_id: UUID NOT NULL
+  col id: UUID NOT NULL
+  col linked_transaction_id: UUID NULL
+  col note: TEXT NULL
+  col settled_at: DATE NOT NULL
+  col type: VARCHAR NOT NULL
+  pk pk_settlements(id)
+  fk fk_settlements_created_by_users: (created_by) -> users(id) ON DELETE RESTRICT
+  fk fk_settlements_household_id_household: (household_id) -> household(id)
+  fk fk_settlements_linked_transaction_id_transactions: (linked_transaction_id) -> transactions(id) ON DELETE RESTRICT
+  ck ck_settlements_virtual_no_link: (type::text = 'virtual'::text) = (linked_transaction_id IS NULL)
+  idx ix_settlements_created_by INDEX: created_by
+  idx ix_settlements_linked_transaction_id INDEX: linked_transaction_id
+
 table share_requests
   col created_at: TIMESTAMP WITH TIME ZONE NOT NULL
   col id: UUID NOT NULL

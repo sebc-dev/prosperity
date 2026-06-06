@@ -21,7 +21,7 @@ Livrable agrégé : Alice paie 100€ Courses depuis le compte commun 50/50 alor
 ## Stories
 
 > **Issues GitHub** : #164 (S11.1) · #165 (S11.2) · #166 (S11.3) · #167 (S11.4) · #168 (S11.5).
-> **Deltas réconciliés au moment du découpage en issues** : (D1) le champ `debt_generation_override` + son éditabilité post-`confirmed` sont **déjà livrés en E07** (migration `0010`, `EDITABLE_AFTER_CONFIRMED`, issue #114) → S11.1 ne crée rien, elle **verrouille** le socle et ajoute l'event d'édition ; (D2) l'exclusion E08 de `force_full_debt` du compteur de consommation est **déjà implémentée** (`budget/service/consumption.py`) → la note implémenteur §1 ci-dessous est **caduque** ; (D4) la migration de l'index unique d'idempotence devient une **phase dédiée** (P11.3.1) ; (D5) la méthode domaine s'appelle **`compute_for_overflow`** (nom déjà réservé par la docstring du `DebtCalculator`) ; (D7) `BudgetCreatedEvent`/`BudgetUpdatedEvent` n'existent pas encore → S11.4 les ajoute côté `budget`.
+> **Deltas réconciliés au moment du découpage en issues** : (D1) le champ `debt_generation_override` + son éditabilité post-`confirmed` sont **déjà livrés en E07** (colonne en migration `0009`, CHECK `ck_transactions_debt_generation_override` en `0010`, `EDITABLE_AFTER_CONFIRMED`, issue #114) → S11.1 ne crée rien, elle **verrouille** le socle et ajoute l'event d'édition ; (D2) l'exclusion E08 de `force_full_debt` du compteur de consommation est **déjà implémentée** (`budget/service/consumption.py`) → la note implémenteur §1 ci-dessous est **caduque** ; (D4) la migration de l'index unique d'idempotence devient une **phase dédiée** (P11.3.1) ; (D5) la méthode domaine s'appelle **`compute_for_overflow`** (nom déjà réservé par la docstring du `DebtCalculator`) ; (D7) `BudgetCreatedEvent`/`BudgetUpdatedEvent` n'existent pas encore → S11.4 les ajoute côté `budget`.
 
 ### S11.1 — Socle `debt_generation_override` : verrou + event d'édition
 
@@ -29,7 +29,7 @@ Livrable agrégé : Alice paie 100€ Courses depuis le compte commun 50/50 alor
 
 | Phase | Description | Diff |
 |---|---|---|
-| **P11.1.1** | Verrou de régression (tests only) : `debt_generation_override ∈ EDITABLE_AFTER_CONFIRMED`, modification post-`confirmed` acceptée / champs financiers gelés, transaction `force_full_debt` exclue de `compute_consumption`. Aucune migration (champ + CHECK déjà en `0010`) | ~70 |
+| **P11.1.1** | Verrou de régression (tests only) : `debt_generation_override ∈ EDITABLE_AFTER_CONFIRMED`, modification post-`confirmed` acceptée / champs financiers gelés, transaction `force_full_debt` exclue de `compute_consumption`. Aucune migration (colonne déjà en `0009`, CHECK en `0010`) | ~70 |
 | **P11.1.2** | Ajouter `TransactionEditableFieldsChangedEvent` (`transactions/events.py`, `{transaction_id, changed_fields}`), l'émettre depuis `update_editable_fields`, le ré-exporter dans `transactions.public`. Tests : spy reçoit l'event au changement d'override, non émis si rien ne change | ~90 |
 
 ---
@@ -51,7 +51,7 @@ Livrable agrégé : Alice paie 100€ Courses depuis le compte commun 50/50 alor
 
 | Phase | Description | Diff |
 |---|---|---|
-| **P11.3.1** | **Migration dédiée** (README §5) : index UNIQUE partiel `(source_transaction_id, from_user_id, to_user_id, origin) WHERE origin = 'shared_account_overflow'` sur `debts` + déclaration ORM (parité create_all/Alembic, gabarit `uq_share_requests_active`). Test schema Niveau 1 | ~80 |
+| **P11.3.1** | **Migration dédiée** (`docs/roadmap/README.md` §Règles d'atomicité, règle 5) : index UNIQUE partiel `(source_transaction_id, from_user_id, to_user_id, origin) WHERE origin = 'shared_account_overflow'` sur `debts` + déclaration ORM (parité create_all/Alembic, gabarit `uq_share_requests_active`). Test schema Niveau 1 | ~80 |
 | **P11.3.2** | `debts/service/overflow_materializer.py` : handler async `TransactionConfirmedEvent`. Tx compte commun : (1) budget actif sur la catégorie, (2) restant **avant** tx (`budget.public.compute_consumption`, fenêtre `[start, date_tx)`), (3) membres + quotes-parts (`accounts.public`), (4) `compute_for_overflow`, (5) **upsert** `ON CONFLICT … DO UPDATE` + DELETE complémentaire des lignes overflow caduques. Câblage `subscribe_async` au composition root. **Nouvel arc `debts → budget.public` → `ignore_imports` du contrat `2-debts`**. Tests intégration | ~280 |
 | **P11.3.3** | Souscrire `TransactionVoidedEvent` : supprime les `Debt` `shared_account_overflow` de la tx (filtre origine — `personal_share_request` intactes). Tests | ~80 |
 | **P11.3.4** | Souscrire `TransactionEditableFieldsChangedEvent` (S11.1) : re-matérialise si `debt_generation_override` a changé (réutilise P11.3.2). Tests | ~120 |

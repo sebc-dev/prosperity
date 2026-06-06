@@ -332,4 +332,27 @@ async def update_editable_fields(
             value = list(raw) if key == "tags" else raw  # type: ignore[call-overload]  # tags: tuple→list(ORM ARRAY)
             setattr(tx, key, value)
     await session.flush()
-    return _to_domain(tx, splits)
+    after = _to_domain(tx, splits)
+    # S11.1: feeds the overflow re-materialisation (`debts`, wired at the
+    # composition root in S11.3, P11.3.4). Emit ONLY on a `confirmed` transaction
+    # AND when an editable field really changed — `changed` is the diff `old` vs
+    # the domain REBUILT post-flush (`after`), so types are normalised
+    # (`tags` is a `tuple` on both sides) and a `description="idem"` no-op emits
+    # nothing. `dispatch` (sync+async, like `transition_to_confirmed`): the S11.3
+    # subscriber does DB I/O inside THIS transaction. On a `confirmed` tx only
+    # editable fields can diverge (frozen ones already raised above), so iterating
+    # `EDITABLE_AFTER_CONFIRMED` is safe and exhaustive.
+    if old.state is domain.TransactionState.CONFIRMED:
+        changed = frozenset(
+            field
+            for field in domain.EDITABLE_AFTER_CONFIRMED
+            if getattr(old, field) != getattr(after, field)
+        )
+        if changed:
+            await dispatch(
+                session,
+                events.TransactionEditableFieldsChangedEvent(
+                    transaction_id=tx.id, changed_fields=changed
+                ),
+            )
+    return after

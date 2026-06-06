@@ -17,6 +17,7 @@ from backend.modules.transactions.public import (
     MultipleFundingLegsError,
     SplitNotFoundError,
     TransactionConfirmedEvent,
+    TransactionEditableFieldsChangedEvent,
     TransactionError,
     TransactionNotFoundError,
     TransactionState,
@@ -44,6 +45,7 @@ _EXPECTED = {
     "MultipleFundingLegsError",
     "SplitNotFoundError",
     "TransactionConfirmedEvent",
+    "TransactionEditableFieldsChangedEvent",
     "TransactionError",
     "TransactionNotFoundError",
     "TransactionState",
@@ -94,6 +96,7 @@ def test_errors_and_state_are_identical_re_exports() -> None:
 
 def test_events_are_identical_re_exports() -> None:
     assert TransactionConfirmedEvent is _events.TransactionConfirmedEvent
+    assert TransactionEditableFieldsChangedEvent is _events.TransactionEditableFieldsChangedEvent
     assert TransactionVoidedEvent is _events.TransactionVoidedEvent
 
 
@@ -104,5 +107,9 @@ def test_service_errors_subclass_transaction_error() -> None:
 
 
 def test_event_types_are_domain_events() -> None:
-    for event_type in (TransactionConfirmedEvent, TransactionVoidedEvent):
+    for event_type in (
+        TransactionConfirmedEvent,
+        TransactionEditableFieldsChangedEvent,
+        TransactionVoidedEvent,
+    ):
         assert issubclass(event_type, DomainEvent)

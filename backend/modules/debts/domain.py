@@ -297,7 +297,7 @@ class DebtCalculator:
         if override == "force_full_debt" or budget_remaining_before is None:
             base = expense_total
         else:
-            base = expense_total - budget_remaining_before  # max(0, …) via le garde ci-dessous
+            base = expense_total - budget_remaining_before  # clampé par le garde `base ≤ 0`
         if base.amount_cents <= 0:
             return []
 

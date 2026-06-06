@@ -450,7 +450,7 @@ def overflow_member_strategy(
     """
     n = draw(st.integers(min_value=min_members, max_value=max_members))
     ratios = draw(share_ratios(n=n))  # Σ == 1, chacun > 0
-    ids = [draw(st.uuids()) for _ in range(n)]  # N UUID, collision négligeable
+    ids = [draw(st.uuids()) for _ in range(n)]  # cf. docstring : collision négligeable
     members = tuple(
         OverflowMember(user_id=u, share_ratio=r) for u, r in zip(ids, ratios, strict=True)
     )

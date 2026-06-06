@@ -250,18 +250,30 @@ class TestComputeForOverflow:
     def test_error_messages_carry_no_pii(self, trigger: str) -> None:
         # Messages STATIQUES : ni UUID (payeur/membre) ni montant interpolé. Couvre
         # les DEUX exceptions ; `RatioOutOfBoundsError` (UUID membres + base en scope)
-        # est le chemin le plus à risque d'une future interpolation PII.
+        # est le chemin le plus à risque d'une future interpolation PII. Les montants
+        # sont CHOISIS pour être réellement EN SCOPE au point de levée ⇒ les asserts
+        # montant sont discriminants (non vacues) : `-5000` (expense) sur la garde
+        # expense, `10000`/`5000` (total / remaining lus dans `base = total − remaining`)
+        # sur le chemin générateur `default` qui atteint la garde ratio.
         exc_type: type[DebtCalculationError]
         if trigger == "non_positive_expense":
             members = (_member(ALICE, "0.5"), _member(BOB, "0.5"))
-            kwargs = {"expense_total": Money(0, "EUR"), "override": "force_no_debt"}
+            kwargs = {
+                "expense_total": Money(-5000, "EUR"),  # montant en scope au raise
+                "budget_remaining_before": None,
+                "override": "force_no_debt",
+            }
             exc_type = NonPositiveExpenseError
         else:
             members = (_member(ALICE, "0.5"), _member(BOB, "5"))
-            kwargs = {"expense_total": Money(10000, "EUR"), "override": "force_full_debt"}
+            kwargs = {
+                "expense_total": Money(10000, "EUR"),
+                "budget_remaining_before": Money(5000, "EUR"),  # lu dans base = total − remaining
+                "override": "default",  # base = 5000 > 0 ⇒ boucle ⇒ garde ratio atteinte
+            }
             exc_type = RatioOutOfBoundsError
         with pytest.raises(exc_type) as exc:
-            _overflow(members=members, budget_remaining_before=None, **kwargs)  # type: ignore[arg-type]
+            _overflow(members=members, **kwargs)  # type: ignore[arg-type]
         msg = str(exc.value)
         assert str(ALICE) not in msg
         assert str(BOB) not in msg
@@ -316,14 +328,12 @@ class TestComputeForOverflowProperties:
         # à `⌊(D+1)/2⌋` cents près (D = débiteurs AVANT omission ; l'arrondi par
         # membre ne se redistribue pas — décision MVP).
         members, payer = data
-        debts = DebtCalculator.compute_for_overflow(
+        debts = _overflow(
             expense_total=expense,
             budget_remaining_before=None,
-            account_members=members,
+            members=members,
             payer_user_id=payer,
             override="force_full_debt",
-            source_transaction_id=uuid4(),
-            source_account_id=uuid4(),
         )
         others = [m for m in members if m.user_id != payer]
         sum_others_ratio = sum((m.share_ratio for m in others), Decimal(0))
@@ -342,14 +352,12 @@ class TestComputeForOverflowProperties:
         # `default` + `budget_remaining_before ≥ expense_total` ⇒ base ≤ 0 ⇒ [].
         members, payer = data
         remaining = Money(expense.amount_cents + slack, "EUR")
-        debts = DebtCalculator.compute_for_overflow(
+        debts = _overflow(
             expense_total=expense,
             budget_remaining_before=remaining,
-            account_members=members,
+            members=members,
             payer_user_id=payer,
             override="default",
-            source_transaction_id=uuid4(),
-            source_account_id=uuid4(),
         )
         assert debts == []
 
@@ -365,22 +373,24 @@ class TestComputeForOverflowProperties:
         remaining: Money | None,
     ) -> None:
         # base = total des deux côtés ⇒ MÊME set. Tirage PARTAGÉ (mêmes ids source)
-        # pour que seuls `override`/`remaining` diffèrent.
+        # pour que seuls `override`/`remaining` diffèrent. `remaining` est tiré dans
+        # `none() | positive_money_eur()` UNIQUEMENT pour prouver que `force_full_debt`
+        # y est INSENSIBLE (il ignore `remaining`, y compris `None`).
         members, payer = data
         tx_id, acc_id = uuid4(), uuid4()
-        full = DebtCalculator.compute_for_overflow(
+        full = _overflow(
             expense_total=expense,
             budget_remaining_before=remaining,
-            account_members=members,
+            members=members,
             payer_user_id=payer,
             override="force_full_debt",
             source_transaction_id=tx_id,
             source_account_id=acc_id,
         )
-        unbudgeted = DebtCalculator.compute_for_overflow(
+        unbudgeted = _overflow(
             expense_total=expense,
             budget_remaining_before=None,
-            account_members=members,
+            members=members,
             payer_user_id=payer,
             override="default",
             source_transaction_id=tx_id,
@@ -397,14 +407,12 @@ class TestComputeForOverflowProperties:
         payer, debtor = ALICE, BOB
         members = (_member(payer, "0.5"), OverflowMember(user_id=debtor, share_ratio=bad_ratio))
         with pytest.raises(RatioOutOfBoundsError):
-            DebtCalculator.compute_for_overflow(
+            _overflow(
                 expense_total=expense,
                 budget_remaining_before=None,
-                account_members=members,
+                members=members,
                 payer_user_id=payer,
                 override="force_full_debt",
-                source_transaction_id=uuid4(),
-                source_account_id=uuid4(),
             )
 
     @given(
@@ -424,29 +432,25 @@ class TestComputeForOverflowProperties:
         kwargs = {
             "expense_total": expense,
             "budget_remaining_before": None,
-            "account_members": members,
+            "members": members,
             "payer_user_id": payer,
             "override": override,
             "source_transaction_id": tx_id,
             "source_account_id": acc_id,
         }
-        assert DebtCalculator.compute_for_overflow(**kwargs) == (  # type: ignore[arg-type]
-            DebtCalculator.compute_for_overflow(**kwargs)  # type: ignore[arg-type]
-        )
+        assert _overflow(**kwargs) == _overflow(**kwargs)  # type: ignore[arg-type]
 
     @given(data=overflow_member_strategy(), expense=positive_money_eur())
     def test_property_never_self_debt(
         self, data: tuple[tuple[OverflowMember, ...], UUID], expense: Money
     ) -> None:
         members, payer = data
-        debts = DebtCalculator.compute_for_overflow(
+        debts = _overflow(
             expense_total=expense,
             budget_remaining_before=None,
-            account_members=members,
+            members=members,
             payer_user_id=payer,
             override="force_full_debt",
-            source_transaction_id=uuid4(),
-            source_account_id=uuid4(),
         )
         assert all(d.from_user_id != d.to_user_id for d in debts)
         assert all(d.to_user_id == payer for d in debts)

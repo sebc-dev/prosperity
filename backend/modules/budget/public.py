@@ -26,14 +26,20 @@ from backend.modules.budget.service.budgets import (
     BudgetWithConsumption,
     list_active_budgets_for_user,
 )
-from backend.modules.budget.service.consumption import compute_consumption
+from backend.modules.budget.service.consumption import (
+    OverflowBudgetContext,
+    compute_consumption,
+    resolve_overflow_context,
+)
 from backend.modules.budget.service.threshold_detector import on_transaction_confirmed
 
 __all__ = [
     "BudgetConsumption",
     "BudgetThresholdEvent",
     "BudgetWithConsumption",
+    "OverflowBudgetContext",
     "compute_consumption",
     "list_active_budgets_for_user",
     "on_transaction_confirmed",
+    "resolve_overflow_context",
 ]

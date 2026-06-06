@@ -25,6 +25,7 @@ from backend.modules.accounts.service.accounts import (
     owned_personal_account_ids,
     shared_account_ids_with_members_subset,
     shared_account_member_ids,
+    shared_account_members_with_ratios,
 )
 from backend.modules.accounts.service.household import (
     HouseholdNotInitializedError,
@@ -45,4 +46,5 @@ __all__ = [
     "owned_personal_account_ids",
     "shared_account_ids_with_members_subset",
     "shared_account_member_ids",
+    "shared_account_members_with_ratios",
 ]

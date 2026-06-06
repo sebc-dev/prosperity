@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from decimal import Decimal
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, or_, select
@@ -255,6 +256,41 @@ async def shared_account_member_ids(session: AsyncSession) -> set[UUID]:
         .where(Account.owner_id.is_(None), Account.archived_at.is_(None))
     )
     return set((await session.execute(stmt)).scalars().all())
+
+
+# --- Members + quote-parts for overflow materialisation (S11.3) --------------
+
+
+async def shared_account_members_with_ratios(
+    session: AsyncSession, *, account_id: UUID
+) -> list[tuple[UUID, Decimal]] | None:
+    """Members `(user_id, default_share_ratio)` of the LIVE shared account `account_id`.
+
+    `None` when `account_id` is NOT a live shared account (`owner_id` non-NULL,
+    archived, or unknown) → the overflow materializer (S11.3) treats it as a no-op
+    (a personal/archived account never generates an implicit debt, CONTEXT.md
+    §Origine d'une dette). Returns tuples (never an ORM row): `default_share_ratio`
+    is the quote-part that becomes a debt's default `share_ratio` (CONTEXT.md
+    §Quote-part). `debts` sits *above* `accounts` in the directional graph
+    (contract 1), so this is consumed via `accounts.public` — the legitimate arc.
+    """
+    is_common = (
+        await session.execute(
+            select(Account.id).where(
+                Account.id == account_id,
+                Account.owner_id.is_(None),
+                Account.archived_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if is_common is None:
+        return None
+    rows = await session.execute(
+        select(AccountMember.user_id, AccountMember.default_share_ratio).where(
+            AccountMember.account_id == account_id
+        )
+    )
+    return [(uid, ratio) for uid, ratio in rows.all()]
 
 
 async def rename(

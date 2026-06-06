@@ -15,9 +15,11 @@ from backend.modules.budget.public import (
     BudgetConsumption,
     BudgetThresholdEvent,
     BudgetWithConsumption,
+    OverflowBudgetContext,
     compute_consumption,
     list_active_budgets_for_user,
     on_transaction_confirmed,
+    resolve_overflow_context,
 )
 from backend.modules.budget.service import budgets as _budgets
 from backend.modules.budget.service import consumption as _consumption
@@ -27,9 +29,11 @@ _EXPECTED = {
     "BudgetConsumption",
     "BudgetThresholdEvent",
     "BudgetWithConsumption",
+    "OverflowBudgetContext",
     "compute_consumption",
     "list_active_budgets_for_user",
     "on_transaction_confirmed",
+    "resolve_overflow_context",
 }
 
 
@@ -47,3 +51,5 @@ def test_public_names_are_identical_re_exports() -> None:
     assert BudgetWithConsumption is _budgets.BudgetWithConsumption
     assert BudgetThresholdEvent is _events.BudgetThresholdEvent
     assert on_transaction_confirmed is _threshold_detector.on_transaction_confirmed
+    assert resolve_overflow_context is _consumption.resolve_overflow_context
+    assert OverflowBudgetContext is _consumption.OverflowBudgetContext

@@ -567,7 +567,14 @@ forbidden_modules =
 # `transactions.public` as a module (independent of the symbols consumed) — DO NOT
 # drop the `lifecycle` arc believing it unused, it would break the lint.
 # `transactions.events` imports only `shared.events`, so it is not forbidden and
-# stays out (mirror of `accounts.events` in `2-transactions`). All sixteen arcs
+# stays out (mirror of `accounts.events` in `2-transactions`). The S11.3 overflow
+# materializer (`debts.service.overflow_materializer`) adds the FIRST `debts →
+# budget.public` arc (`resolve_overflow_context`/`OverflowBudgetContext` live in
+# `budget.service.consumption`): `debts` is *above* `budget` in contract 1, so the
+# arc is directionally legitimate. The four `budget.public → budget.X` second-hops
+# below cover it — `budget.public` re-exports from `domain`, `service.budgets`,
+# `service.consumption` and `service.threshold_detector` (`budget.events` imports
+# only `shared.events`, so it is not forbidden and stays out). All twenty arcs
 # exist in the `.public` modules independently of debts → each is "matched"
 # (`unmatched_ignore_imports_alerting = error`).
 ignore_imports =
@@ -587,6 +594,10 @@ ignore_imports =
     backend.modules.transactions.public -> backend.modules.transactions.domain
     backend.modules.transactions.public -> backend.modules.transactions.service.lifecycle
     backend.modules.transactions.public -> backend.modules.transactions.service.queries
+    backend.modules.budget.public -> backend.modules.budget.domain
+    backend.modules.budget.public -> backend.modules.budget.service.budgets
+    backend.modules.budget.public -> backend.modules.budget.service.consumption
+    backend.modules.budget.public -> backend.modules.budget.service.threshold_detector
 unmatched_ignore_imports_alerting = error
 
 [importlinter:contract:3]

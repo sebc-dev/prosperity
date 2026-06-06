@@ -1,4 +1,4 @@
-"""Unit tests for `DebtCalculator.compute_for_overflow` (S11.2, P11.2.1 — example).
+"""Unit tests for `DebtCalculator.compute_for_overflow` (S11.2, P11.2.1 + P11.2.2).
 
 Pure unit tier — no DB, no SQLAlchemy, no `Transaction`/`Budget`. Pins the F10
 overflow projection : `compute_for_overflow` is the ONLY testable guardian of the
@@ -9,17 +9,20 @@ Example tests (P11.2.1) cover the full F10 table (`force_no_debt` / `default` no
 overflow / `default` overflow / `force_full_debt` / unbudgeted `default`), the
 multi-member rounding omission, the orientation/self-debt invariants and the
 guards with DETERMINISTIC inputs (robust under `ci=50`). Properties (P11.2.2)
-are appended below in `TestComputeForOverflowProperties`.
+live below in `TestComputeForOverflowProperties` (conservation, no-overflow→[],
+`force_full_debt` equivalence, purity, ratio rejection).
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import get_args
 from uuid import UUID, uuid4
 
 import pytest
+from hypothesis import example, given
+from hypothesis import strategies as st
 
 from backend.modules.debts.domain import (
     Debt,
@@ -34,6 +37,7 @@ from backend.modules.transactions.domain import (
     DebtGenerationOverride as TxDebtGenerationOverride,
 )
 from backend.shared.money import Money
+from tests.strategies import out_of_bounds_ratio, overflow_member_strategy, positive_money_eur
 
 # Membres canoniques d'un compte commun (ids fixes : @example dans les properties
 # les référencent à la décoration, et les tests example restent déterministes).
@@ -278,3 +282,181 @@ class TestComputeForOverflow:
         # vit dans le calculator, unique gardien testable).
         member = OverflowMember(user_id=uuid4(), share_ratio=Decimal("5"))
         assert member.share_ratio == Decimal("5")
+
+
+# ---------------------------------------------------------------------------
+# P11.2.2 — properties (domaine pur, sans DB)
+# ---------------------------------------------------------------------------
+
+
+def _round_half_up(value: Decimal) -> int:
+    """Arrondi commercial aux cents — MÊME politique que `Money.apply_ratio`."""
+    return int(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
+class TestComputeForOverflowProperties:
+    """Properties Hypothesis sur la projection F10 PURE (aucune DB). Voir les
+    réserves documentées par property : la conservation tolère un écart d'arrondi
+    BORNÉ (pas de redistribution du reliquat en MVP, D-arrondi) ; idempotence est
+    un oracle faible (garde anti-régression sur fonction pure)."""
+
+    @given(data=overflow_member_strategy(), expense=positive_money_eur())
+    @example(  # base minimale : zone d'arrondi (chaque membre près de 0)
+        data=((_member(ALICE, "0.5"), _member(BOB, "0.5")), ALICE),
+        expense=Money(1, "EUR"),
+    )
+    @example(  # mono-débiteur, ratio borne haute 1.0 (payeur exclu, ratio 0)
+        data=((_member(ALICE, "0"), _member(BOB, "1")), ALICE),
+        expense=Money(10000, "EUR"),
+    )
+    def test_property_conservation(
+        self, data: tuple[tuple[OverflowMember, ...], UUID], expense: Money
+    ) -> None:
+        # `force_full_debt` ⇒ base = expense. `Σ debt.amount ≈ base × Σ_{m≠payer} r`
+        # à `⌊(D+1)/2⌋` cents près (D = débiteurs AVANT omission ; l'arrondi par
+        # membre ne se redistribue pas — décision MVP).
+        members, payer = data
+        debts = DebtCalculator.compute_for_overflow(
+            expense_total=expense,
+            budget_remaining_before=None,
+            account_members=members,
+            payer_user_id=payer,
+            override="force_full_debt",
+            source_transaction_id=uuid4(),
+            source_account_id=uuid4(),
+        )
+        others = [m for m in members if m.user_id != payer]
+        sum_others_ratio = sum((m.share_ratio for m in others), Decimal(0))
+        expected = _round_half_up(Decimal(expense.amount_cents) * sum_others_ratio)
+        actual = sum(d.amount.amount_cents for d in debts)
+        assert abs(actual - expected) <= (len(others) + 1) // 2
+
+    @given(
+        data=overflow_member_strategy(),
+        expense=positive_money_eur(),
+        slack=st.integers(min_value=0, max_value=10**9),
+    )
+    def test_property_no_overflow_default_empty(
+        self, data: tuple[tuple[OverflowMember, ...], UUID], expense: Money, slack: int
+    ) -> None:
+        # `default` + `budget_remaining_before ≥ expense_total` ⇒ base ≤ 0 ⇒ [].
+        members, payer = data
+        remaining = Money(expense.amount_cents + slack, "EUR")
+        debts = DebtCalculator.compute_for_overflow(
+            expense_total=expense,
+            budget_remaining_before=remaining,
+            account_members=members,
+            payer_user_id=payer,
+            override="default",
+            source_transaction_id=uuid4(),
+            source_account_id=uuid4(),
+        )
+        assert debts == []
+
+    @given(
+        data=overflow_member_strategy(),
+        expense=positive_money_eur(),
+        remaining=st.none() | positive_money_eur(),
+    )
+    def test_property_force_full_equals_unbudgeted_default(
+        self,
+        data: tuple[tuple[OverflowMember, ...], UUID],
+        expense: Money,
+        remaining: Money | None,
+    ) -> None:
+        # base = total des deux côtés ⇒ MÊME set. Tirage PARTAGÉ (mêmes ids source)
+        # pour que seuls `override`/`remaining` diffèrent.
+        members, payer = data
+        tx_id, acc_id = uuid4(), uuid4()
+        full = DebtCalculator.compute_for_overflow(
+            expense_total=expense,
+            budget_remaining_before=remaining,
+            account_members=members,
+            payer_user_id=payer,
+            override="force_full_debt",
+            source_transaction_id=tx_id,
+            source_account_id=acc_id,
+        )
+        unbudgeted = DebtCalculator.compute_for_overflow(
+            expense_total=expense,
+            budget_remaining_before=None,
+            account_members=members,
+            payer_user_id=payer,
+            override="default",
+            source_transaction_id=tx_id,
+            source_account_id=acc_id,
+        )
+        assert set(full) == set(unbudgeted)
+
+    @given(bad_ratio=out_of_bounds_ratio(), expense=positive_money_eur())
+    def test_property_rejects_ratio_out_of_bounds(
+        self, bad_ratio: Decimal, expense: Money
+    ) -> None:
+        # Parité gabarit S09.2 : un débiteur ratio ∉ (0,1] sur un chemin générateur
+        # (base = expense > 0) ⇒ `RatioOutOfBoundsError`, tout le spectre hors borne.
+        payer, debtor = ALICE, BOB
+        members = (_member(payer, "0.5"), OverflowMember(user_id=debtor, share_ratio=bad_ratio))
+        with pytest.raises(RatioOutOfBoundsError):
+            DebtCalculator.compute_for_overflow(
+                expense_total=expense,
+                budget_remaining_before=None,
+                account_members=members,
+                payer_user_id=payer,
+                override="force_full_debt",
+                source_transaction_id=uuid4(),
+                source_account_id=uuid4(),
+            )
+
+    @given(
+        data=overflow_member_strategy(),
+        expense=positive_money_eur(),
+        override=st.sampled_from(["default", "force_full_debt", "force_no_debt"]),
+    )
+    def test_property_pure_idempotent(
+        self,
+        data: tuple[tuple[OverflowMember, ...], UUID],
+        expense: Money,
+        override: DebtGenerationOverride,
+    ) -> None:
+        # Deux appels identiques → résultat identique (projection pure ADR 0002).
+        members, payer = data
+        tx_id, acc_id = uuid4(), uuid4()
+        kwargs = {
+            "expense_total": expense,
+            "budget_remaining_before": None,
+            "account_members": members,
+            "payer_user_id": payer,
+            "override": override,
+            "source_transaction_id": tx_id,
+            "source_account_id": acc_id,
+        }
+        assert DebtCalculator.compute_for_overflow(**kwargs) == (  # type: ignore[arg-type]
+            DebtCalculator.compute_for_overflow(**kwargs)  # type: ignore[arg-type]
+        )
+
+    @given(data=overflow_member_strategy(), expense=positive_money_eur())
+    def test_property_never_self_debt(
+        self, data: tuple[tuple[OverflowMember, ...], UUID], expense: Money
+    ) -> None:
+        members, payer = data
+        debts = DebtCalculator.compute_for_overflow(
+            expense_total=expense,
+            budget_remaining_before=None,
+            account_members=members,
+            payer_user_id=payer,
+            override="force_full_debt",
+            source_transaction_id=uuid4(),
+            source_account_id=uuid4(),
+        )
+        assert all(d.from_user_id != d.to_user_id for d in debts)
+        assert all(d.to_user_id == payer for d in debts)
+
+    @given(data=overflow_member_strategy())
+    def test_property_overflow_member_strategy_coherent(
+        self, data: tuple[tuple[OverflowMember, ...], UUID]
+    ) -> None:
+        # Cohérence de la strategy : Σ ratio == 1 exact, tous > 0, payeur ∈ membres.
+        members, payer = data
+        assert sum((m.share_ratio for m in members), Decimal(0)) == Decimal("1.0000")
+        assert all(m.share_ratio > 0 for m in members)
+        assert payer in {m.user_id for m in members}

@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.modules.auth.models import AdminAuditLog, User
 from backend.modules.budget.models import BudgetThresholdAlert
-from backend.modules.debts.public import compute_remaining
+from backend.modules.debts.public import DebtNotFoundError, compute_remaining
 
 # Default admin credentials reused across journeys. The password is ≥12
 # chars (SetupRequest / OWASP ASVS V2.1.*); journeys that re-login against
@@ -392,11 +392,20 @@ async def fetch_debt_remaining(
 
     No HTTP endpoint exposes the raw remaining balance independently of the S09.4
     debtor masking, so the conservation invariant is verified directly against the
-    durable state (gabarit `fetch_threshold_alerts`). Replace with an HTTP call
+    durable state (gabarit `fetch_threshold_alerts`). The balance is the SAME SQL
+    expression `GET /debts` projects (`amount − Σ lines`): the oracle is independent
+    of the *masking*, not an independent re-derivation. Replace with an HTTP call
     once such an endpoint exists.
+
+    A missing `debt_id` surfaces as a readable `AssertionError` (a regression
+    materialising the wrong id) rather than the bare `DebtNotFoundError` the service
+    raises for a non-existent debt.
     """
     async with sessionmaker() as session:
-        return await compute_remaining(session, debt_id=UUID(debt_id))
+        try:
+            return await compute_remaining(session, debt_id=UUID(debt_id))
+        except DebtNotFoundError as exc:  # pragma: no cover — guards a regression
+            raise AssertionError(f"debt {debt_id} does not exist (side-channel)") from exc
 
 
 async def fetch_threshold_alerts(

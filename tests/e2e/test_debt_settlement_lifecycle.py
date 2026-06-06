@@ -159,7 +159,7 @@ async def test_debt_settlement_lifecycle(  # noqa: PLR0915 — E2E journey is de
     assert net_bob["net_amount"] == DEBT1_CENTS - DEBT2_CENTS  # −2000: Alice owes Bob net
     assert net_bob["debts_count"] == 2
 
-    # 5. Over-settlement REFUSED end-to-end: a single line apuring more than Debt1's
+    # 5. Over-settlement REFUSED end-to-end: a single line settling more than Debt1's
     #    remaining → 422 (SettlementValidator). Inline (not via the 201-asserting
     #    helper) since the negative case must assert the status itself.
     over = await client.post(
@@ -203,6 +203,17 @@ async def test_debt_settlement_lifecycle(  # noqa: PLR0915 — E2E journey is de
         == DEBT2_CENTS - DEBT1_CENTS
     )
 
+    # Conservation at the AGGREGATE level (ADR 0011 zero-sum): the by-counterparty
+    # net is INVARIANT under a virtual cross-netting (Debt1 now contributes 0,
+    # Debt2 still −2000 → unchanged net) and a fully-netted debt STILL counts in
+    # `debts_count` (the registry keeps settled debts — `_aggregate_net`, S10.3 D7).
+    by_cp_after = (
+        await client.get("/debts/by-counterparty", headers=auth_headers(alice_access))
+    ).json()["items"]
+    [net_bob_after] = [n for n in by_cp_after if n["user_id"] == bob_id]
+    assert net_bob_after["net_amount"] == DEBT1_CENTS - DEBT2_CENTS  # unchanged: −2000
+    assert net_bob_after["debts_count"] == 2  # the netted-to-zero debt is still listed
+
     # Detail MASKED to the debtor (S09.4/S10.4 propagated): Bob is the debtor of
     # Debt1 → its source fields are hidden; he is the creditor of Debt2 → those are
     # visible (positive control). `materialization_trace` is never exposed either way.
@@ -227,8 +238,11 @@ async def test_debt_settlement_lifecycle(  # noqa: PLR0915 — E2E journey is de
     ).json()["items"]
     assert settlement["id"] in {s["id"] for s in settlements}
 
-    # 8. Conservation PERSISTED (D3): `compute_remaining` against the durable state,
-    #    independent of the masking-aware HTTP projection.
+    # 8. Conservation PERSISTED (D3): `compute_remaining` against the durable state.
+    #    NB: it shares the SAME SQL expression as `GET /debts` (amount − Σ lines), so
+    #    it is an oracle independent of the S09.4 *masking* — NOT an independent
+    #    re-derivation of the balance. It pins that the durable rows (not just the
+    #    HTTP projection read as the creditor) carry the conservation.
     assert await fetch_debt_remaining(committed_sessionmaker, debt_id=debt1_id) == 0
     assert (
         await fetch_debt_remaining(committed_sessionmaker, debt_id=debt2_id)

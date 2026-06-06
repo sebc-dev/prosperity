@@ -239,7 +239,15 @@ async def rematerialize_overflow_on_edit(
 ) -> None:
     """Editable-field change post-confirm → re-materialise the overflow IF
     `debt_generation_override` changed (else no-op, avoids churn). The recompute
-    is idempotent (ADR 0002) via the P11.3.2 path (P11.3.4)."""
+    is idempotent (ADR 0002) via the P11.3.2 path (P11.3.4).
+
+    Scope V1: ONLY `debt_generation_override` triggers a recompute. `category_id`
+    is also editable post-confirm and IS overflow-relevant (it picks the covering
+    budget, hence `remaining_before`, hence the base) — but re-materialising on a
+    category edit (and re-materialising the period *neighbours* whose remaining it
+    shifts) is deferred to S11.4 (reclassement). Until then a category edit leaves a
+    stale overflow amount. Tracked in `CONTEXT.md` §Excédent _Limite V1_ + roadmap
+    E11 §S11.4."""
     if "debt_generation_override" not in event.changed_fields:
         return
     await _materialize_for_tx(session, tx_id=event.transaction_id)

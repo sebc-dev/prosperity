@@ -13,10 +13,10 @@ This is an ordinary, transaction-agnostic business service — *not* a
 security-critical side effect: ADR 0015's commit-inside-service derogation
 deliberately does **not** apply (the criterion "the client must not be able to
 undo the side effect by triggering an exception" is not met). On the contrary we
-*want* the whole request to roll back if any step — including a future event
-subscriber that raises — fails. The transition, the event `publish`, and the
-persistence all share the **same** transaction opened by the request dependency,
-so atomicity is free.
+*want* the whole request to roll back if any step — including an event subscriber
+that raises — fails. The transition, the event `dispatch`, and the persistence all
+share the **same** transaction opened by the request dependency, so atomicity is
+free.
 
 The S05.4 in-process mini-bus runs **inside the caller's transaction, before
 `get_db` commits**. `confirm` uses `dispatch` (sync + async channels): the E08

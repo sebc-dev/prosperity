@@ -17,15 +17,17 @@ reads them via SQLAlchemy Core (`transactions ⊥ budget`, contract 1).
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from datetime import date
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
+from backend.modules.accounts.models import AccountMember
 from backend.modules.budget.models import Budget, BudgetContributor, Category
-from backend.modules.budget.service.consumption import compute_consumption
+from backend.modules.budget.service.consumption import compute_consumption, resolve_overflow_context
 from backend.modules.transactions.models import Split, Transaction
 
 FactoryBundle = Callable[[], Awaitable[tuple[type, type, type]]]
@@ -676,3 +678,129 @@ async def test_read_only_no_mutation(
     await compute_consumption(household_singleton, budget_id=budget_id, as_of=_AS_OF)
     after = await _counts()
     assert before == after
+
+
+# ---------------------------------------------------------------------------
+# Ordered window `before` (overflow F10, S11.3 D7) + most-specific tie-break (D8)
+# ---------------------------------------------------------------------------
+
+
+async def test_before_excludes_boundary_and_orders_by_id(
+    household_singleton: AsyncSession, bound_account_factories: FactoryBundle
+) -> None:
+    # D7: `before=(date, id)` bounds consumption to txs STRICTLY before in the total
+    # order `(date, id)`. Pins three things the materializer's conservation relies on:
+    # (a) a tx exactly AT the bound is EXCLUDED (strict `<`, NOT `<=`); (b) two txs
+    # sharing a date are split by `id`; (c) `before=None` (default) counts the full
+    # period (S08 callers non-regression). A flip to `<=` would break (a) silently.
+    user_factory, account_factory, _ = await bound_account_factories()
+
+    def _seed(s: Session) -> tuple[UUID, UUID, UUID]:
+        owner = user_factory(email=f"win-{uuid4().hex[:8]}@example.com")
+        acc = account_factory(owner_id=owner.id, name="Perso")
+        cat = Category(name="Courses")
+        s.add(cat)
+        s.flush()
+        _add_expense(  # earlier date — always before the same-date pair
+            s,
+            account_id=acc.id,
+            category_id=cat.id,
+            amount=1000,
+            created_by=owner.id,
+            on=date(2026, 6, 5),
+        )
+        same1 = _add_expense(
+            s,
+            account_id=acc.id,
+            category_id=cat.id,
+            amount=2000,
+            created_by=owner.id,
+            on=_IN_WINDOW,
+        )
+        same2 = _add_expense(
+            s,
+            account_id=acc.id,
+            category_id=cat.id,
+            amount=4000,
+            created_by=owner.id,
+            on=_IN_WINDOW,
+        )
+        budget_id = _make_budget(s, category_id=cat.id, created_by=owner.id, amount_cents=40000)
+        return budget_id, same1, same2
+
+    budget_id, same1, same2 = await household_singleton.run_sync(_seed)
+    # Order the two same-date ids so assertions are deterministic regardless of UUIDs.
+    lo, hi = sorted((same1, same2))
+    amount_of = {same1: 2000, same2: 4000}
+
+    # (c) Full period (no bound): 1000 + 2000 + 4000.
+    full = await compute_consumption(household_singleton, budget_id=budget_id, as_of=_AS_OF)
+    assert full is not None and full.consumed_cents == 7000
+
+    # (a) + (b) bound on `hi`: excludes `hi` itself (strict), keeps earlier + `lo`.
+    bounded = await compute_consumption(
+        household_singleton, budget_id=budget_id, as_of=_AS_OF, before=(_IN_WINDOW, hi)
+    )
+    assert bounded is not None and bounded.consumed_cents == 1000 + amount_of[lo]
+
+    # (b) bound on `lo`: excludes both same-date txs (lo at bound, hi after), keeps earlier.
+    only_earlier = await compute_consumption(
+        household_singleton, budget_id=budget_id, as_of=_AS_OF, before=(_IN_WINDOW, lo)
+    )
+    assert only_earlier is not None and only_earlier.consumed_cents == 1000
+
+
+async def test_resolve_overflow_context_tie_break_created_at(
+    household_singleton: AsyncSession, bound_account_factories: FactoryBundle
+) -> None:
+    # D8: two active budgets on the SAME category (same walk-up depth = most specific)
+    # are ordered by `(created_at, id)` → the earlier-created one is chosen
+    # deterministically. Guards the tie-break that V1 mono-catégorie makes rare.
+    user_factory, account_factory, _ = await bound_account_factories()
+
+    def _seed(s: Session) -> tuple[UUID, UUID, UUID]:
+        alice = user_factory(email=f"tb-{uuid4().hex[:8]}@example.com")
+        acc = account_factory(owner_id=None, name="Commun")
+        s.add(AccountMember(account_id=acc.id, user_id=alice.id, default_share_ratio=Decimal("1")))
+        s.flush()
+        cat = Category(name="Courses")
+        s.add(cat)
+        s.flush()
+        b_old = Budget(
+            category_id=cat.id,
+            period_kind="monthly",
+            period_start=_PERIOD_START,
+            amount_cents=5000,
+            currency="EUR",
+            scope="shared",
+            created_by=alice.id,
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+        b_new = Budget(
+            category_id=cat.id,
+            period_kind="monthly",
+            period_start=_PERIOD_START,
+            amount_cents=9999,
+            currency="EUR",
+            scope="shared",
+            created_by=alice.id,
+            created_at=datetime(2026, 5, 1, tzinfo=UTC),
+        )
+        s.add_all([b_old, b_new])
+        s.flush()
+        for b in (b_old, b_new):
+            s.add(BudgetContributor(budget_id=b.id, user_id=alice.id))
+        s.flush()
+        return acc.id, cat.id, b_old.id
+
+    account_id, cat_id, b_old_id = await household_singleton.run_sync(_seed)
+    ctx = await resolve_overflow_context(
+        household_singleton,
+        category_ids={cat_id},
+        account_id=account_id,
+        as_of=_AS_OF,
+        before=(_AS_OF, uuid4()),
+    )
+    assert ctx is not None
+    assert ctx.budget_id == b_old_id  # earlier created_at wins the tie-break
+    assert ctx.remaining_before_cents == 5000  # b_old's amount, no prior consumption

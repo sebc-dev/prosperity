@@ -315,7 +315,11 @@ async def resolve_overflow_context(
             continue
         return OverflowBudgetContext(
             budget_id=budget.id,
-            remaining_before_cents=max(0, budget.amount_cents - consumption.consumed_cents),
+            # `consumption.remaining_cents` is already `amount_cents − consumed_cents`
+            # (`budget.amount_cents` is what `compute_consumption` summed against) —
+            # reuse the derived scalar; clamp ≥ 0 (ordered window can go negative once
+            # strictly-prior txs exceeded the budget, see `OverflowBudgetContext`).
+            remaining_before_cents=max(0, consumption.remaining_cents),
             currency=budget.currency,
         )
     return None

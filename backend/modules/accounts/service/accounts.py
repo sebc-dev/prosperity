@@ -273,6 +273,13 @@ async def shared_account_members_with_ratios(
     is the quote-part that becomes a debt's default `share_ratio` (CONTEXT.md
     §Quote-part). `debts` sits *above* `accounts` in the directional graph
     (contract 1), so this is consumed via `accounts.public` — the legitimate arc.
+
+    NB orphan state: a live shared account with **no member** returns `[]` (not
+    `None`) — the account exists, it simply yields no debtor, so the materializer
+    computes zero overflow debts and prunes any stale rows. This differs on purpose
+    from `shared_account_ids_with_members_subset`, which *excludes* the orphan
+    state for the consumption contributor filter; here the empty list is the
+    faithful answer (`None` is reserved for "not a live shared account").
     """
     is_common = (
         await session.execute(

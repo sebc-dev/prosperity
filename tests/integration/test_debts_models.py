@@ -521,7 +521,10 @@ async def test_overflow_unique_index_exists_partial_on_four_columns(
     ).scalar_one()
     assert "CREATE UNIQUE INDEX" in indexdef  # unique
     assert "(source_transaction_id, from_user_id, to_user_id, origin)" in indexdef  # 4 cols, order
-    assert "WHERE" in indexdef and "shared_account_overflow" in indexdef  # partial predicate
+    # Partial predicate must be on `origin` specifically (not merely "some WHERE"):
+    # this is what guarantees exclusivité d'origine — a `personal_share_request`
+    # row is outside the index, so it can never collide with an overflow upsert.
+    assert "WHERE ((origin)::text = 'shared_account_overflow'::text)" in indexdef
 
 
 async def test_two_overflow_debts_same_quad_violate_unique(

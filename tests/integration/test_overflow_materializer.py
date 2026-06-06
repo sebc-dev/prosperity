@@ -61,6 +61,7 @@ from backend.modules.transactions.service.lifecycle import (
 )
 from backend.shared.events import clear_subscribers, subscribe_async
 from backend.shared.models import Base
+from backend.shared.money import Money
 
 FactoryBundle = Callable[
     [], Awaitable[tuple[type, type, type]]
@@ -387,8 +388,12 @@ async def test_conservation_multi_tx(
 ) -> None:
     # KEY (D7): budget=100, two `default` tx A=100 and B=100 on the same
     # budget/period/category → Σ overflow == max(0, ΣM − budget) (= 100), NOT 200.
-    # Bob's ratio is 1.0 so Σ debt == Σ base. The ordered window puts the whole
-    # excess on the *later* tx (the earlier one sees the full budget remaining).
+    # Bob's ratio is 1.0 so Σ debt == Σ base. The two tx carry DISTINCT dates so
+    # the ordered window `(date, id)` is deterministic: the EARLIER tx (A) sees the
+    # full budget remaining → 0 overflow; the LATER tx (B) sees the budget already
+    # consumed → carries the whole 100 excess. We pin both the total AND the
+    # ordered repartition (which line bears the overflow), not just the sum.
+    earlier = dt.date(2026, 6, 10)  # strictly before `_TODAY` in the period window
     user_factory, account_factory, _ = await bound_account_factories()
 
     def _do(s: Session) -> tuple[UUID, UUID, UUID, UUID]:
@@ -415,19 +420,24 @@ async def test_conservation_multi_tx(
             contributor_ids=(alice, bob),
         )
         tx_a = _add_expense(
-            s, account_id=account.id, category_id=cat.id, amount=10000, created_by=alice
+            s, account_id=account.id, category_id=cat.id, amount=10000, created_by=alice, on=earlier
         )
         tx_b = _add_expense(
-            s, account_id=account.id, category_id=cat.id, amount=10000, created_by=alice
+            s, account_id=account.id, category_id=cat.id, amount=10000, created_by=alice, on=_TODAY
         )
-        return alice, bob, tx_a, tx_b
+        return bob, account.id, tx_a, tx_b
 
-    _alice, bob, tx_a, tx_b = await household_singleton.run_sync(_do)
+    bob, account_id, tx_a, tx_b = await household_singleton.run_sync(_do)
     # Both already `confirmed` in the seed; materialise each independently.
     for tx in (tx_a, tx_b):
         await materialize_overflow(
-            household_singleton, TransactionConfirmedEvent(transaction_id=tx, account_id=uuid4())
+            household_singleton,
+            TransactionConfirmedEvent(transaction_id=tx, account_id=account_id),
         )
+
+    # Ordered repartition: A (earlier) bears nothing, B (later) bears the full excess.
+    assert await _overflow_by_debtor(household_singleton, tx_a) == {}
+    assert await _overflow_by_debtor(household_singleton, tx_b) == {bob: 10000}
 
     total = (
         await household_singleton.execute(
@@ -730,13 +740,20 @@ async def test_child_budget_chosen_over_parent(
 # ---------------------------------------------------------------------------
 
 
-async def test_handler_failure_propagates(
+async def test_handler_failure_after_write_rolls_back(
     household_singleton: AsyncSession,
     bound_account_factories: FactoryBundle,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # ADR 0015: the materializer runs INSIDE the confirm transaction; a handler
-    # that raises PROPAGATES to the caller (rolling the request back) — atomicity.
+    # ADR 0015 atomicity: the materializer FLUSHES the overflow debts inside the
+    # confirm transaction (never commits). A SIBLING async subscriber that raises
+    # AFTER `materialize_overflow` (subscribed first by the autouse fixture, so the
+    # debts are already flushed) must PROPAGATE out of the confirm; rolling the unit
+    # back leaves NO overflow debt. We wrap the confirm in a SAVEPOINT (the tier shares
+    # one transaction with the schema DDL, so a full rollback would drop the tables;
+    # the SAVEPOINT models what `get_db` does at the request boundary in prod). Had the
+    # materializer self-committed, the rows would outlive the SAVEPOINT rollback and
+    # this assertion would catch it. `wrote_overflow` first proves the write happened
+    # (else the test would be vacuous).
     sc = await _seed(
         household_singleton,
         bound_account_factories,
@@ -745,14 +762,51 @@ async def test_handler_failure_propagates(
         budget_amount=5000,
     )
 
-    async def _boom(*_args: object, **_kwargs: object) -> None:
-        raise RuntimeError("injected resolver failure")
+    wrote_overflow = False
 
-    monkeypatch.setattr(
-        "backend.modules.debts.service.overflow_materializer.resolve_overflow_context", _boom
+    async def _boom_after(_session: AsyncSession, _event: TransactionConfirmedEvent) -> None:
+        nonlocal wrote_overflow
+        # The materializer ran first → its overflow debts are flushed and visible.
+        wrote_overflow = await _overflow_debts(household_singleton, sc.tx) != []
+        raise RuntimeError("injected post-write failure")
+
+    subscribe_async(TransactionConfirmedEvent, _boom_after)
+    with pytest.raises(RuntimeError, match="injected post-write failure"):
+        async with household_singleton.begin_nested():
+            await transition_to_confirmed(household_singleton, tx_id=sc.tx)
+    assert wrote_overflow  # the overflow rows WERE flushed before the failure
+    # SAVEPOINT rolled back by the propagated exception → no overflow debt persists.
+    assert await _overflow_debts(household_singleton, sc.tx) == []
+
+
+async def test_overflow_handler_makes_no_self_commit(
+    household_singleton: AsyncSession,
+    bound_account_factories: FactoryBundle,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # ADR 0015 (direct proof): neither the lifecycle service nor the overflow handler
+    # may commit — `get_db` owns the transaction boundary. Spy on the session's
+    # `commit`; a REAL confirm that materialises overflow debts must leave the commit
+    # count at ZERO (the debts are persisted by FLUSH only).
+    sc = await _seed(
+        household_singleton,
+        bound_account_factories,
+        member_ratios={"alice": Decimal("0.5"), "bob": Decimal("0.5")},
+        amount=10000,
+        budget_amount=5000,
     )
-    with pytest.raises(RuntimeError, match="injected resolver failure"):
-        await transition_to_confirmed(household_singleton, tx_id=sc.tx)
+    commits = 0
+    real_commit = household_singleton.commit
+
+    async def _counting_commit(*args: object, **kwargs: object) -> None:
+        nonlocal commits
+        commits += 1
+        await real_commit(*args, **kwargs)
+
+    monkeypatch.setattr(household_singleton, "commit", _counting_commit)
+    await transition_to_confirmed(household_singleton, tx_id=sc.tx)
+    assert await _overflow_by_debtor(household_singleton, sc.tx) == {sc.members["bob"]: 2500}
+    assert commits == 0
 
 
 async def test_confirm_wiring_end_to_end(
@@ -846,6 +900,59 @@ async def test_void_without_overflow_is_noop(
     await transition_to_confirmed(household_singleton, tx_id=sc.tx)
     await void(household_singleton, tx_id=sc.tx, reason="x")  # no error
     assert await _overflow_debts(household_singleton, sc.tx) == []
+
+
+async def test_void_handler_failure_propagates(
+    household_singleton: AsyncSession, bound_account_factories: FactoryBundle
+) -> None:
+    # Safety property (lifecycle.void docstring, D14): a void async handler that
+    # raises PROPAGATES out of void() — so `get_db` rolls the WHOLE void back (no tx
+    # left voided with stale/orphaned overflow). `void` switched publish→dispatch
+    # precisely so async handlers fire AND their failures are load-bearing; an extra
+    # failing async subscriber proves the exception is not swallowed.
+    sc = await _seed(
+        household_singleton,
+        bound_account_factories,
+        member_ratios={"alice": Decimal("0.5"), "bob": Decimal("0.5")},
+        amount=10000,
+        budget_amount=None,
+    )
+    await transition_to_confirmed(household_singleton, tx_id=sc.tx)
+    assert await _overflow_debts(household_singleton, sc.tx) != []
+
+    async def _boom(_session: AsyncSession, _event: TransactionVoidedEvent) -> None:
+        raise RuntimeError("injected void handler failure")
+
+    subscribe_async(TransactionVoidedEvent, _boom)
+    with pytest.raises(RuntimeError, match="injected void handler failure"):
+        await void(household_singleton, tx_id=sc.tx, reason="boom")
+
+
+async def test_common_account_without_members_no_debt(
+    household_singleton: AsyncSession, bound_account_factories: FactoryBundle
+) -> None:
+    # A LIVE shared account with NO member yields `[]` (not None) from
+    # `shared_account_members_with_ratios` → the materializer computes zero overflow
+    # debts (no debtor) and persists nothing. Distinct from the personal/archived
+    # no-op (`members is None`): here the account exists but has no quote-part holder.
+    user_factory, account_factory, _ = await bound_account_factories()
+
+    def _do(s: Session) -> tuple[UUID, UUID]:
+        alice = user_factory(email=f"nm-{uuid4().hex[:8]}@e.com").id
+        account = account_factory(owner_id=None, name="Commun sans membre")
+        cat = Category(name="Courses")
+        s.add(cat)
+        s.flush()
+        tx = _add_expense(
+            s, account_id=account.id, category_id=cat.id, amount=10000, created_by=alice
+        )
+        return account.id, tx
+
+    account_id, tx = await household_singleton.run_sync(_do)
+    await materialize_overflow(
+        household_singleton, TransactionConfirmedEvent(transaction_id=tx, account_id=account_id)
+    )
+    assert await _overflow_debts(household_singleton, tx) == []
 
 
 # ---------------------------------------------------------------------------
@@ -969,9 +1076,9 @@ def overflow_socle(postgres_container) -> Iterator[str]:  # pyright: ignore[repo
 
 def _seed_period_sync(
     s: Session, *, amounts: list[int], budget_amount: int
-) -> tuple[UUID, list[UUID]]:
-    """Seed a shared account (Alice payer, Bob debtor ratio 1.0), a covering
-    budget, and one confirmed `default` expense per amount. Returns (bob, tx_ids)."""
+) -> tuple[UUID, UUID, list[UUID]]:
+    """Seed a shared account (Alice payer, Bob debtor ratio 1.0), a covering budget,
+    and one confirmed `default` expense per amount. Returns (account_id, bob, tx_ids)."""
     s.add(Household(name="H", base_currency="EUR"))
     s.flush()
     alice, bob = uuid4(), uuid4()
@@ -1017,7 +1124,7 @@ def _seed_period_sync(
         _add_expense(s, account_id=account.id, category_id=cat.id, amount=m, created_by=alice)
         for m in amounts
     ]
-    return bob, tx_ids
+    return account.id, bob, tx_ids
 
 
 @given(
@@ -1036,14 +1143,14 @@ def test_conservation_property(overflow_socle: str, amounts: list[int], budget_a
             sm = async_sessionmaker(engine, expire_on_commit=False)
             async with sm() as s:
                 await s.begin()
-                bob, tx_ids = await s.run_sync(
+                account_id, bob, tx_ids = await s.run_sync(
                     lambda sync: _seed_period_sync(
                         sync, amounts=amounts, budget_amount=budget_amount
                     )
                 )
                 for tx in tx_ids:
                     await materialize_overflow(
-                        s, TransactionConfirmedEvent(transaction_id=tx, account_id=uuid4())
+                        s, TransactionConfirmedEvent(transaction_id=tx, account_id=account_id)
                     )
                 total = (
                     await s.execute(
@@ -1076,13 +1183,13 @@ def test_idempotence_property(overflow_socle: str, amounts: list[int], budget_am
             sm = async_sessionmaker(engine, expire_on_commit=False)
             async with sm() as s:
                 await s.begin()
-                _bob, tx_ids = await s.run_sync(
+                account_id, _bob, tx_ids = await s.run_sync(
                     lambda sync: _seed_period_sync(
                         sync, amounts=amounts, budget_amount=budget_amount
                     )
                 )
                 events = [
-                    TransactionConfirmedEvent(transaction_id=tx, account_id=uuid4())
+                    TransactionConfirmedEvent(transaction_id=tx, account_id=account_id)
                     for tx in tx_ids
                 ]
                 for ev in events:
@@ -1103,6 +1210,103 @@ def test_idempotence_property(overflow_socle: str, amounts: list[int], budget_am
                 for ev in events:
                     await materialize_overflow(s, ev)
                 assert await _snapshot() == first
+                await s.rollback()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())
+
+
+@given(
+    amount=st.integers(min_value=1, max_value=1_000_000),
+    r_bob=st.decimals(min_value=Decimal("0.0001"), max_value=Decimal("1"), places=4),
+    r_carol=st.decimals(min_value=Decimal("0.0001"), max_value=Decimal("1"), places=4),
+)
+@settings(max_examples=20, deadline=None, suppress_health_check=[HealthCheck.too_slow])
+def test_multi_member_materialisation_matches_domain(
+    overflow_socle: str, amount: int, r_bob: Decimal, r_carol: Decimal
+) -> None:
+    # Multi-debtor rounding path (D15 gap): with TWO non-payer members at ARBITRARY
+    # quote-parts and NO budget (base = full amount, option C), the PERSISTED overflow
+    # debts must equal exactly what the pure domain computes per member —
+    # `Money(amount).apply_ratio(ratio)`, a line dropped when it rounds to ≤ 0 cent.
+    # Pins that the effectful path faithfully mirrors `compute_for_overflow` across the
+    # ROUND_HALF_UP cent boundaries; the conservation property only ever uses a single
+    # ratio=1.0 debtor and never exercises multi-member rounding.
+    url = overflow_socle
+    base = Money(amount, "EUR")
+
+    async def _run() -> None:
+        engine = create_async_engine(url)
+        try:
+            sm = async_sessionmaker(engine, expire_on_commit=False)
+            async with sm() as s:
+                await s.begin()
+
+                def _seed(sync: Session) -> tuple[UUID, UUID, UUID, UUID]:
+                    sync.add(Household(name="H", base_currency="EUR"))
+                    sync.flush()
+                    alice, bob, carol = uuid4(), uuid4(), uuid4()
+                    sync.add_all(
+                        [
+                            User(
+                                id=u,
+                                email=f"{u.hex[:8]}@e.com",
+                                password_hash="x",
+                                display_name="X",
+                                role="member",
+                            )
+                            for u in (alice, bob, carol)
+                        ]
+                    )
+                    sync.flush()
+                    account = Account(name="Commun", type="courant", currency="EUR", owner_id=None)
+                    sync.add(account)
+                    sync.flush()
+                    sync.add_all(
+                        [
+                            AccountMember(
+                                account_id=account.id,
+                                user_id=alice,
+                                default_share_ratio=Decimal("1"),
+                            ),
+                            AccountMember(
+                                account_id=account.id, user_id=bob, default_share_ratio=r_bob
+                            ),
+                            AccountMember(
+                                account_id=account.id, user_id=carol, default_share_ratio=r_carol
+                            ),
+                        ]
+                    )
+                    cat = Category(name="Courses")
+                    sync.add(cat)
+                    sync.flush()
+                    tx = _add_expense(
+                        sync,
+                        account_id=account.id,
+                        category_id=cat.id,
+                        amount=amount,
+                        created_by=alice,
+                    )
+                    return account.id, bob, carol, tx
+
+                account_id, bob, carol, tx = await s.run_sync(_seed)
+                await materialize_overflow(
+                    s, TransactionConfirmedEvent(transaction_id=tx, account_id=account_id)
+                )
+
+                rows = await s.execute(
+                    select(Debt.from_user_id, Debt.amount_cents).where(
+                        Debt.origin == _OVERFLOW, Debt.source_transaction_id == tx
+                    )
+                )
+                persisted = {uid: cents for uid, cents in rows.all()}
+                expected = {
+                    uid: base.apply_ratio(ratio).amount_cents
+                    for uid, ratio in ((bob, r_bob), (carol, r_carol))
+                    if base.apply_ratio(ratio).amount_cents > 0
+                }
+                assert persisted == expected
                 await s.rollback()
         finally:
             await engine.dispose()

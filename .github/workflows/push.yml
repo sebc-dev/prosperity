@@ -9,6 +9,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Least-privilege default for GITHUB_TOKEN; jobs only check out and read.
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true

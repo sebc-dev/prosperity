@@ -122,10 +122,11 @@ _Avoid_: enveloppe, plafond
 
 **Excédent budgétaire** (E) :
 Pour une transaction T de montant M sur compte commun, catégorie C, budget B avec restant R : `E = max(0, M - R)`. C'est ce montant E (et seulement lui) qui alimente la logique non-budgétisée → dette (cf. F10) — **sauf override explicite via `debt_generation_override`** (cf. ci-dessous).
+**Cas sans budget actif** : si **aucun budget** ne couvre la catégorie C, il n'y a pas de restant R à absorber → la base devient le **montant entier** (`base = M`, équivalent à `force_full_debt`). Une dépense `default` sur compte commun **non budgétée** génère donc une dette de quote-part sur tout le montant ; ajouter un budget couvrant après coup re-matérialise la dette à la baisse (cf. F10 reclassement, S11.4).
 
 **`debt_generation_override`** :
 Levier porté par une transaction sur compte commun pour forcer la mécanique de génération de dette. Valeurs :
-- `default` : règle F10 standard (seul l'excédent E alimente une dette, selon quote-part par défaut).
+- `default` : règle F10 standard (seul l'excédent E alimente une dette, selon quote-part par défaut). Sans budget actif sur la catégorie, `base = M` (cf. §Excédent budgétaire).
 - `force_full_debt` : la **totalité** du montant génère une dette, et la transaction est **exclue du compteur de consommation du budget** (n'alimente donc pas les alertes 80%/100%). Sémantique de "hors budget".
 - `force_no_debt` : aucune dette générée, même en dépassement budgétaire. Le compte commun absorbe intégralement. Le budget reste comptabilisé normalement (et déclenche ses alertes).
 

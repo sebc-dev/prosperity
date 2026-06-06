@@ -66,6 +66,7 @@ Livrable agrégé : Alice paie 100€ Courses depuis le compte commun 50/50 alor
 |---|---|---|
 | **P11.4.1** | Souscrire à `BudgetCreatedEvent` et `BudgetUpdatedEvent` (à ajouter dans `budget.public` events) : pour toutes les transactions confirmées de la catégorie dans la période du budget, re-matérialiser overflow. Idempotent. Tests intégration : créer transaction sans budget → dette générée ; ajouter budget couvrant → dette retirée | ~200 |
 | **P11.4.2** | Audit log : laisser une trace `debts_recomputed_on_budget_event` (timestamp, budget_id, transactions_recomputed_count). Tests | ~80 |
+| **P11.4.3** | **Re-matérialisation sur édition `category_id`** (delta reporté de S11.3) : `rematerialize_overflow_on_edit` ne réagit en S11.3 qu'à `debt_generation_override` ; étendre à `category_id` (overflow-relevant : sélectionne le budget couvrant, donc le restant, donc la base) et re-matérialiser les **voisines de période** dont le restant est décalé (cf. `CONTEXT.md` §Excédent _Limite V1_). Tests : éditer la catégorie d'une tx confirmée → overflow recalculé sur le nouveau budget couvrant ; voisines re-matérialisées | ~120 |
 
 ---
 

@@ -804,3 +804,69 @@ async def test_resolve_overflow_context_tie_break_created_at(
     assert ctx is not None
     assert ctx.budget_id == b_old_id  # earlier created_at wins the tie-break
     assert ctx.remaining_before_cents == 5000  # b_old's amount, no prior consumption
+
+
+async def test_resolve_overflow_context_tie_break_id_at_equal_created_at(
+    household_singleton: AsyncSession, bound_account_factories: FactoryBundle
+) -> None:
+    # D8 (sub-tie-break): two active budgets on the SAME category AND the SAME
+    # `created_at` fall through to the final `Budget.id` order key. `id` is the
+    # ONLY discriminator here, so this pins `id ASC` deterministically — a flip to
+    # `id DESC` (or dropping `id` from the order_by, making the pick non-deterministic)
+    # would break it. Ids are assigned explicitly so the assertion never depends on
+    # the random UUIDs the column default would otherwise generate.
+    user_factory, account_factory, _ = await bound_account_factories()
+    same_created_at = datetime(2026, 3, 1, tzinfo=UTC)
+    lo_id = UUID(int=0x1111_1111_1111_1111_1111_1111_1111_1111)
+    hi_id = UUID(int=0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF)
+
+    def _seed(s: Session) -> tuple[UUID, UUID]:
+        alice = user_factory(email=f"tbid-{uuid4().hex[:8]}@example.com")
+        acc = account_factory(owner_id=None, name="Commun")
+        s.add(AccountMember(account_id=acc.id, user_id=alice.id, default_share_ratio=Decimal("1")))
+        s.flush()
+        cat = Category(name="Courses")
+        s.add(cat)
+        s.flush()
+        # Smaller id carries the distinctive amount (5000) so the assertion proves
+        # WHICH budget won, not merely that one was returned. Larger id = 9999.
+        b_lo = Budget(
+            id=lo_id,
+            category_id=cat.id,
+            period_kind="monthly",
+            period_start=_PERIOD_START,
+            amount_cents=5000,
+            currency="EUR",
+            scope="shared",
+            created_by=alice.id,
+            created_at=same_created_at,
+        )
+        b_hi = Budget(
+            id=hi_id,
+            category_id=cat.id,
+            period_kind="monthly",
+            period_start=_PERIOD_START,
+            amount_cents=9999,
+            currency="EUR",
+            scope="shared",
+            created_by=alice.id,
+            created_at=same_created_at,
+        )
+        s.add_all([b_lo, b_hi])
+        s.flush()
+        for b in (b_lo, b_hi):
+            s.add(BudgetContributor(budget_id=b.id, user_id=alice.id))
+        s.flush()
+        return acc.id, cat.id
+
+    account_id, cat_id = await household_singleton.run_sync(_seed)
+    ctx = await resolve_overflow_context(
+        household_singleton,
+        category_ids={cat_id},
+        account_id=account_id,
+        as_of=_AS_OF,
+        before=(_AS_OF, uuid4()),
+    )
+    assert ctx is not None
+    assert ctx.budget_id == lo_id  # smaller id wins at equal (depth, created_at)
+    assert ctx.remaining_before_cents == 5000  # b_lo's amount, no prior consumption

@@ -126,6 +126,24 @@ async def test_no_event_when_value_unchanged(
     assert received == []
 
 
+async def test_no_event_when_no_editable_field_passed(
+    household_singleton: AsyncSession, seed_account: SeedAccount, seed_tx: SeedTx
+) -> None:
+    # Calling `update_editable_fields` with NO field at all (empty `**fields`)
+    # writes nothing back → the `changed` diff over `EDITABLE_AFTER_CONFIRMED` is
+    # empty and the `if changed:` guard suppresses emission. Distinct from
+    # `test_no_event_when_value_unchanged` (a field IS passed, same value): here no
+    # field is supplied, so the diff loop runs over an aggregate nothing touched.
+    received: list[TransactionEditableFieldsChangedEvent] = []
+    subscribe(TransactionEditableFieldsChangedEvent, received.append)
+    account_id, user_id = await seed_account()
+    tx_id = await seed_tx(account_id=account_id, user_id=user_id, state="confirmed")
+
+    await update_editable_fields(household_singleton, tx_id=tx_id)
+
+    assert received == []
+
+
 async def test_no_event_when_tags_unchanged_as_list(
     household_singleton: AsyncSession, seed_account: SeedAccount, seed_tx: SeedTx
 ) -> None:

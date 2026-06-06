@@ -33,36 +33,9 @@ from backend.shared.money import Money
 
 Factories = tuple[type, type, type, type]
 BoundFactories = Callable[[], Awaitable[Factories]]
+SeedAccount = Callable[[], Awaitable[tuple[uuid.UUID, uuid.UUID]]]
+SeedTx = Callable[..., Awaitable[uuid.UUID]]
 CategoryMaker = Callable[..., Awaitable[object]]
-
-
-async def _seed_account(
-    session: AsyncSession, bound: BoundFactories
-) -> tuple[uuid.UUID, uuid.UUID]:
-    user_factory, account_factory, _tx, _split = await bound()
-
-    def _build(_sync: object) -> tuple[uuid.UUID, uuid.UUID]:
-        user = user_factory()
-        return account_factory(owner_id=user.id).id, user.id
-
-    return await session.run_sync(_build)
-
-
-async def _seed_tx(
-    session: AsyncSession,
-    bound: BoundFactories,
-    *,
-    account_id: uuid.UUID,
-    user_id: uuid.UUID,
-    state: str,
-) -> uuid.UUID:
-    """A balanced same-account pair in `state` (factory sets the column directly)."""
-    _u, _a, tx_factory, _split = await bound()
-
-    def _build(_sync: object) -> uuid.UUID:
-        return tx_factory(account_id=account_id, created_by=user_id, state=state).id
-
-    return await session.run_sync(_build)
 
 
 # ---------------------------------------------------------------------------
@@ -72,13 +45,12 @@ async def _seed_tx(
 
 async def test_edit_category_id_persists(
     household_singleton: AsyncSession,
-    bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
+    seed_tx: SeedTx,
     bound_category_factory: CategoryMaker,
 ) -> None:
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
-    tx_id = await _seed_tx(
-        household_singleton,
-        bound_transaction_factories,
+    account_id, user_id = await seed_account()
+    tx_id = await seed_tx(
         account_id=account_id,
         user_id=user_id,
         state="confirmed",
@@ -95,12 +67,13 @@ async def test_edit_category_id_persists(
 
 
 async def test_edit_tags_description_override_share_request_persist(
-    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
+    household_singleton: AsyncSession,
+    bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
+    seed_tx: SeedTx,
 ) -> None:
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
-    tx_id = await _seed_tx(
-        household_singleton,
-        bound_transaction_factories,
+    account_id, user_id = await seed_account()
+    tx_id = await seed_tx(
         account_id=account_id,
         user_id=user_id,
         state="confirmed",
@@ -157,16 +130,15 @@ async def test_edit_tags_description_override_share_request_persist(
 
 async def test_edit_can_clear_category_and_tags(
     household_singleton: AsyncSession,
-    bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
+    seed_tx: SeedTx,
     bound_category_factory: CategoryMaker,
 ) -> None:
     # Clearing an editable field to its empty form (`category_id=None`, `tags=()`)
     # is allowed post-confirmed — the checker only compares the editable set by
     # value, it does not forbid going back to empty.
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
-    tx_id = await _seed_tx(
-        household_singleton,
-        bound_transaction_factories,
+    account_id, user_id = await seed_account()
+    tx_id = await seed_tx(
         account_id=account_id,
         user_id=user_id,
         state="confirmed",
@@ -195,14 +167,12 @@ async def test_edit_can_clear_category_and_tags(
 
 
 async def test_edit_split_amount_raises(
-    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
+    household_singleton: AsyncSession, seed_account: SeedAccount, seed_tx: SeedTx
 ) -> None:
     # Mutating a split (here its amount, via a fresh domain Split) diverges the
     # `splits` field by value → ImmutableFieldViolation("splits").
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
-    tx_id = await _seed_tx(
-        household_singleton,
-        bound_transaction_factories,
+    account_id, user_id = await seed_account()
+    tx_id = await seed_tx(
         account_id=account_id,
         user_id=user_id,
         state="confirmed",
@@ -215,9 +185,9 @@ async def test_edit_split_amount_raises(
 
 
 async def test_edit_frozen_scalar_fields_raise(
-    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
+    household_singleton: AsyncSession, seed_account: SeedAccount, seed_tx: SeedTx
 ) -> None:
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    account_id, user_id = await seed_account()
 
     for field, value in (
         ("account_id", uuid.uuid4()),
@@ -226,9 +196,7 @@ async def test_edit_frozen_scalar_fields_raise(
         ("created_by", uuid.uuid4()),
         ("id", uuid.uuid4()),
     ):
-        tx_id = await _seed_tx(
-            household_singleton,
-            bound_transaction_factories,
+        tx_id = await seed_tx(
             account_id=account_id,
             user_id=user_id,
             state="confirmed",
@@ -239,12 +207,10 @@ async def test_edit_frozen_scalar_fields_raise(
 
 
 async def test_unknown_field_raises_value_error(
-    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
+    household_singleton: AsyncSession, seed_account: SeedAccount, seed_tx: SeedTx
 ) -> None:
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
-    tx_id = await _seed_tx(
-        household_singleton,
-        bound_transaction_factories,
+    account_id, user_id = await seed_account()
+    tx_id = await seed_tx(
         account_id=account_id,
         user_id=user_id,
         state="confirmed",
@@ -260,15 +226,13 @@ async def test_unknown_field_raises_value_error(
 
 
 async def test_draft_frozen_field_is_silent_noop(
-    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
+    household_singleton: AsyncSession, seed_account: SeedAccount, seed_tx: SeedTx
 ) -> None:
     # Below `confirmed`, passing a frozen field neither raises (checker no-op) nor
     # writes anything (the field is ∉ EDITABLE_AFTER_CONFIRMED) — assert the value
     # is unchanged so the silence is not mistaken for an applied edit.
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
-    tx_id = await _seed_tx(
-        household_singleton,
-        bound_transaction_factories,
+    account_id, user_id = await seed_account()
+    tx_id = await seed_tx(
         account_id=account_id,
         user_id=user_id,
         state="draft",
@@ -287,15 +251,14 @@ async def test_draft_frozen_field_is_silent_noop(
 
 async def test_draft_editable_field_is_written(
     household_singleton: AsyncSession,
-    bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
+    seed_tx: SeedTx,
     bound_category_factory: CategoryMaker,
 ) -> None:
     # An editable field is written even below `confirmed` (the checker is a no-op,
     # the write loop targets the editable set regardless of state).
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
-    tx_id = await _seed_tx(
-        household_singleton,
-        bound_transaction_factories,
+    account_id, user_id = await seed_account()
+    tx_id = await seed_tx(
         account_id=account_id,
         user_id=user_id,
         state="draft",
@@ -313,16 +276,14 @@ async def test_draft_editable_field_is_written(
 
 
 async def test_out_of_enum_override_rejected_by_check(
-    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
+    household_singleton: AsyncSession, seed_account: SeedAccount, seed_tx: SeedTx
 ) -> None:
     # `model_copy` bypasses the Pydantic Literal, so an out-of-enum value reaches
     # the flush — where the DB CHECK ck_transactions_debt_generation_override
     # rejects it (IntegrityError). This is the fail-closed backstop for S07.5's
     # primary 422 guard.
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
-    tx_id = await _seed_tx(
-        household_singleton,
-        bound_transaction_factories,
+    account_id, user_id = await seed_account()
+    tx_id = await seed_tx(
         account_id=account_id,
         user_id=user_id,
         state="confirmed",

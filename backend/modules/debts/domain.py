@@ -1,11 +1,13 @@
 """Pure domain for the debts module (no SQLAlchemy / session / FastAPI / Transaction).
 
-Les `Debt`/`ShareRequestData` Pydantic ici sont DISTINCTS des modèles ORM de
-S09.1 (archétype `domain.py`, gabarit `transactions.domain`). Le
+Les `Debt`/`ShareRequestData`/`OverflowMember` Pydantic ici sont DISTINCTS des
+modèles ORM de S09.1 (archétype `domain.py`, gabarit `transactions.domain`). Le
 `DebtCalculator` est une fonction de VALEURS (ADR 0002, note « Refined-by E09 ») :
-il reçoit des SCALAIRES (`expense_total` dérivé par le service S09.3 = somme des
-`classification` legs, ADR 0017) — JAMAIS le type `Transaction` (graphe ADR 0005,
-contrat import-linter `2-debts`). Le mapper domain↔modèle vit côté service S09.3.
+il reçoit des SCALAIRES (`expense_total` dérivé par le service = somme des
+`classification` legs, ADR 0017 ; `budget_remaining_before: Money | None` dérivé
+du budget actif pour l'overflow F10) — JAMAIS le type `Transaction`/`Budget`
+(graphe ADR 0005, contrat import-linter `2-debts`). Le mapper domain↔modèle vit
+côté service (S09.3 share-request, S11.3 overflow).
 
 Interne à `modules.debts` : n'importe que `backend.shared.money` (+ stdlib +
 Pydantic) ⇒ aucun arc cross-module. La taxonomie `DebtCalculationError` reste
@@ -29,9 +31,18 @@ from backend.shared.money import Money
 
 # Set fermé des origines de dette (gabarit `DebtGenerationOverride`/`LegRole`).
 # Le modèle ORM `origin` est `String` SANS CHECK SQL (S09.1) : ce `Literal` EST
-# le verrou au boundary Pydantic. `shared_account_overflow` est listé mais NON
-# produit en E09 (overflow F10 → E11) : verrou de set fermé volontaire.
+# le verrou au boundary Pydantic. `shared_account_overflow` est produit par
+# `compute_for_overflow` (S11.2, F10) ; `personal_share_request` par
+# `compute_for_share_request` (S09.2) : verrou de set fermé volontaire.
 DebtOrigin = Literal["shared_account_overflow", "personal_share_request"]
+
+# Miroir LOCAL du set fermé `transactions.domain.DebtGenerationOverride` (S07).
+# NON importé : `debts/domain.py` reste pur (AC S11.2 : 0 arc cross-module ; le
+# contrat import-linter `2-debts` interdit `debts → transactions.domain`, et l'AC
+# interdit même un arc via `transactions.public`). Même nom = même concept métier
+# mirroré ; la dérive des deux sets est verrouillée par un test de parité
+# (`tests/unit/test_debts_overflow.py::test_override_set_parity`). Gabarit `DebtOrigin`.
+DebtGenerationOverride = Literal["default", "force_full_debt", "force_no_debt"]
 
 
 class DebtCalculationError(Exception):
@@ -106,6 +117,26 @@ class ShareRequestData(BaseModel):
     short_label: str  # porté pour le mirror ; non lu par le calcul
 
 
+class OverflowMember(BaseModel):
+    """Miroir pur (PERMISSIF) d'un membre de compte commun + sa quote-part.
+
+    Gabarit `ShareRequestData`/`DebtContext` (S09.2 D4 / S10.2) : AUCUN
+    `model_validator` métier (pas de garde `Σ ratio == 1`, pas de borne sur
+    `share_ratio`) ⇒ `compute_for_overflow` reste l'UNIQUE gardien testable —
+    sinon la branche `RatioOutOfBoundsError` deviendrait inatteignable (dead code
+    + trou de coverage). La validation 422 d'entrée (membres du compte,
+    Σ quotes-parts == 1) vit au boundary effectful S11.3 (`accounts.public`).
+
+    `strict=True` refuse les coercions implicites (gabarit `Money`/`Debt`) :
+    `share_ratio` doit être un `Decimal`, jamais `float`/`str` (ADR 0008).
+    """
+
+    model_config = ConfigDict(frozen=True, strict=True)
+
+    user_id: UUID
+    share_ratio: Decimal  # quote-part du compte commun (miroir `Numeric(5, 4)`)
+
+
 class Debt(BaseModel):
     """Miroir pur du modèle SQLA `Debt` (ADR 0002), en `Money`.
 
@@ -151,11 +182,17 @@ class Debt(BaseModel):
 
 
 class DebtCalculator:
-    """Projection PURE des dettes (ADR 0002). MVP : `compute_for_share_request`.
+    """Projection PURE des dettes (ADR 0002). Deux sous-cas scalaires :
+    `compute_for_share_request` (`personal_share_request`, S09.2) et
+    `compute_for_overflow` (`shared_account_overflow`, F10, S11.2).
 
-    `compute_for_overflow` (sous-cas `shared_account_overflow`, argument
-    `Budget`) est DÉFÉRÉ à E11. La classe (vs fonctions module-level) reflète le
-    nom contractuel ADR 0002/glossaire et la cohésion des 2 futures méthodes.
+    Les deux reçoivent des SCALAIRES (`expense_total: Money`,
+    `budget_remaining_before: Money | None`, `OverflowMember`…), JAMAIS un
+    `Transaction`/`Budget`/`Session` (graphe ADR 0005, contrat `2-debts`) : la
+    dérivation effectful (tx confirmée → montant, budget actif → restant, compte
+    commun → membres+quotes-parts) vit côté service. La classe (vs fonctions
+    module-level) reflète le nom contractuel ADR 0002/glossaire et la cohésion
+    des deux méthodes.
     """
 
     @staticmethod
@@ -196,6 +233,95 @@ class DebtCalculator:
                 share_ratio=share_request.ratio,
             )
         ]
+
+    @staticmethod
+    def compute_for_overflow(  # noqa: PLR0913 — signature scalaire keyword-only (gabarit compute_for_share_request)
+        *,
+        expense_total: Money,
+        budget_remaining_before: Money | None,
+        account_members: Sequence[OverflowMember],
+        payer_user_id: UUID,
+        override: DebtGenerationOverride,
+        source_transaction_id: UUID,
+        source_account_id: UUID,
+    ) -> list[Debt]:
+        """Projette les dettes `shared_account_overflow` d'une dépense sur compte commun.
+
+        F10 (glossaire §Excédent budgétaire) : une dette par membre AUTRE que le
+        payeur, sur la base à répartir, orientée membre→payeur. PURE, idempotente
+        (ADR 0002).
+
+        Base à répartir selon `override` :
+        - `force_no_debt` → `[]` (le compte commun absorbe tout, même en dépassement) ;
+        - `force_full_debt` → `base = expense_total` (totalité, hors budget) ;
+        - `default` → `base = max(0, expense_total − budget_remaining_before)` ;
+          si `budget_remaining_before is None` (dépense NON budgétisée) → `base =
+          expense_total` (décision S11.2 : sans budget actif, rien n'est absorbé —
+          cohérent avec l'équivalence `force_full_debt`, property (3) de S11.2.2).
+
+        Répartition : pour chaque `member.user_id != payer_user_id`,
+        `montant = base.apply_ratio(member.share_ratio)` ; ligne OMISE si l'arrondi
+        tombe à `≤ 0` cent (PAS d'erreur — multi-membres ; contraste assumé avec
+        `compute_for_share_request` qui lève `NonPositiveDebtAmountError` en
+        mono-membre). Le payeur ne porte JAMAIS de dette envers lui-même (filtre
+        `!= payer_user_id` ; backstop `Debt` `from != to`).
+
+        Gardes (famille `DebtCalculationError`) : `NonPositiveExpenseError`
+        (`expense_total ≤ 0`, validé EN PREMIER, indépendant de l'override — une
+        dépense non-positive est une erreur d'appelant, bruyante même sous
+        `force_no_debt`) ; `RatioOutOfBoundsError` (`share_ratio ∉ (0, 1]` d'un
+        membre débiteur, fail-safe : la colonne `share_ratio Numeric(5, 4)` n'a
+        AUCUN CHECK DB ⇒ `apply_ratio`, sans borne, produirait une dette
+        aberrante). Messages d'erreur STATIQUES, SANS PII (pas d'UUID/montant
+        interpolé) : le service mappe la famille via `.code`, JAMAIS `str(exc)`
+        (cf. docstring module).
+
+        Contrat appelant : `budget_remaining_before ≥ 0` (le restant budget est un
+        solde positif ou nul, dérivé par S11.3) — NON gardé en V1, comme le cas
+        cross-devise. Un `remaining < 0` produirait `base > expense_total` (dette
+        supérieure à la dépense) ; inatteignable en prod (S11.3 dérive `remaining`
+        via `budget.public.compute_consumption`, ≥ 0 par construction). Le `max(0,
+        …)` du garde `base ≤ 0` couvre QUE `remaining > total` ; le contrat `≥ 0`
+        couvre l'autre borne (pas de `max(0, …)` artificiel masquant un bug appelant).
+
+        Note devise : `expense_total − budget_remaining_before` lève
+        `IncompatibleCurrencyError` (`shared`, hors famille `DebtCalculationError`)
+        si devises différentes — inatteignable en V1 mono-devise (ADR 0008) ; le
+        service S11.3 aligne les deux scalaires sur la devise du foyer.
+        """
+        if expense_total.amount_cents <= 0:
+            raise NonPositiveExpenseError("expense_total must be strictly positive")
+        if override == "force_no_debt":
+            return []
+
+        if override == "force_full_debt" or budget_remaining_before is None:
+            base = expense_total
+        else:
+            base = expense_total - budget_remaining_before  # max(0, …) via le garde ci-dessous
+        if base.amount_cents <= 0:
+            return []
+
+        debts: list[Debt] = []
+        for member in account_members:
+            if member.user_id == payer_user_id:
+                continue  # le payeur/créancier ne se doit rien à lui-même
+            if not (0 < member.share_ratio <= 1):
+                raise RatioOutOfBoundsError("share_ratio must be within (0, 1]")
+            amount = base.apply_ratio(member.share_ratio)
+            if amount.amount_cents <= 0:
+                continue  # arrondi dégénéré : ligne omise (pas d'erreur multi-membres)
+            debts.append(
+                Debt(
+                    from_user_id=member.user_id,  # débiteur (autre membre)
+                    to_user_id=payer_user_id,  # créancier (payeur/créateur)
+                    amount=amount,
+                    account_id=source_account_id,
+                    source_transaction_id=source_transaction_id,
+                    origin="shared_account_overflow",
+                    share_ratio=member.share_ratio,
+                )
+            )
+        return debts
 
 
 # ---------------------------------------------------------------------------

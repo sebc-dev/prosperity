@@ -58,6 +58,7 @@ from backend.modules.debts.domain import (
     Debt,
     DebtCalculator,
     DebtContext,
+    OverflowMember,
     SettlementLineInput,
     SettlementType,
     ShareRequestData,
@@ -423,6 +424,38 @@ def debt_strategy(draw: st.DrawFn) -> Debt:
     return DebtCalculator.compute_for_share_request(
         share_request=sr, expense_total=expense, source_account_id=draw(st.uuids())
     )[0]
+
+
+# ---------------------------------------------------------------------------
+# S11.2 — `overflow_member_strategy` : membres d'un compte commun (`Σ ratio == 1`,
+# ratios > 0) + le payeur, pour les properties de `compute_for_overflow` (F10).
+# SANS rejet (convention repo) : délègue la partition de la quote-part à
+# `share_ratios(n=…)` et tire les ids via `st.uuids()` (gabarit
+# `account_with_members_strategy`, collision négligeable).
+# ---------------------------------------------------------------------------
+
+
+@st.composite
+def overflow_member_strategy(
+    draw: st.DrawFn, *, min_members: int = 2, max_members: int = 5
+) -> tuple[tuple[OverflowMember, ...], UUID]:
+    """N membres d'un compte commun (`Σ share_ratio == 1`, ratios > 0) + le payeur.
+
+    SANS rejet (convention repo `distinct_currency_pair`/`debt_strategy`) : délègue
+    le partitionnement de la quote-part à `share_ratios(n=…)` (parts ≥ 1 bp ⇒
+    ratio > 0, Σ == `Decimal("1.0000")`) et tire N ids via `st.uuids()` (gabarit
+    `account_with_members_strategy`, collision négligeable). Le payeur est l'UN des
+    membres (sa quote-part est connue) ⇒ alimente la property de conservation
+    `Σ dettes == base × (1 − share_payer)`.
+    """
+    n = draw(st.integers(min_value=min_members, max_value=max_members))
+    ratios = draw(share_ratios(n=n))  # Σ == 1, chacun > 0
+    ids = [draw(st.uuids()) for _ in range(n)]  # cf. docstring : collision négligeable
+    members = tuple(
+        OverflowMember(user_id=u, share_ratio=r) for u, r in zip(ids, ratios, strict=True)
+    )
+    payer = draw(st.sampled_from([m.user_id for m in members]))
+    return members, payer
 
 
 # Borne réduite pour les splits (vs `_MONEY_BOUND` à ±10 M€) : la somme de

@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.modules.auth.models import AdminAuditLog, User
 from backend.modules.budget.models import BudgetThresholdAlert
+from backend.modules.debts.public import compute_remaining
 
 # Default admin credentials reused across journeys. The password is ≥12
 # chars (SetupRequest / OWASP ASVS V2.1.*); journeys that re-login against
@@ -289,6 +290,113 @@ async def create_budget(  # noqa: PLR0913 — keyword-only HTTP helper
     )
     assert resp.status_code == 201, resp.text
     return resp.json()
+
+
+# --- Debt / settlement lifecycle (S10.6) ------------------------------------
+#
+# Plain `async` helpers for the debt → settlement E2E journey (D9/D10): drive the
+# real `share_request` HTTP flow that materialises a `Debt`, and post a netting
+# `Settlement`. The orientation of the materialised debt is server-authoritative
+# (`from=requested_from` debtor → `to=requested_by` creditor = the token user);
+# the helpers never smuggle `by_user_id`/`requested_by`/`created_by` (D7).
+
+
+async def create_share_request(  # noqa: PLR0913 — keyword-only HTTP helper
+    client: AsyncClient,
+    access: str,
+    tx_id: str,
+    *,
+    requested_from: str,
+    ratio: str = "1.0",
+    short_label: str = "Partage",
+) -> dict[str, Any]:
+    """POST /transactions/{tx_id}/share-requests (Bearer) → ShareRequestResponse.
+
+    The caller (token user) is the creditor (owner of the source account); the
+    materialised `Debt` goes `from=requested_from → to=<token user>`. `ratio` is a
+    string decimal (`gt=0, le=1`). Asserts 201 — a failure here is a broken
+    precondition for the journey, not the behaviour under test.
+    """
+    resp = await client.post(
+        f"/transactions/{tx_id}/share-requests",
+        json={"requested_from": requested_from, "ratio": ratio, "short_label": short_label},
+        headers=auth_headers(access),
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+def settlement_body(
+    *,
+    type_: str,
+    lines: list[tuple[str, int]],
+    linked_transaction_id: str | None = None,
+    settled_at: str = "2026-06-03",
+    note: str | None = None,
+) -> dict[str, Any]:
+    """Build a `POST /settlements` body. `lines` = [(debt_id, amount_cents>0), …].
+
+    Shared by the legitimate-netting helper AND the over-settlement negative case
+    (which must assert 422 inline, so it can't go through the 201-asserting
+    `create_settlement`). `linked_transaction_id` is omitted when None so the
+    `extra="forbid"` schema sees only what the caller meant to set.
+    """
+    body: dict[str, Any] = {
+        "type": type_,
+        "settled_at": settled_at,
+        "lines": [{"debt_id": d, "amount_cents": a} for d, a in lines],
+    }
+    if linked_transaction_id is not None:
+        body["linked_transaction_id"] = linked_transaction_id
+    if note is not None:
+        body["note"] = note
+    return body
+
+
+async def create_settlement(  # noqa: PLR0913 — keyword-only HTTP helper
+    client: AsyncClient,
+    access: str,
+    *,
+    type_: str,
+    lines: list[tuple[str, int]],
+    linked_transaction_id: str | None = None,
+    settled_at: str = "2026-06-03",
+    note: str | None = None,
+) -> dict[str, Any]:
+    """POST /settlements (Bearer) → SettlementResponse. `created_by` server-derived.
+
+    `lines` carries POSITIVE `amount_cents` only — the netting direction is borne
+    by each `Debt`'s orientation (ADR 0011), never a sign on the line. Asserts 201.
+    """
+    resp = await client.post(
+        "/settlements",
+        json=settlement_body(
+            type_=type_,
+            lines=lines,
+            linked_transaction_id=linked_transaction_id,
+            settled_at=settled_at,
+            note=note,
+        ),
+        headers=auth_headers(access),
+    )
+    assert resp.status_code == 201, resp.text
+    return resp.json()
+
+
+async def fetch_debt_remaining(
+    sessionmaker: async_sessionmaker[AsyncSession],
+    *,
+    debt_id: str,
+) -> int:
+    """Side-channel (D3): `compute_remaining` of a debt via `committed_sessionmaker`.
+
+    No HTTP endpoint exposes the raw remaining balance independently of the S09.4
+    debtor masking, so the conservation invariant is verified directly against the
+    durable state (gabarit `fetch_threshold_alerts`). Replace with an HTTP call
+    once such an endpoint exists.
+    """
+    async with sessionmaker() as session:
+        return await compute_remaining(session, debt_id=UUID(debt_id))
 
 
 async def fetch_threshold_alerts(

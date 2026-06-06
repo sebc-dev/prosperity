@@ -57,5 +57,9 @@ def test_consumption_filters_exclude_force_full_debt() -> None:
         str(c.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
         for c in clauses
     )
-    assert "debt_generation_override" in rendered
-    assert "force_full_debt" in rendered
+    # Match the FULL fragment, operator INCLUDED: asserting the column and the
+    # value tokens separately would also pass on an INVERTED predicate
+    # (`= 'force_full_debt'`, the worst regression — counting ONLY the overridden
+    # transactions instead of excluding them). `literal_binds` + the postgres
+    # dialect render exactly this string.
+    assert "debt_generation_override != 'force_full_debt'" in rendered

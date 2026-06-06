@@ -27,6 +27,7 @@ Exposes (local to this tier):
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import cast
 
@@ -68,6 +69,13 @@ from tests.factories.sqlalchemy import (
     TransactionFactory,
     UserFactory,
 )
+
+_BoundTxFactories = Callable[
+    [],
+    Awaitable[
+        tuple[type[UserFactory], type[AccountFactory], type[TransactionFactory], type[SplitFactory]]
+    ],
+]
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
@@ -238,6 +246,54 @@ async def bound_transaction_factories(
         return UserFactory, AccountFactory, TransactionFactory, SplitFactory
 
     return _bind
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def seed_account(
+    household_singleton: AsyncSession,
+    bound_transaction_factories: _BoundTxFactories,
+) -> Callable[[], Awaitable[tuple[uuid.UUID, uuid.UUID]]]:
+    """Seed a `(account_id, owner user_id)` pair for transaction tests.
+
+    Shared by every transaction integration test that needs a real `Account` +
+    its owner `User` as FK rows (was copy-pasted as a local `_seed_account`
+    helper in `test_overflow_socle_lock.py` / `test_transactions_editable_event.py`
+    before S11.1 review).
+    """
+
+    async def _seed() -> tuple[uuid.UUID, uuid.UUID]:
+        user_factory, account_factory, _tx, _split = await bound_transaction_factories()
+
+        def _build(_sync: object) -> tuple[uuid.UUID, uuid.UUID]:
+            user = user_factory()
+            return account_factory(owner_id=user.id).id, user.id
+
+        return await household_singleton.run_sync(_build)
+
+    return _seed
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def seed_tx(
+    household_singleton: AsyncSession,
+    bound_transaction_factories: _BoundTxFactories,
+) -> Callable[..., Awaitable[uuid.UUID]]:
+    """Seed a balanced same-account transaction pair in `state` (factory sets the
+    column directly), returning its id.
+
+    Companion of `seed_account`; both replace the per-file `_seed_account`/`_seed_tx`
+    helpers duplicated across the transaction integration tests.
+    """
+
+    async def _seed(*, account_id: uuid.UUID, user_id: uuid.UUID, state: str) -> uuid.UUID:
+        _u, _a, tx_factory, _split = await bound_transaction_factories()
+
+        def _build(_sync: object) -> uuid.UUID:
+            return tx_factory(account_id=account_id, created_by=user_id, state=state).id
+
+        return await household_singleton.run_sync(_build)
+
+    return _seed
 
 
 @pytest_asyncio.fixture(loop_scope="session")

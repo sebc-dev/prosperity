@@ -70,9 +70,7 @@ def _overflow(  # noqa: PLR0913 — façade keyword-only de la signature scalair
         expense_total=expense_total,
         budget_remaining_before=budget_remaining_before,
         account_members=(
-            members
-            if members is not None
-            else (_member(ALICE, "0.5"), _member(BOB, "0.5"))
+            members if members is not None else (_member(ALICE, "0.5"), _member(BOB, "0.5"))
         ),
         payer_user_id=payer_user_id,
         override=override,
@@ -399,9 +397,7 @@ class TestComputeForOverflowProperties:
         assert set(full) == set(unbudgeted)
 
     @given(bad_ratio=out_of_bounds_ratio(), expense=positive_money_eur())
-    def test_property_rejects_ratio_out_of_bounds(
-        self, bad_ratio: Decimal, expense: Money
-    ) -> None:
+    def test_property_rejects_ratio_out_of_bounds(self, bad_ratio: Decimal, expense: Money) -> None:
         # Parité gabarit S09.2 : un débiteur ratio ∉ (0,1] sur un chemin générateur
         # (base = expense > 0) ⇒ `RatioOutOfBoundsError`, tout le spectre hors borne.
         payer, debtor = ALICE, BOB

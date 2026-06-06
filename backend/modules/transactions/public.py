@@ -26,6 +26,7 @@ from backend.modules.transactions.domain import (
 )
 from backend.modules.transactions.events import (
     TransactionConfirmedEvent,
+    TransactionEditableFieldsChangedEvent,
     TransactionVoidedEvent,
 )
 from backend.modules.transactions.service.lifecycle import (
@@ -47,6 +48,7 @@ __all__ = [
     "MultipleFundingLegsError",
     "SplitNotFoundError",
     "TransactionConfirmedEvent",
+    "TransactionEditableFieldsChangedEvent",
     "TransactionError",
     "TransactionNotFoundError",
     "TransactionState",

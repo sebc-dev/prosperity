@@ -6,7 +6,7 @@
 > **Bloque** : E13 (write upload handler matérialise les dettes overflow synchronement)
 > **ADRs activés** : 0002 (étendu pour overflow), 0011 (réutilisé via `compute_remaining`), 0017 (prérequis : levé par E08.5)
 >
-> ⚠️ **Prérequis dur E08.5 (ADR 0017).** Le livrable ci-dessous suppose qu'une transaction **confirmée** consomme un budget (P11.3.1 : « calcule consumption avant transaction »). Tant que la contradiction E07/E08 n'est pas levée par E08.5 (`leg_role` sur `Split`), aucune transaction confirmable ne consomme — l'overflow serait toujours nul. Voir [#133](https://github.com/sebc-dev/prosperity/issues/133).
+> ⚠️ **Prérequis dur E08.5 (ADR 0017).** Le livrable ci-dessous suppose qu'une transaction **confirmée** consomme un budget (P11.3.2 : « restant **avant** tx »). Tant que la contradiction E07/E08 n'est pas levée par E08.5 (`leg_role` sur `Split`), aucune transaction confirmable ne consomme — l'overflow serait toujours nul. Voir [#133](https://github.com/sebc-dev/prosperity/issues/133).
 
 ---
 
@@ -20,24 +20,27 @@ Livrable agrégé : Alice paie 100€ Courses depuis le compte commun 50/50 alor
 
 ## Stories
 
-### S11.1 — Champ `debt_generation_override` sur `Transaction`
+> **Issues GitHub** : #164 (S11.1) · #165 (S11.2) · #166 (S11.3) · #167 (S11.4) · #168 (S11.5).
+> **Deltas réconciliés au moment du découpage en issues** : (D1) le champ `debt_generation_override` + son éditabilité post-`confirmed` sont **déjà livrés en E07** (colonne en migration `0009`, CHECK `ck_transactions_debt_generation_override` en `0010`, `EDITABLE_AFTER_CONFIRMED`, issue #114) → S11.1 ne crée rien, elle **verrouille** le socle et ajoute l'event d'édition ; (D2) l'exclusion E08 de `force_full_debt` du compteur de consommation est **déjà implémentée** (`budget/service/consumption.py`) → la note implémenteur §1 ci-dessous est **caduque** ; (D4) la migration de l'index unique d'idempotence devient une **phase dédiée** (P11.3.1) ; (D5) la méthode domaine s'appelle **`compute_for_overflow`** (nom déjà réservé par la docstring du `DebtCalculator`) ; (D7) `BudgetCreatedEvent`/`BudgetUpdatedEvent` n'existent pas encore → S11.4 les ajoute côté `budget`.
 
-**Livrable observable** : champ déjà créé en E07 (anticipé). Migration éventuelle si on n'a pas anticipé.
+### S11.1 — Socle `debt_generation_override` : verrou + event d'édition
+
+**Livrable observable** : le socle (champ + éditabilité post-`confirmed` + exclusion E08) est **déjà livré (E07/E08)** ; cette story le **verrouille par test de régression** et ajoute le seul manquant, l'event `TransactionEditableFieldsChangedEvent`.
 
 | Phase | Description | Diff |
 |---|---|---|
-| **P11.1.1** | Vérifier que le champ `debt_generation_override` Literal['default','force_full_debt','force_no_debt'] a bien été ajouté en E07. Si non, migration `0013_add_debt_generation_override.py` + update modèle. Tests | ~70 |
-| **P11.1.2** | Étendre `transactions.public.update_editable_fields` pour accepter `debt_generation_override` même après `confirmed` (déjà dans le set allowed). Tests : modification après confirmed acceptée, autres champs gelés toujours refusés | ~80 |
+| **P11.1.1** | Verrou de régression (tests only) : `debt_generation_override ∈ EDITABLE_AFTER_CONFIRMED`, modification post-`confirmed` acceptée / champs financiers gelés, transaction `force_full_debt` exclue de `compute_consumption`. Aucune migration (colonne déjà en `0009`, CHECK en `0010`) | ~70 |
+| **P11.1.2** | Ajouter `TransactionEditableFieldsChangedEvent` (`transactions/events.py`, `{transaction_id, changed_fields}`), l'émettre depuis `update_editable_fields`, le ré-exporter dans `transactions.public`. Tests : spy reçoit l'event au changement d'override, non émis si rien ne change | ~90 |
 
 ---
 
-### S11.2 — `DebtCalculator.compute_overflow` (domain pur)
+### S11.2 — `DebtCalculator.compute_for_overflow` (domain pur)
 
-**Livrable observable** : fonction pure qui prend une `Transaction`, son compte commun, le budget concerné, la consommation pré-transaction → retourne la liste de `Debt` à matérialiser.
+**Livrable observable** : fonction **pure scalaire** (gabarit `compute_for_share_request`) qui prend des valeurs (montant dépense, restant budget pré-transaction, membres + quotes-parts, override) — **jamais** un `Transaction` ni une `Session` — et retourne la liste de `Debt` à matérialiser.
 
 | Phase | Description | Diff |
 |---|---|---|
-| **P11.2.1** | `debts/domain.py` étend : `compute_overflow(tx, account_with_members, budget_consumption_before, override) → list[Debt]`. Logique : si `override == 'force_no_debt'` → []. Si `override == 'force_full_debt'` → dette répartie selon `default_share_ratio` sur l'amount total. Sinon : calcule `E = max(0, tx.amount - budget.remaining_before)` ; si E > 0, dette répartie selon ratios sur E. Tests example pour tous les cas du tableau F10 | ~200 |
+| **P11.2.1** | `debts/domain.py` étend : `compute_for_overflow(*, expense_total, budget_remaining_before, account_members, payer_user_id, override, …) → list[Debt]`. Scalaires uniquement (pas de `Transaction`). Logique : `force_no_debt` → [] ; base = total (`force_full_debt`) ou `max(0, total − restant)` (`default`) ; répartition sur les membres ≠ payeur selon `share_ratio` ; gardes famille `DebtCalculationError`. Tests example tous cas F10 | ~210 |
 | **P11.2.2** | Property Hypothesis : (1) somme des dettes générées == `E × (1 - share du créateur)` car le créateur n'a pas de dette envers lui-même, (2) cas `default` + budget largement restant → [] vide, (3) cas `force_full_debt` + transaction sans budget → idem que cas overflow sur transaction non-budgétisée. Tests | ~180 |
 
 ---
@@ -48,9 +51,10 @@ Livrable agrégé : Alice paie 100€ Courses depuis le compte commun 50/50 alor
 
 | Phase | Description | Diff |
 |---|---|---|
-| **P11.3.1** | `debts/service/overflow_materializer.py` : souscrit à `TransactionConfirmedEvent`. Pour transaction sur compte commun : (1) cherche budget actif sur la catégorie, (2) calcule consumption avant transaction (window de période), (3) call `compute_overflow`, (4) insert/replace les `Debt` d'origine `shared_account_overflow` pour cette `source_transaction_id`. **Idempotent** : `INSERT ... ON CONFLICT (source_transaction_id, from_user_id, to_user_id, origin) DO UPDATE SET amount_cents = ...`. Tests intégration | ~280 |
-| **P11.3.2** | Souscrire aussi à `TransactionVoidedEvent` : supprime les `Debt` d'origine `shared_account_overflow` pour cette tx. Tests | ~80 |
-| **P11.3.3** | Souscrire à `debt_generation_override` change (nouveau `TransactionEditableFieldsChangedEvent` à ajouter dans `transactions.public` events) : re-matérialise. Tests | ~120 |
+| **P11.3.1** | **Migration dédiée** (`docs/roadmap/README.md` §Règles d'atomicité, règle 5) : index UNIQUE partiel `(source_transaction_id, from_user_id, to_user_id, origin) WHERE origin = 'shared_account_overflow'` sur `debts` + déclaration ORM (parité create_all/Alembic, gabarit `uq_share_requests_active`). Test schema Niveau 1 | ~80 |
+| **P11.3.2** | `debts/service/overflow_materializer.py` : handler async `TransactionConfirmedEvent`. Tx compte commun : (1) budget actif sur la catégorie, (2) restant **avant** tx (`budget.public.compute_consumption`, fenêtre `[start, date_tx)`), (3) membres + quotes-parts (`accounts.public`), (4) `compute_for_overflow`, (5) **upsert** `ON CONFLICT … DO UPDATE` + DELETE complémentaire des lignes overflow caduques. Câblage `subscribe_async` au composition root. **Nouvel arc `debts → budget.public` → `ignore_imports` du contrat `2-debts`**. Tests intégration | ~280 |
+| **P11.3.3** | Souscrire `TransactionVoidedEvent` : supprime les `Debt` `shared_account_overflow` de la tx (filtre origine — `personal_share_request` intactes). Tests | ~80 |
+| **P11.3.4** | Souscrire `TransactionEditableFieldsChangedEvent` (S11.1) : re-matérialise si `debt_generation_override` a changé (réutilise P11.3.2). Tests | ~120 |
 
 ---
 
@@ -77,12 +81,12 @@ Livrable agrégé : Alice paie 100€ Courses depuis le compte commun 50/50 alor
 
 | ID | Type | Diff | Cumul |
 |---|---|---|---|
-| S11.1 (2 phases) | debt_generation_override field | 150 | 150 |
-| S11.2 (2 phases) | compute_overflow domain | 380 | 530 |
-| S11.3 (3 phases) | Service matérialisation | 480 | 1010 |
-| S11.4 (2 phases) | Reclassement budget | 280 | 1290 |
-| S11.5 (1 phase) | Hypothesis | 200 | 1490 |
-| **Total** | **5 stories / 10 phases** | **~1490 lignes** | |
+| S11.1 (2 phases) | Socle override : verrou + event d'édition | 160 | 160 |
+| S11.2 (2 phases) | `compute_for_overflow` domain | 390 | 550 |
+| S11.3 (4 phases) | Service matérialisation (+ migration dédiée) | 560 | 1110 |
+| S11.4 (2 phases) | Reclassement budget | 280 | 1390 |
+| S11.5 (1 phase) | Hypothesis | 200 | 1590 |
+| **Total** | **5 stories / 11 phases** | **~1590 lignes** | |
 
 ---
 
@@ -101,7 +105,7 @@ Livrable agrégé : Alice paie 100€ Courses depuis le compte commun 50/50 alor
 
 ## Notes pour l'implémenteur
 
-- Le `force_full_debt` exclut la transaction du compteur de consommation budget : à propager dans `budget/service/consumption.py` (filtrer `WHERE debt_generation_override != 'force_full_debt'` dans la requête de consumption). C'est un changement à E08 ; en E11 on documente le TODO et on patche E08 dans une PR liée.
+- ~~Le `force_full_debt` exclut la transaction du compteur de consommation budget : à propager dans `budget/service/consumption.py`…~~ **CADUC (D2)** : l'exclusion `WHERE debt_generation_override != 'force_full_debt'` est **déjà implémentée** dans `budget/service/consumption.py` (`_consumption_filters`, source unique agrégat + drill-down). S11.1 ne fait que la **verrouiller** par test de régression.
 - L'unique key pour idempotence ON CONFLICT : `(source_transaction_id, from_user_id, to_user_id, origin)`. À ajouter en migration partielle (`UNIQUE WHERE origin = 'shared_account_overflow'`).
 - Les dettes `personal_share_request` ne sont **jamais** touchées par la mécanique overflow (l'origine est exclusive). Bien filtrer.
 - Le re-calc déclenché par `BudgetCreatedEvent` peut être coûteux si beaucoup de transactions passées. En E11 : pas d'optim, juste un compteur d'audit. Si on observe un ralentissement réel en usage, on découpera en batch async (V1.5).

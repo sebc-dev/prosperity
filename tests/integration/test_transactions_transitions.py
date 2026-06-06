@@ -50,6 +50,7 @@ from backend.shared.events import (
 
 Factories = tuple[type, type, type, type]
 BoundFactories = Callable[[], Awaitable[Factories]]
+SeedAccount = Callable[[], Awaitable[tuple[uuid.UUID, uuid.UUID]]]
 CategoryMaker = Callable[..., Awaitable[object]]
 
 # A leg: (account_id, amount_cents, category_id).
@@ -67,19 +68,6 @@ def _clear_bus() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
 # ---------------------------------------------------------------------------
 # Rollback-isolated tier helpers
 # ---------------------------------------------------------------------------
-
-
-async def _seed_account(
-    session: AsyncSession, bound: BoundFactories
-) -> tuple[uuid.UUID, uuid.UUID]:
-    user_factory, account_factory, _tx, _split = await bound()
-
-    def _build(_sync: object) -> tuple[uuid.UUID, uuid.UUID]:
-        user = user_factory()
-        account = account_factory(owner_id=user.id)
-        return account.id, user.id
-
-    return await session.run_sync(_build)
 
 
 async def _seed_second_account(session: AsyncSession, bound: BoundFactories) -> uuid.UUID:
@@ -133,9 +121,11 @@ async def _seed_tx(  # noqa: PLR0913 — keyword-only test seed; arity is intent
 
 
 async def test_planned_from_balanced_draft(
-    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
+    household_singleton: AsyncSession,
+    bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
 ) -> None:
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    account_id, user_id = await seed_account()
     tx_id = await _seed_tx(
         household_singleton,
         bound_transaction_factories,
@@ -151,9 +141,11 @@ async def test_planned_from_balanced_draft(
 
 
 async def test_planned_rejects_unbalanced(
-    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
+    household_singleton: AsyncSession,
+    bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
 ) -> None:
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    account_id, user_id = await seed_account()
     tx_id = await _seed_tx(
         household_singleton,
         bound_transaction_factories,
@@ -168,9 +160,11 @@ async def test_planned_rejects_unbalanced(
 
 
 async def test_planned_from_non_draft_is_invalid(
-    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
+    household_singleton: AsyncSession,
+    bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
 ) -> None:
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    account_id, user_id = await seed_account()
     tx_id = await _seed_tx(
         household_singleton,
         bound_transaction_factories,
@@ -192,9 +186,10 @@ async def test_planned_from_non_draft_is_invalid(
 async def test_confirm_categorized_expense(
     household_singleton: AsyncSession,
     bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
     bound_category_factory: CategoryMaker,
 ) -> None:
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    account_id, user_id = await seed_account()
     cat = (await bound_category_factory()).id  # type: ignore[attr-defined]
     tx_id = await _seed_tx(
         household_singleton,
@@ -215,9 +210,11 @@ async def test_confirm_categorized_expense(
 
 
 async def test_confirm_rejects_unbalanced(
-    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
+    household_singleton: AsyncSession,
+    bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
 ) -> None:
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    account_id, user_id = await seed_account()
     tx_id = await _seed_tx(
         household_singleton,
         bound_transaction_factories,
@@ -232,13 +229,15 @@ async def test_confirm_rejects_unbalanced(
 
 
 async def test_confirm_rejects_uncategorized_expense(
-    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
+    household_singleton: AsyncSession,
+    bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
 ) -> None:
     # ADR 0017 : only a `classification` leg requires a category. Canonical form B
     # with the classification leg's category FORCED to NULL → refused. The funding
     # leg (NULL, derived) is exempt — what's rejected is the divergent
     # classification/NULL leg (authoritative DB value, not re-derived).
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    account_id, user_id = await seed_account()
     tx_id = await _seed_tx(
         household_singleton,
         bound_transaction_factories,
@@ -255,12 +254,14 @@ async def test_confirm_rejects_uncategorized_expense(
 
 
 async def test_confirm_rejects_two_funding_legs(
-    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
+    household_singleton: AsyncSession,
+    bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
 ) -> None:
     # D2/D3 (ADR 0017) : a same-account pair with two NULL-category legs derives
     # two `funding` legs → trips the ≤1-funding invariant (categorisation passes,
     # 0 classification). Pins the confirm-gate through the real service flow.
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    account_id, user_id = await seed_account()
     tx_id = await _seed_tx(
         household_singleton,
         bound_transaction_factories,
@@ -276,10 +277,12 @@ async def test_confirm_rejects_two_funding_legs(
 
 
 async def test_confirm_transfer_without_category_ok(
-    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
+    household_singleton: AsyncSession,
+    bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
 ) -> None:
     # Two distinct accounts → structural transfer → categorisation not required.
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    account_id, user_id = await seed_account()
     other = await _seed_second_account(household_singleton, bound_transaction_factories)
     tx_id = await _seed_tx(
         household_singleton,
@@ -296,9 +299,11 @@ async def test_confirm_transfer_without_category_ok(
 
 
 async def test_confirm_directly_from_draft_is_invalid(
-    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
+    household_singleton: AsyncSession,
+    bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
 ) -> None:
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    account_id, user_id = await seed_account()
     tx_id = await _seed_tx(
         household_singleton,
         bound_transaction_factories,
@@ -313,11 +318,13 @@ async def test_confirm_directly_from_draft_is_invalid(
 
 
 async def test_reconfirm_is_invalid(
-    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
+    household_singleton: AsyncSession,
+    bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
 ) -> None:
     # Re-confirming a `confirmed` fails cleanly (a network replay does not double
     # the effect).
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    account_id, user_id = await seed_account()
     tx_id = await _seed_tx(
         household_singleton,
         bound_transaction_factories,
@@ -338,9 +345,12 @@ async def test_reconfirm_is_invalid(
 
 @pytest.mark.parametrize("state", ["draft", "planned", "confirmed"])
 async def test_void_from_non_void_states(
-    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories, state: str
+    household_singleton: AsyncSession,
+    bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
+    state: str,
 ) -> None:
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    account_id, user_id = await seed_account()
     tx_id = await _seed_tx(
         household_singleton,
         bound_transaction_factories,
@@ -360,9 +370,11 @@ async def test_void_from_non_void_states(
 
 
 async def test_void_is_terminal(
-    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
+    household_singleton: AsyncSession,
+    bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
 ) -> None:
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    account_id, user_id = await seed_account()
     tx_id = await _seed_tx(
         household_singleton,
         bound_transaction_factories,
@@ -384,11 +396,12 @@ async def test_void_is_terminal(
 async def test_confirm_emits_event(
     household_singleton: AsyncSession,
     bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
     bound_category_factory: CategoryMaker,
 ) -> None:
     received: list[TransactionConfirmedEvent] = []
     subscribe(TransactionConfirmedEvent, received.append)
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    account_id, user_id = await seed_account()
     cat = (await bound_category_factory()).id  # type: ignore[attr-defined]
     tx_id = await _seed_tx(
         household_singleton,
@@ -409,6 +422,7 @@ async def test_confirm_emits_event(
 async def test_confirm_dispatches_async_handler_in_request_transaction(
     household_singleton: AsyncSession,
     bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
     bound_category_factory: CategoryMaker,
 ) -> None:
     # An ASYNC subscriber (S08.3 channel) receives `(session, event)` during the
@@ -423,7 +437,7 @@ async def test_confirm_dispatches_async_handler_in_request_transaction(
         seen.append((session is household_singleton, state))
 
     subscribe_async(TransactionConfirmedEvent, _async_handler)
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    account_id, user_id = await seed_account()
     cat = (await bound_category_factory()).id  # type: ignore[attr-defined]
     tx_id = await _seed_tx(
         household_singleton,
@@ -442,13 +456,16 @@ async def test_confirm_dispatches_async_handler_in_request_transaction(
 
 @pytest.mark.parametrize("state", ["draft", "planned", "confirmed"])
 async def test_void_emits_event_with_reason(
-    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories, state: str
+    household_singleton: AsyncSession,
+    bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
+    state: str,
 ) -> None:
     # `void` emits `TransactionVoidedEvent` from ANY non-void source state (the
     # `publish` is unconditional once the transition is accepted).
     received: list[TransactionVoidedEvent] = []
     subscribe(TransactionVoidedEvent, received.append)
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    account_id, user_id = await seed_account()
     tx_id = await _seed_tx(
         household_singleton,
         bound_transaction_factories,
@@ -467,14 +484,16 @@ async def test_void_emits_event_with_reason(
 
 
 async def test_no_event_when_transition_invalid(
-    household_singleton: AsyncSession, bound_transaction_factories: BoundFactories
+    household_singleton: AsyncSession,
+    bound_transaction_factories: BoundFactories,
+    seed_account: SeedAccount,
 ) -> None:
     # An invalid transition raises BEFORE `publish` (which runs after
     # assert_transition / flush) → the spy receives nothing.
     received: list[DomainEvent] = []
     subscribe(TransactionConfirmedEvent, received.append)
     subscribe(TransactionVoidedEvent, received.append)
-    account_id, user_id = await _seed_account(household_singleton, bound_transaction_factories)
+    account_id, user_id = await seed_account()
     tx_id = await _seed_tx(
         household_singleton,
         bound_transaction_factories,

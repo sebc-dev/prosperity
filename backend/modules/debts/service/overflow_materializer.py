@@ -187,7 +187,7 @@ async def _recompute_overflow(
         if category_ids
         else None
     )
-    # D9 (option C): always call the domain. Without a covering budget,
+    # D9: always call the domain. Without a covering budget,
     # `budget_remaining_before = None` → base = expense_total (≡ force_full_debt).
     remaining_before = Money(ctx.remaining_before_cents, ctx.currency) if ctx else None  # type: ignore[arg-type]
     debts = DebtCalculator.compute_for_overflow(

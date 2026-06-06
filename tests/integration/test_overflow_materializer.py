@@ -317,7 +317,7 @@ async def test_default_overflow_proportional(
 async def test_default_no_budget_full_amount(
     household_singleton: AsyncSession, bound_account_factories: FactoryBundle
 ) -> None:
-    # D9 (option C): no covering budget → base = full amount (≡ force_full_debt).
+    # D9: no covering budget → base = full amount (≡ force_full_debt).
     sc = await _seed(
         household_singleton,
         bound_account_factories,
@@ -1227,7 +1227,7 @@ def test_multi_member_materialisation_matches_domain(
     overflow_socle: str, amount: int, r_bob: Decimal, r_carol: Decimal
 ) -> None:
     # Multi-debtor rounding path (D15 gap): with TWO non-payer members at ARBITRARY
-    # quote-parts and NO budget (base = full amount, option C), the PERSISTED overflow
+    # quote-parts and NO budget (base = full amount, D9), the PERSISTED overflow
     # debts must equal exactly what the pure domain computes per member —
     # `Money(amount).apply_ratio(ratio)`, a line dropped when it rounds to ≤ 0 cent.
     # Pins that the effectful path faithfully mirrors `compute_for_overflow` across the

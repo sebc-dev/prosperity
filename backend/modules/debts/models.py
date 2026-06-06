@@ -173,6 +173,26 @@ class Debt(Base):
         Index("ix_debts_from_user_id", "from_user_id"),
         Index("ix_debts_to_user_id", "to_user_id"),
         Index("ix_debts_source_transaction_id", "source_transaction_id"),
+        # Unique partiel d'idempotence overflow (S11.3) : une seule Debt overflow
+        # par (tx source, débiteur, créancier, origine). Support du
+        # `INSERT ... ON CONFLICT (...) DO UPDATE` du materializer (P11.3.2). Le
+        # prédicat partiel EXCLUT les dettes `personal_share_request` → un upsert
+        # overflow ne peut JAMAIS entrer en collision avec une dette share-request
+        # (exclusivité d'origine, AC opposable). `postgresql_where` doit matcher la
+        # migration 0016 byte-for-byte (parité create_all/Alembic ; gabarit
+        # `uq_share_requests_active`). NB : `ix_debts_source_transaction_id`
+        # (standalone, ci-dessus) est CONSERVÉ — ce partiel ne couvre que les
+        # lignes overflow, il ne sert donc pas les lookups par
+        # `source_transaction_id` des autres origines (D2).
+        Index(
+            "uq_debts_overflow_active",
+            "source_transaction_id",
+            "from_user_id",
+            "to_user_id",
+            "origin",
+            unique=True,
+            postgresql_where=text("origin = 'shared_account_overflow'"),
+        ),
         # CHECK défensifs : transforment des invariants testés (S09.5) en
         # garanties DB. `name="..."` (pas le `ck_debts_...` complet) → la
         # NAMING_CONVENTION `ck_%(table_name)s_%(constraint_name)s` préfixe à

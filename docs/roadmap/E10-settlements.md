@@ -69,6 +69,18 @@ Livrable agrégé : Bob crée un Settlement `virtual` qui apure 3 dettes en sens
 
 ---
 
+### S10.6 — Parcours E2E API : cycle de dette + settlement
+
+**Livrable observable** : `tests/e2e/test_debt_settlement_lifecycle.py` vert dans le job CI `backend-e2e`.
+
+Complète le **tier E2E API (anticipation HTTP, `Stratégie de tests §6.3`)** avec un parcours boîte-noire couvrant la chaîne de valeur dette de bout en bout : `share_request` (E09) → `Debt` matérialisée → `Settlement` `virtual` multi-line en nettage croisé (E10) → conservation (`remaining == 0`) et non-over-settlement. Comble l'absence d'E2E API sur E09/E10. **Anticipe au niveau API la moitié `share_request` du Parcours #4 Playwright** (§6.2) ; la moitié overflow F10 (`debt_generation_override`) est déférée à E11/E15. Garde-fou **anti-duplication (§12)** : asserte des **transitions d'état et la propagation inter-modules** (share_request → matérialisation `Debt` → settlement → solde restant), jamais les contrats d'endpoint déjà couverts en intégration S09.3/S10.4.
+
+| Phase | Description | Diff |
+|---|---|---|
+| **P10.6.1** | `tests/e2e/test_debt_settlement_lifecycle.py` + helpers `create_share_request`, `create_settlement` dans `tests/e2e/_helpers.py`. Chaîne HTTP unique ordonnée (`async` inline, pas de fixtures — D9/D10) : (1) `bootstrap_admin` (Alice) + `onboard_member` (Bob) ; (2) Alice → compte perso + dépense forme B confirmée + `share_request` depuis Bob → Debt1 (`from=Bob → to=Alice`) ; (3) Bob → idem → Debt2 (`from=Alice → to=Bob`), sens opposé ; (4) `GET /debts?with` + `/by-counterparty` (Alice) : les deux dettes visibles, `remaining_cents` plein, net orienté ; (5) **over-settlement refusé** : `POST /settlements` `virtual` avec une ligne `amount_cents > remaining` → 422 (`SettlementValidator`), dettes inchangées (`GET`) ; (6) **nettage virtuel légitime** : `POST /settlements` `type=virtual`, `linked_transaction_id=null`, lignes Debt1+Debt2 montants positifs nettant en sens croisé → 201 ; (7) **conservation observée** : `GET /debts` → `remaining` de la dette intégralement nettée == 0 ; `GET /settlements/{id}` détail masqué (débiteur ne voit pas `source_transaction_id`/`account_id`) ; `GET /settlements?with` la liste ; (8) **conservation persistée side-channel** (D3) : `compute_remaining` des dettes nettées via `committed_sessionmaker` | ~250 |
+
+---
+
 ## Récapitulatif
 
 | ID | Type | Diff | Cumul |
@@ -78,7 +90,8 @@ Livrable agrégé : Bob crée un Settlement `virtual` qui apure 3 dettes en sens
 | S10.3 (2 phases) | Calcul solde restant | 250 | 900 |
 | S10.4 (2 phases) | Routes | 300 | 1200 |
 | S10.5 (2 phases) | Hypothesis | 300 | 1500 |
-| **Total** | **5 stories / 10 phases** | **~1500 lignes** | |
+| S10.6 (1 phase) | Parcours E2E API | 250 | 1750 |
+| **Total** | **6 stories / 11 phases** | **~1750 lignes** | |
 
 ---
 
@@ -91,6 +104,7 @@ Livrable agrégé : Bob crée un Settlement `virtual` qui apure 3 dettes en sens
 - [ ] Property Hypothesis : conservation du solde net après apurement complet
 - [ ] Property Hypothesis : aucun over-settlement possible
 - [ ] Coverage `debts/domain.py` (Settlement) ≥ 90%, service ≥ 80%
+- [ ] Parcours E2E API (S10.6) vert en CI : dettes créées via flux `share_request` réel en sens croisés → over-settlement refusé → nettage `virtual` → `remaining == 0` (observé via `GET /debts` **et** side-channel `compute_remaining`)
 
 ---
 

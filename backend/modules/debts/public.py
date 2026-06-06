@@ -21,6 +21,12 @@ The S10.3 **remaining-balance** primitives (`compute_remaining`,
 re-exported for reuse by `create_settlement` (S10.4) and E11 (overflow F10), per
 the E10 roadmap note. The shared `_settled_subq` SQL helper stays PRIVATE (not
 re-exported).
+
+The S11.3 **overflow materializer** handlers (`materialize_overflow`,
+`remove_overflow_on_void`, `rematerialize_overflow_on_edit`) are re-exported so the
+composition root (`backend/main.py`) can `subscribe_async` them to the
+`transactions` events — `debts ⊥` the wiring (it must not know the subscriptions),
+`main` sits above all modules (ADR 0005). All re-exports are intra-module.
 """
 
 from __future__ import annotations
@@ -31,6 +37,11 @@ from backend.modules.debts.service.dashboard import (
     DebtWithContext,
     aggregate_by_counterparty,
     list_debts_for_user,
+)
+from backend.modules.debts.service.overflow_materializer import (
+    materialize_overflow,
+    rematerialize_overflow_on_edit,
+    remove_overflow_on_void,
 )
 from backend.modules.debts.service.remaining import (
     DebtNotFoundError,
@@ -86,5 +97,8 @@ __all__ = [
     "create_share_request",
     "list_debts_for_user",
     "list_open_debts_between",
+    "materialize_overflow",
+    "rematerialize_overflow_on_edit",
+    "remove_overflow_on_void",
     "revoke_share_request",
 ]

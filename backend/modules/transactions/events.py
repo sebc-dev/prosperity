@@ -16,12 +16,16 @@ These events are published **inside the request transaction** (see
   re-materialisation (F10) ; its **async** `debts` subscriber is wired at the
   composition root in S11.3 (P11.3.4), so `update_editable_fields` emits it via
   `dispatch` (sync+async). Not yet subscribed in S11.1.
-* `TransactionVoidedEvent` — no subscriber yet, emitted via `publish` (sync-only).
+* `TransactionVoidedEvent` — has an **async** `debts` subscriber (the S11.3
+  overflow materializer, which deletes the tx's overflow debts), wired at the
+  composition root, so `void` emits it via `dispatch` (sync+async).
 
 ⚠️ `TransactionVoidedEvent.reason` is **unbounded free text** in V1 (no sink). The
 first consumer MUST bound its length and sanitise it (PII / log-injection) before
 logging or persisting — it is the only place a void `reason` survives, so it also
-carries the ADR 0001 audit-trail concern for corrections.
+carries the ADR 0001 audit-trail concern for corrections. The S11.3 overflow
+subscriber does NOT read `reason` (it deletes by `transaction_id`), so the caveat
+still awaits its first real consumer.
 """
 
 from __future__ import annotations
@@ -67,8 +71,10 @@ class TransactionEditableFieldsChangedEvent(DomainEvent):
 class TransactionVoidedEvent(DomainEvent):
     """A transaction reached the terminal `void` state.
 
-    `reason` is unbounded in V1 — see the module docstring; the E08 subscriber
-    bounds/sanitises it.
+    Emitted via `dispatch`: the S11.3 `debts` overflow materializer subscribes
+    async to delete the tx's overflow debts. `reason` is unbounded in V1 — see the
+    module docstring; the overflow subscriber ignores it, so its first real
+    consumer must bound/sanitise it.
     """
 
     transaction_id: UUID

@@ -263,6 +263,39 @@ async def confirm_transaction(client: AsyncClient, access: str, tx_id: str) -> d
     return confirmed.json()
 
 
+async def patch_transaction(
+    client: AsyncClient,
+    access: str,
+    tx_id: str,
+    *,
+    debt_generation_override: str,
+) -> dict[str, Any]:
+    """PATCH /transactions/{tx_id} (Bearer) → TransactionResponse. Asserts 200.
+
+    Edits only `debt_generation_override` (the F10 overflow knob, S11.1) — the one
+    editable field the overflow lifecycle re-materialises on
+    (`TransactionEditableFieldsChangedEvent` → `rematerialize_overflow_on_edit`).
+    """
+    resp = await client.patch(
+        f"/transactions/{tx_id}",
+        json={"debt_generation_override": debt_generation_override},
+        headers=auth_headers(access),
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+async def void_transaction(client: AsyncClient, access: str, tx_id: str) -> dict[str, Any]:
+    """POST /transactions/{tx_id}/void (Bearer) → TransactionResponse. Asserts 200.
+
+    `* → void` (terminal). Fires `TransactionVoidedEvent` → `remove_overflow_on_void`
+    deletes the tx's `shared_account_overflow` debts. No `reason` body (optional).
+    """
+    resp = await client.post(f"/transactions/{tx_id}/void", headers=auth_headers(access))
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
 async def create_budget(  # noqa: PLR0913 — keyword-only HTTP helper
     client: AsyncClient,
     access: str,

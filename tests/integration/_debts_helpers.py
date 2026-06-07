@@ -69,6 +69,7 @@ def run_hypothesis_db_example[Seeded](
 
     asyncio.run(_run())
 
+
 # Precise mirror of `bound_transaction_factories`'s return (conftest.py): the
 # bundle yields the four bound factory CLASSES in order user/account/tx/split.
 TxFactoryBundle = Callable[

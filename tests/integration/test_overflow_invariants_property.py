@@ -58,6 +58,13 @@ from tests.strategies import OverflowScenario, overflow_scenario_strategy
 
 _OVERFLOW = "shared_account_overflow"
 
+# Témoin de non-vacuité de l'idempotence (review Mineur) : `test_idempotence_reemit_property`
+# tire override/budget par exemple, donc certains exemples n'écrivent aucune dette
+# (`set() == set()` passe alors trivialement). On enregistre, par exemple, si des dettes
+# ont été écrites ; le fixture `_idempotence_non_vacuity_witness` exige qu'AU MOINS un
+# exemple du run en ait écrit (sinon la property aurait passé entièrement vacante).
+_idempotence_runs: list[bool] = []
+
 
 @dataclass(frozen=True, slots=True)
 class _Seeded:
@@ -111,6 +118,21 @@ def _wire() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
     subscribe_async(TransactionConfirmedEvent, materialize_overflow)
     yield
     clear_subscribers()
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _idempotence_non_vacuity_witness() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
+    """Garantit que `test_idempotence_reemit_property` a écrit des dettes overflow sur
+    au moins un exemple du run — sinon la property serait passée vacante (`set()==set()`,
+    orientation `all(...)` vacuous-True). Tolère le test déselectionné (`-k`) : n'asserte
+    que s'il a effectivement tourné (`_idempotence_runs` non vide)."""
+    _idempotence_runs.clear()
+    yield
+    if _idempotence_runs:
+        assert any(_idempotence_runs), (
+            "test_idempotence_reemit_property : aucun exemple n'a écrit de dette overflow "
+            "sur tout le run — la property a passé de façon vacante (set() == set())."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -204,8 +226,11 @@ def _seed_scenario_sync(s: Session, sc: OverflowScenario) -> _Seeded:
 
 async def _overflow_set(s: AsyncSession) -> set[tuple[UUID, UUID, UUID, int, Decimal, str]]:
     """Snapshot 6-uple `(tx, from, to, amount_cents, share_ratio, currency)` des dettes
-    overflow — TOUTES les colonnes mutables de l'upsert (M2) ⇒ un upsert oubliant
-    `share_ratio`/`currency` à la ré-émission serait détecté."""
+    overflow. Couvre toutes les colonnes écrites à l'INSERT ; les DEUX colonnes
+    réellement mutées par l'`ON CONFLICT DO UPDATE` (`amount_cents`, `share_ratio`)
+    sont donc verrouillées ⇒ un upsert oubliant `share_ratio` à la ré-émission serait
+    détecté (M2). `currency` (hors `set_`, EUR constant ici) est capturée par
+    complétude, pas comme cible d'idempotence."""
     rows = await s.execute(
         select(
             Debt.source_transaction_id,
@@ -269,6 +294,7 @@ def test_idempotence_reemit_property(overflow_prop_socle: str, sc: OverflowScena
         for ev in events:
             await dispatch(s, ev)
         first = await _overflow_set(s)
+        _idempotence_runs.append(bool(first))  # témoin de non-vacuité (review Mineur)
         # S2 — verrou d'orientation sur le plus grand espace : toute dette va vers le payeur.
         assert all(to == seeded.payer for (_tx, _frm, to, _amt, _ratio, _cur) in first)
         # RÉ-ÉMISSION de l'event via le bus (pas re-appel pur) ⇒ ON CONFLICT + prune.

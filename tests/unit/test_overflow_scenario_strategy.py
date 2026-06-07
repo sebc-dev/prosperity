@@ -36,6 +36,7 @@ def test_property_payer_is_member(sc: OverflowScenario) -> None:
     # est connue (== celle du membre 0). Roster borné 2..5 (D11, max_members explicite).
     member_ids = {m.user_id for m in sc.account.members}
     assert sc.payer_user_id in member_ids
+    assert sc.payer_user_id == sc.account.members[0].user_id  # identité exacte (créancier)
     assert sc.payer_ratio == sc.account.members[0].ratio
     assert _MIN_MEMBERS <= len(sc.account.members) <= _MAX_MEMBERS
 
@@ -66,3 +67,17 @@ def test_property_two_member_form(sc: OverflowScenario) -> None:
     assert len(sc.account.members) == 2  # noqa: PLR2004 — exactement payer + 1 débiteur
     assert sc.payer_ratio + sc.account.members[1].ratio == Decimal(1)
     assert sc.budget is not None
+
+
+@given(data=st.data())
+def test_property_budget_presence_and_roster_forced(data: st.DataObject) -> None:
+    # `with_budget` pilote la présence du budget DANS LES DEUX SENS : le cas
+    # « sans budget » (base = M côté prod, D9) n'avait aucune assertion (review Majeur).
+    # `n_members` intermédiaire (4) est bien propagé au compte via le composite.
+    sc_with = data.draw(overflow_scenario_strategy(with_budget=True, n_members=4))
+    assert sc_with.budget is not None
+    assert sc_with.budget.amount_cents >= 1
+    assert len(sc_with.account.members) == 4  # noqa: PLR2004 — cardinalité intermédiaire
+
+    sc_without = data.draw(overflow_scenario_strategy(with_budget=False))
+    assert sc_without.budget is None

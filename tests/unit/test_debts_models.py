@@ -92,16 +92,39 @@ def test_share_ratio_is_numeric_5_4_default_one() -> None:
     assert col.default.arg == Decimal("1.0")  # type: ignore[union-attr]
 
 
-def test_debt_indexes_are_the_three_fk_paths() -> None:
+def test_debt_indexes_are_the_fk_paths_plus_overflow_unique() -> None:
     # `account_id` deliberately has NO standalone index (no read path filters
     # it; the bucket key is derived at the service). Exact set doubles as the
     # anti-surnumerary guard. Literal names pin the create_all/Alembic parity.
+    # `uq_debts_overflow_active` (S11.3) is the partial unique backing the
+    # overflow `ON CONFLICT DO UPDATE`; the FK-path `ix_debts_source_transaction_id`
+    # standalone is KEPT (the partial index only covers overflow rows, D2).
     names = {ix.name for ix in cast(Table, Debt.__table__).indexes}
     assert names == {
         "ix_debts_from_user_id",
         "ix_debts_to_user_id",
         "ix_debts_source_transaction_id",
+        "uq_debts_overflow_active",
     }
+
+
+def test_overflow_unique_index_is_partial_on_four_columns() -> None:
+    # The overflow idempotence index (S11.3 P11.3.1): UNIQUE, partial (predicate
+    # on the overflow origin) and over the four columns in declaration order.
+    table = cast(Table, Debt.__table__)
+    overflow = next(ix for ix in table.indexes if ix.name == "uq_debts_overflow_active")
+    assert overflow.unique is True
+    assert list(overflow.columns.keys()) == [
+        "source_transaction_id",
+        "from_user_id",
+        "to_user_id",
+        "origin",
+    ]
+    # Pin the FULL predicate: it must bind the overflow literal to the `origin`
+    # column specifically (not merely "some WHERE that mentions the literal") —
+    # that binding is what guarantees exclusivité d'origine.
+    predicate = str(overflow.dialect_options["postgresql"]["where"])
+    assert predicate == "origin = 'shared_account_overflow'"
 
 
 def test_debt_has_no_account_id_index() -> None:

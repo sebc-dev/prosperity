@@ -219,6 +219,34 @@ def test_baseline_migration_round_trip(postgres_container: PostgresContainer) ->
     )
 
 
+def test_overflow_index_isolated_downgrade(postgres_container: PostgresContainer) -> None:
+    """`0016.downgrade()` drops `uq_debts_overflow_active` while KEEPING `debts`.
+
+    The global round-trip only exercises `downgrade base`, where the partial index
+    disappears anyway when `0014` drops the whole `debts` table — so a
+    `0016.downgrade()` that pointed at the wrong index/table would still pass there.
+    Step down EXACTLY one revision (head → `0015`) to assert `0016`'s downgrade
+    removes the index *specifically* and leaves the table intact, then return the
+    shared container to `base` (the round-trip's end state) for sibling tests.
+    """
+    async_dsn = postgres_container.get_connection_url()
+    sync_dsn = async_dsn.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+    cfg = _alembic_config(async_dsn)
+
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, "0015")  # undo ONLY 0016
+    engine = create_engine(sync_dsn)
+    try:
+        insp = inspect(engine)
+        assert "debts" in insp.get_table_names()  # table survives the partial downgrade
+        debts_indexes = {ix["name"] for ix in insp.get_indexes("debts")}
+        assert "uq_debts_overflow_active" not in debts_indexes  # 0016 dropped just the index
+    finally:
+        engine.dispose()
+
+    command.downgrade(cfg, "base")  # leave the container clean (round-trip end state)
+
+
 def test_create_all_matches_alembic_head(postgres_container: PostgresContainer) -> None:
     """`Base.metadata.create_all` must produce byte-for-byte the same schema as
     `alembic upgrade head` — column types, PK, FKs + `ON DELETE`, indexes, and

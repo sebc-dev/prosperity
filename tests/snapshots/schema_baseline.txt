@@ -120,6 +120,7 @@ table debts
   idx ix_debts_from_user_id INDEX: from_user_id
   idx ix_debts_source_transaction_id INDEX: source_transaction_id
   idx ix_debts_to_user_id INDEX: to_user_id
+  idx uq_debts_overflow_active UNIQUE: source_transaction_id, from_user_id, to_user_id, origin) WHERE ((origin)::text = 'shared_account_overflow'::text
 
 table household
   col base_currency: VARCHAR(3) NOT NULL

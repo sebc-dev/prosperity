@@ -67,6 +67,9 @@ def test_public_exports_exact_set() -> None:
         "create_share_request",
         "list_debts_for_user",
         "list_open_debts_between",
+        "materialize_overflow",
+        "rematerialize_overflow_on_edit",
+        "remove_overflow_on_void",
         "revoke_share_request",
     ]
     assert len(debts_public.__all__) == len(set(debts_public.__all__))

@@ -25,13 +25,22 @@ from backend.modules.auth.transports.http import (
 from backend.modules.budget.public import on_transaction_confirmed
 from backend.modules.budget.transports.budgets_http import budgets_router
 from backend.modules.budget.transports.http import categories_router
+from backend.modules.debts.public import (
+    materialize_overflow,
+    rematerialize_overflow_on_edit,
+    remove_overflow_on_void,
+)
 from backend.modules.debts.transports.http import (
     debts_router,
     settlements_router,
     share_requests_router,
     tx_share_requests_router,
 )
-from backend.modules.transactions.public import TransactionConfirmedEvent
+from backend.modules.transactions.public import (
+    TransactionConfirmedEvent,
+    TransactionEditableFieldsChangedEvent,
+    TransactionVoidedEvent,
+)
 from backend.modules.transactions.transports.http import (
     account_tx_router,
     transactions_router,
@@ -53,8 +62,14 @@ def _register_event_subscribers() -> None:
     call would run at IMPORT time, and a cross-import in tests (testcontainers
     re-imports `main`) would re-register the handler. `subscribe_async` is
     idempotent, so even a re-run of the lifespan (a test app) stays safe.
+
+    S11.3 wires the `debts` overflow materializer (F10) to three `transactions`
+    events: confirm/edit re-materialise the overflow debts, void removes them.
     """
     subscribe_async(TransactionConfirmedEvent, on_transaction_confirmed)
+    subscribe_async(TransactionConfirmedEvent, materialize_overflow)
+    subscribe_async(TransactionVoidedEvent, remove_overflow_on_void)
+    subscribe_async(TransactionEditableFieldsChangedEvent, rematerialize_overflow_on_edit)
 
 
 @asynccontextmanager

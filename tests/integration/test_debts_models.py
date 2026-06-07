@@ -496,3 +496,106 @@ async def test_delete_share_request_nulls_transaction_handle(
         await household_singleton.execute(select(Transaction).where(Transaction.id == tx_id))
     ).scalar_one()
     assert reloaded.share_request_id is None  # ON DELETE SET NULL
+
+
+# ---------------------------------------------------------------------------
+# Overflow idempotence partial unique index (S11.3 P11.3.1)
+# ---------------------------------------------------------------------------
+
+
+async def test_overflow_unique_index_exists_partial_on_four_columns(
+    household_singleton: AsyncSession,
+) -> None:
+    # `uq_debts_overflow_active` must be UNIQUE, PARTIAL (predicate on the overflow
+    # origin) and cover the four columns in order — this is what backs the
+    # `ON CONFLICT (source_transaction_id, from_user_id, to_user_id, origin)
+    # ... WHERE origin = 'shared_account_overflow'` upsert (P11.3.2).
+    indexdef = (
+        await household_singleton.execute(
+            text(
+                "SELECT indexdef FROM pg_indexes "
+                "WHERE schemaname = 'public' AND tablename = 'debts' "
+                "AND indexname = 'uq_debts_overflow_active'"
+            )
+        )
+    ).scalar_one()
+    assert "CREATE UNIQUE INDEX" in indexdef  # unique
+    assert "(source_transaction_id, from_user_id, to_user_id, origin)" in indexdef  # 4 cols, order
+    # Partial predicate must be on `origin` specifically (not merely "some WHERE"):
+    # this is what guarantees exclusivité d'origine — a `personal_share_request`
+    # row is outside the index, so it can never collide with an overflow upsert.
+    # Normalise away Postgres' `::text` casts and parens so the assertion pins the
+    # SEMANTIC predicate (`origin = literal`) rather than the exact
+    # `pg_get_indexdef` text rendering, which can shift across PG versions.
+    where_clause = indexdef.split("WHERE", 1)[1]
+    normalised = where_clause.replace("::text", "").replace("(", "").replace(")", "").strip()
+    assert normalised == "origin = 'shared_account_overflow'"
+
+
+async def test_two_overflow_debts_same_quad_violate_unique(
+    household_singleton: AsyncSession,
+    bound_user_factory: Callable[..., Awaitable[User]],
+) -> None:
+    # Outside `ON CONFLICT`, two overflow debts on the same
+    # (source_transaction_id, from_user_id, to_user_id, origin) quad are rejected
+    # by the partial unique — the invariant the materializer's upsert relies on.
+    debtor = await bound_user_factory()
+    creditor = await bound_user_factory()
+    account_id = await _make_account(household_singleton, creditor.id)
+    tx_id = await _make_transaction(
+        household_singleton, account_id=account_id, created_by=creditor.id
+    )
+    await _make_debt(
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=account_id,
+        source_transaction_id=tx_id,
+        origin="shared_account_overflow",
+    )
+    with pytest.raises(IntegrityError):
+        await _make_debt(
+            household_singleton,
+            from_user_id=debtor.id,
+            to_user_id=creditor.id,
+            account_id=account_id,
+            source_transaction_id=tx_id,
+            origin="shared_account_overflow",
+        )
+
+
+async def test_overflow_and_share_request_debt_same_pair_coexist(
+    household_singleton: AsyncSession,
+    bound_user_factory: Callable[..., Awaitable[User]],
+) -> None:
+    # Exclusivité d'origine (durcissement, review sécurité) : a
+    # `shared_account_overflow` debt and a `personal_share_request` debt with the
+    # EXACTLY same (source_transaction_id, from_user_id, to_user_id) triple
+    # coexist — proving it is the PARTIAL predicate (`WHERE origin = ...`), not a
+    # data accident, that keeps the upsert from ever touching a share-request
+    # debt. Without the partial `WHERE`, a full unique on the quad would let these
+    # collide once `origin` were equal; here they differ in origin and the
+    # overflow predicate matches only the overflow row.
+    debtor = await bound_user_factory()
+    creditor = await bound_user_factory()
+    account_id = await _make_account(household_singleton, creditor.id)
+    tx_id = await _make_transaction(
+        household_singleton, account_id=account_id, created_by=creditor.id
+    )
+    await _make_debt(
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=account_id,
+        source_transaction_id=tx_id,
+        origin="shared_account_overflow",
+    )
+    # Same triple, different origin → accepted (no IntegrityError).
+    await _make_debt(
+        household_singleton,
+        from_user_id=debtor.id,
+        to_user_id=creditor.id,
+        account_id=account_id,
+        source_transaction_id=tx_id,
+        origin="personal_share_request",
+    )

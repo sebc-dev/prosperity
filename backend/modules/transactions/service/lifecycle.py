@@ -13,16 +13,18 @@ This is an ordinary, transaction-agnostic business service — *not* a
 security-critical side effect: ADR 0015's commit-inside-service derogation
 deliberately does **not** apply (the criterion "the client must not be able to
 undo the side effect by triggering an exception" is not met). On the contrary we
-*want* the whole request to roll back if any step — including a future event
-subscriber that raises — fails. The transition, the event `publish`, and the
-persistence all share the **same** transaction opened by the request dependency,
-so atomicity is free.
+*want* the whole request to roll back if any step — including an event subscriber
+that raises — fails. The transition, the event `dispatch`, and the persistence all
+share the **same** transaction opened by the request dependency, so atomicity is
+free.
 
 The S05.4 in-process mini-bus runs **inside the caller's transaction, before
 `get_db` commits**. `confirm` uses `dispatch` (sync + async channels): the E08
 budget threshold detector subscribes on the async channel and does DB I/O in this
-same transaction. `void` stays on `publish` (no async subscriber — `void` is not
-handled by E08). The concrete event types live in `transactions.events` (never in
+same transaction. `void` ALSO uses `dispatch` (S11.3, D14): the `debts` overflow
+materializer subscribes async on `TransactionVoidedEvent` to delete the tx's
+overflow debts, and an async handler only fires via `dispatch` (which subsumes
+`publish`). The concrete event types live in `transactions.events` (never in
 `shared`, which only owns the `DomainEvent` base — import-linter contract #3).
 
 Internal to the transactions module (import-linter contract `2-transactions`);
@@ -46,7 +48,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.modules.transactions import domain, events
 from backend.modules.transactions.models import Split as SplitModel
 from backend.modules.transactions.models import Transaction as TxModel
-from backend.shared.events import dispatch, publish
+from backend.shared.events import dispatch
 from backend.shared.money import Money
 
 
@@ -281,9 +283,17 @@ async def void(session: AsyncSession, *, tx_id: UUID, reason: str) -> domain.Tra
 
     `void` is reachable from any non-`void` state (ADR 0001). `reason` is carried
     by the event payload only — there is no `void_reason` column in V1; the audit
-    trail follow-up rides on the first bus subscriber (E08), which must bound /
+    trail follow-up rides on the first bus subscriber, which must bound /
     sanitise `reason` (PII / log-injection) before logging or persisting it.
-    `publish` runs after the flush, before `get_db` commits (same transaction).
+    `dispatch` runs after the flush, before `get_db` commits (same transaction).
+
+    `dispatch` (sync + async, like `transition_to_confirmed`), NOT `publish`: the
+    S11.3 `debts` overflow materializer subscribes ASYNC on `TransactionVoidedEvent`
+    to delete the tx's overflow debts, and an async handler only fires via
+    `dispatch`. `dispatch` subsumes `publish` (it replays the sync spies), so this
+    is back-compatible — there is no sync subscriber on this event, hence no
+    double-dispatch. Atomicity: an async handler that raises rolls the void back
+    (no voided tx left with phantom overflow debts — a wanted safety property).
     Flush-only (ADR 0015).
     """
     tx, splits = await _load_aggregate(session, tx_id)
@@ -292,8 +302,11 @@ async def void(session: AsyncSession, *, tx_id: UUID, reason: str) -> domain.Tra
     tx.state = domain.TransactionState.VOID.value
     tx.voided_at = datetime.now(UTC)
     await session.flush()
-    publish(
-        events.TransactionVoidedEvent(transaction_id=tx.id, account_id=tx.account_id, reason=reason)
+    await dispatch(
+        session,
+        events.TransactionVoidedEvent(
+            transaction_id=tx.id, account_id=tx.account_id, reason=reason
+        ),
     )
     return _to_domain(tx, splits)
 

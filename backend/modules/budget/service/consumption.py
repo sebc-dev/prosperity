@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, column, func, select, table, tuple_
+from sqlalchemy import ColumnElement, column, func, literal, select, table, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.accounts.public import (
@@ -120,13 +120,14 @@ async def _eligible_account_ids(session: AsyncSession, budget: Budget) -> set[UU
     return set()
 
 
-def _consumption_filters(
+def _consumption_filters(  # noqa: PLR0913 — flat keyword-only filter knobs (single source, D13)
     *,
     subtree: Sequence[UUID],
     accounts: Sequence[UUID],
     currency: str,
     start: date,
     end: date,
+    before: tuple[date, UUID] | None = None,
 ) -> list[ColumnElement[bool]]:
     """Bloc `.where(...)` commun à `compute_consumption` ET `list_contributing_splits`
     (D13 — **source unique**).
@@ -138,8 +139,14 @@ def _consumption_filters(
     (liste paginée) ne peuvent pas diverger silencieusement si un prédicat évolue
     (affinage forme canonique E15, nouvel état). Seul le `select(...)` (SUM/COUNT
     vs colonnes + keyset) diffère entre les deux consommateurs.
+
+    `before` (overflow F10, S11.3) borne en plus la fenêtre aux transactions
+    **strictement antérieures** dans l'ordre total `(date, id)` : c'est le
+    « restant *avant* la transaction » d'une dépense datée, qui rend l'excédent
+    conservatif `Σ E = max(0, ΣM − budget)` (CONTEXT.md §Excédent). `None` par
+    défaut ⇒ les appelants S08 (consommation pleine période) sont inchangés.
     """
-    return [
+    filters = [
         _splits.c.category_id.in_(subtree),
         _splits.c.account_id.in_(accounts),
         _splits.c.currency == currency,
@@ -148,10 +155,17 @@ def _consumption_filters(
         _transactions.c.date >= start,
         _transactions.c.date < end,
     ]
+    if before is not None:
+        filters.append(tuple_(_transactions.c.date, _transactions.c.id) < before)
+    return filters
 
 
 async def compute_consumption(
-    session: AsyncSession, *, budget_id: UUID, as_of: date
+    session: AsyncSession,
+    *,
+    budget_id: UUID,
+    as_of: date,
+    before: tuple[date, UUID] | None = None,
 ) -> BudgetConsumption | None:
     """Consommation de `budget_id` à `as_of`. `None` si le budget est inconnu.
 
@@ -162,6 +176,10 @@ async def compute_consumption(
     `[start, end)` (D5), sur les comptes éligibles (D7), en devise du budget
     (D8, mono-devise V1). `percent`/`remaining` dérivés par
     `consumption_from_totals` (garde-fou `amount <= 0`).
+
+    `before` (overflow F10, S11.3) borne en plus aux transactions strictement
+    antérieures `(date, id) < before` (fenêtre ordonnée) ⇒ le « restant avant la
+    tx ». `None` (défaut) ⇒ consommation pleine période (appelants S08 inchangés).
     """
     budget = await session.get(Budget, budget_id)
     if budget is None:
@@ -188,6 +206,7 @@ async def compute_consumption(
                 currency=budget.currency,
                 start=start,
                 end=end,
+                before=before,
             )
         )
     )
@@ -197,6 +216,113 @@ async def compute_consumption(
         amount_cents=budget.amount_cents,
         splits_count=int(splits_count),
     )
+
+
+# --- Overflow budget resolution (E11 / S11.3 P11.3.2) -----------------------
+#
+# `resolve_overflow_context` answers, for a shared-account expense: "which active
+# budget covers this category, and how much of it remained BEFORE this tx?". It
+# is the single place that picks the *most specific* covering budget (CONTEXT.md
+# §Excédent) and derives the ordered-window remaining — `debts` only ever
+# receives the scalars, never a `Budget` row (graphe ADR 0005, contrat `2-debts`).
+
+# Bounds the ancestor walk so a corrupted (cyclic) category tree cannot loop the
+# recursive CTE forever (a real tree is far shallower; the dedup `UNION` used by
+# the S08 walks cannot dedup once a `depth` column is carried, hence this cap).
+_MAX_CATEGORY_DEPTH = 64
+
+
+@dataclass(frozen=True, slots=True)
+class OverflowBudgetContext:
+    """Scalars the overflow materializer needs from `budget` (S11.3).
+
+    `remaining_before_cents` is **clamped to ≥ 0**: the ordered window can leave a
+    negative raw remaining when strictly-prior txs already exceeded the budget,
+    but `DebtCalculator.compute_for_overflow` contracts `budget_remaining_before
+    ≥ 0` — clamping keeps the excess additive/conservative (`Σ E = max(0, ΣM −
+    budget)`) instead of charging a later tx MORE than its own amount. `currency`
+    is the budget currency (V1 mono-devise, ADR 0008).
+    """
+
+    budget_id: UUID
+    remaining_before_cents: int
+    currency: str
+
+
+async def resolve_overflow_context(
+    session: AsyncSession,
+    *,
+    category_ids: set[UUID],
+    account_id: UUID,
+    as_of: date,
+    before: tuple[date, UUID],
+) -> OverflowBudgetContext | None:
+    """The most specific active budget covering `category_ids` AND eligible for
+    `account_id`, with its remaining BEFORE `before` (ordered window). `None` if
+    none (→ overflow base = full expense, S11.3 D9).
+
+    « Most specific » = the candidate whose category is the closest ancestor-or-self
+    of a tx category (smallest walk-up depth), tie-break `(created_at, id)` — the
+    rule frozen in CONTEXT.md §Excédent. The `account_id ∈ _eligible_account_ids`
+    filter excludes `personal` budgets (a shared account is never among an owner's
+    personal accounts), so a personal budget never applies to a shared-account
+    expense. V1 mono-catégorie ⇒ unambiguous.
+    """
+    if not category_ids:
+        return None
+
+    cat = Category.__table__
+    anchor = (
+        select(cat.c.id, cat.c.parent_id, literal(0).label("depth"))
+        .where(cat.c.id.in_(category_ids))
+        .cte("overflow_walkup", recursive=True)
+    )
+    parent = cat.alias("p")
+    walkup = anchor.union_all(
+        select(parent.c.id, parent.c.parent_id, anchor.c.depth + 1)
+        .join(anchor, parent.c.id == anchor.c.parent_id)
+        .where(anchor.c.depth < _MAX_CATEGORY_DEPTH)  # terminate even on a cycle
+    )
+    depth_per_cat = (
+        select(walkup.c.id, func.min(walkup.c.depth).label("depth"))
+        .group_by(walkup.c.id)
+        .cte("overflow_depth")
+    )
+    # Candidates ordered most-specific-first (depth ASC, then deterministic
+    # `(created_at, id)`); SELECT the full entity so `_eligible_account_ids`
+    # reuses the identity-map.
+    candidates = (
+        (
+            await session.execute(
+                select(Budget)
+                .join(depth_per_cat, Budget.category_id == depth_per_cat.c.id)
+                .where(Budget.archived_at.is_(None))
+                .order_by(depth_per_cat.c.depth, Budget.created_at, Budget.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    for budget in candidates:
+        eligible = await _eligible_account_ids(session, budget)
+        if account_id not in eligible:
+            continue  # e.g. a personal budget never covers a shared-account expense
+        consumption = await compute_consumption(
+            session, budget_id=budget.id, as_of=as_of, before=before
+        )
+        if consumption is None:  # defensive: budget purged concurrently
+            continue
+        return OverflowBudgetContext(
+            budget_id=budget.id,
+            # `consumption.remaining_cents` is already `amount_cents − consumed_cents`
+            # (`budget.amount_cents` is what `compute_consumption` summed against) —
+            # reuse the derived scalar; clamp ≥ 0 (ordered window can go negative once
+            # strictly-prior txs exceeded the budget, see `OverflowBudgetContext`).
+            remaining_before_cents=max(0, consumption.remaining_cents),
+            currency=budget.currency,
+        )
+    return None
 
 
 # --- Drill-down: contributing splits, paginated (S08.4 P08.4.3) -------------

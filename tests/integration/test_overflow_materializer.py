@@ -43,6 +43,7 @@ from backend.modules.accounts.models import Account, AccountMember, Household
 from backend.modules.auth.models import User
 from backend.modules.budget.models import Budget, BudgetContributor, Category
 from backend.modules.debts.models import Debt
+from backend.modules.debts.service import overflow_materializer as _materializer_module
 from backend.modules.debts.service.overflow_materializer import (
     materialize_overflow,
     rematerialize_overflow_on_edit,
@@ -447,6 +448,78 @@ async def test_conservation_multi_tx(
         )
     ).scalar_one()
     assert total == 10000  # max(0, (100+100) − 100), NOT 200
+
+
+async def test_conservation_multi_tx_via_service_flow(
+    household_singleton: AsyncSession, bound_account_factories: FactoryBundle
+) -> None:
+    # Conservation (D7) driven through the REAL service flow: two `planned` `default`
+    # tx (A earlier, B later) on the same budget=100/period/category are each confirmed
+    # via `transition_to_confirmed` (→ dispatch → materialize_overflow), NOT a manual
+    # handler call. Σ overflow must still be max(0, ΣM − budget) = 100 with the ordered
+    # repartition (A bears 0, B bears the whole excess) — proving the ordered-window
+    # conservation holds end-to-end, not only under a direct handler dispatch.
+    earlier = dt.date(2026, 6, 10)  # strictly before `_TODAY` in the period window
+    user_factory, account_factory, _ = await bound_account_factories()
+
+    def _do(s: Session) -> tuple[UUID, UUID, UUID, UUID]:
+        alice = user_factory(email=f"a-{uuid4().hex[:8]}@e.com").id
+        bob = user_factory(email=f"b-{uuid4().hex[:8]}@e.com").id
+        account = account_factory(owner_id=None, name="Commun")
+        s.add_all(
+            [
+                AccountMember(
+                    account_id=account.id, user_id=alice, default_share_ratio=Decimal("1")
+                ),
+                AccountMember(account_id=account.id, user_id=bob, default_share_ratio=Decimal("1")),
+            ]
+        )
+        s.flush()
+        cat = Category(name="Courses")
+        s.add(cat)
+        s.flush()
+        _make_budget(
+            s,
+            category_id=cat.id,
+            created_by=alice,
+            amount_cents=10000,
+            contributor_ids=(alice, bob),
+        )
+        tx_a = _add_expense(
+            s,
+            account_id=account.id,
+            category_id=cat.id,
+            amount=10000,
+            created_by=alice,
+            state="planned",
+            on=earlier,
+        )
+        tx_b = _add_expense(
+            s,
+            account_id=account.id,
+            category_id=cat.id,
+            amount=10000,
+            created_by=alice,
+            state="planned",
+            on=_TODAY,
+        )
+        return bob, account.id, tx_a, tx_b
+
+    bob, _account_id, tx_a, tx_b = await household_singleton.run_sync(_do)
+    # Confirm in chronological order through the real lifecycle service (fires the bus).
+    for tx in (tx_a, tx_b):
+        await transition_to_confirmed(household_singleton, tx_id=tx)
+
+    assert await _overflow_by_debtor(household_singleton, tx_a) == {}  # earlier: full budget left
+    assert await _overflow_by_debtor(household_singleton, tx_b) == {bob: 10000}  # later: all excess
+    total = (
+        await household_singleton.execute(
+            select(func.coalesce(func.sum(Debt.amount_cents), 0)).where(
+                Debt.origin == _OVERFLOW, Debt.from_user_id == bob
+            )
+        )
+    ).scalar_one()
+    assert total == 10000  # conserved end-to-end: max(0, (100+100) − 100), NOT 200
 
 
 async def test_single_tx_overflow_non_regression(
@@ -908,8 +981,9 @@ async def test_void_handler_failure_propagates(
     # Safety property (lifecycle.void docstring, D14): a void async handler that
     # raises PROPAGATES out of void() — so `get_db` rolls the WHOLE void back (no tx
     # left voided with stale/orphaned overflow). `void` switched publish→dispatch
-    # precisely so async handlers fire AND their failures are load-bearing; an extra
-    # failing async subscriber proves the exception is not swallowed.
+    # precisely so async handlers fire AND their failures are load-bearing. We assert
+    # not only that the exception escapes, but the actual TRANSACTIONAL consequence:
+    # after the rollback the tx is NOT left voided and its overflow debts survive.
     sc = await _seed(
         household_singleton,
         bound_account_factories,
@@ -924,8 +998,19 @@ async def test_void_handler_failure_propagates(
         raise RuntimeError("injected void handler failure")
 
     subscribe_async(TransactionVoidedEvent, _boom)
+    # SAVEPOINT models the `get_db` request boundary (the tier shares one transaction
+    # with the schema DDL, so a full rollback would drop the tables). The propagated
+    # failure rolls the whole void back inside it. `remove_overflow_on_void` is
+    # subscribed first (autouse fixture), so it already deleted the overflow rows
+    # before `_boom` raised — their survival below proves the delete was undone too.
     with pytest.raises(RuntimeError, match="injected void handler failure"):
-        await void(household_singleton, tx_id=sc.tx, reason="boom")
+        async with household_singleton.begin_nested():
+            await void(household_singleton, tx_id=sc.tx, reason="boom")
+    state = (
+        await household_singleton.execute(select(Transaction.state).where(Transaction.id == sc.tx))
+    ).scalar_one()
+    assert state == "confirmed"  # void rolled back — tx not left in a voided state
+    assert await _overflow_debts(household_singleton, sc.tx) != []  # overflow rows survived
 
 
 async def test_common_account_without_members_no_debt(
@@ -1019,10 +1104,16 @@ async def test_edit_force_no_debt_to_default_recreates(
 
 
 async def test_edit_non_override_field_no_churn(
-    household_singleton: AsyncSession, bound_account_factories: FactoryBundle
+    household_singleton: AsyncSession,
+    bound_account_factories: FactoryBundle,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # A non-override editable field (description) → the guard skips
-    # re-materialisation: the overflow state is unchanged (no churn).
+    # A non-override editable field (description) → the edit handler's guard
+    # SHORT-CIRCUITS before the re-materialisation path runs (no churn). Spy on the
+    # materializer's `get_transaction` (the first DB read of `_materialize_for_tx`):
+    # it must NOT fire for this edit — proving the path was skipped, not merely that
+    # the resulting state happened to be unchanged (the prior assertion-on-state was
+    # consistent even with a redundant recompute).
     sc = await _seed(
         household_singleton,
         bound_account_factories,
@@ -1032,7 +1123,18 @@ async def test_edit_non_override_field_no_churn(
     )
     await transition_to_confirmed(household_singleton, tx_id=sc.tx)
     before = await _overflow_by_debtor(household_singleton, sc.tx)
+
+    materialize_path_reads = 0
+    real_get_transaction = _materializer_module.get_transaction
+
+    async def _spy_get_transaction(*args: object, **kwargs: object) -> object:
+        nonlocal materialize_path_reads
+        materialize_path_reads += 1
+        return await real_get_transaction(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(_materializer_module, "get_transaction", _spy_get_transaction)
     await update_editable_fields(household_singleton, tx_id=sc.tx, description="note libre")
+    assert materialize_path_reads == 0  # handler returned before `_materialize_for_tx`
     assert (
         await _overflow_by_debtor(household_singleton, sc.tx) == before == {sc.members["bob"]: 7000}
     )
@@ -1226,13 +1328,16 @@ def test_idempotence_property(overflow_socle: str, amounts: list[int], budget_am
 def test_multi_member_materialisation_matches_domain(
     overflow_socle: str, amount: int, r_bob: Decimal, r_carol: Decimal
 ) -> None:
-    # Multi-debtor rounding path (D15 gap): with TWO non-payer members at ARBITRARY
-    # quote-parts and NO budget (base = full amount, D9), the PERSISTED overflow
-    # debts must equal exactly what the pure domain computes per member —
+    # Multi-debtor effectful-path fidelity (D15 gap): with TWO non-payer members at
+    # ARBITRARY quote-parts and NO budget (base = full amount, D9), the PERSISTED
+    # overflow debts must equal EXACTLY the pure domain projection per member —
     # `Money(amount).apply_ratio(ratio)`, a line dropped when it rounds to ≤ 0 cent.
-    # Pins that the effectful path faithfully mirrors `compute_for_overflow` across the
-    # ROUND_HALF_UP cent boundaries; the conservation property only ever uses a single
-    # ratio=1.0 debtor and never exercises multi-member rounding.
+    # Scope note: the oracle below REUSES `apply_ratio` (the domain's own function), so
+    # this does NOT independently re-verify the ROUND_HALF_UP rule — that is owned by
+    # the `money.py` unit tests. What it pins is that the effectful plumbing (member
+    # load, payer exclusion, ratio→debt mapping, upsert, currency) faithfully mirrors
+    # `compute_for_overflow`; the conservation property only ever uses a single
+    # ratio=1.0 debtor and never exercises this multi-member mapping.
     url = overflow_socle
     base = Money(amount, "EUR")
 

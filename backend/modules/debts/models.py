@@ -174,8 +174,11 @@ class Debt(Base):
         Index("ix_debts_to_user_id", "to_user_id"),
         Index("ix_debts_source_transaction_id", "source_transaction_id"),
         # Unique partiel d'idempotence overflow (S11.3) : une seule Debt overflow
-        # par (tx source, débiteur, créancier, origine). Support du
-        # `INSERT ... ON CONFLICT (...) DO UPDATE` du materializer (P11.3.2). Le
+        # par (tx source, débiteur, créancier, origine). Support du `INSERT ...
+        # ON CONFLICT (...) DO UPDATE ... WHERE origin = 'shared_account_overflow'`
+        # du materializer (P11.3.2), qui cible CE partiel via `index_where=` le
+        # même prédicat — un index partiel n'est pas une contrainte nommée
+        # référençable par `constraint=` (D3). Le
         # prédicat partiel EXCLUT les dettes `personal_share_request` → un upsert
         # overflow ne peut JAMAIS entrer en collision avec une dette share-request
         # (exclusivité d'origine, AC opposable). `postgresql_where` doit matcher la

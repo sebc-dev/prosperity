@@ -811,9 +811,11 @@ async def test_resolve_overflow_context_tie_break_id_at_equal_created_at(
 ) -> None:
     # D8 (sub-tie-break): two active budgets on the SAME category AND the SAME
     # `created_at` fall through to the final `Budget.id` order key. `id` is the
-    # ONLY discriminator here, so this pins `id ASC` deterministically — a flip to
-    # `id DESC` (or dropping `id` from the order_by, making the pick non-deterministic)
-    # would break it. Ids are assigned explicitly so the assertion never depends on
+    # ONLY discriminator here, so this pins `id ASC` DETERMINISTICALLY: a flip to
+    # `id DESC` is guaranteed to flip the result and fail. (Dropping `id` from the
+    # order_by entirely is a WEAKER mutation — the pick becomes non-deterministic, so
+    # it would only fail intermittently; this test's hard guarantee is against the
+    # `id DESC` flip.) Ids are assigned explicitly so the assertion never depends on
     # the random UUIDs the column default would otherwise generate.
     user_factory, account_factory, _ = await bound_account_factories()
     same_created_at = datetime(2026, 3, 1, tzinfo=UTC)
@@ -870,3 +872,55 @@ async def test_resolve_overflow_context_tie_break_id_at_equal_created_at(
     assert ctx is not None
     assert ctx.budget_id == lo_id  # smaller id wins at equal (depth, created_at)
     assert ctx.remaining_before_cents == 5000  # b_lo's amount, no prior consumption
+
+
+async def test_resolve_overflow_context_terminates_on_cyclic_category_tree(
+    household_singleton: AsyncSession, bound_account_factories: FactoryBundle
+) -> None:
+    # Defensive guard `_MAX_CATEGORY_DEPTH`: the most-specific-budget resolution walks
+    # up the category ancestry via a recursive CTE. A CORRUPTED tree with a parent
+    # cycle (A → B → A) has no root, so an UNBOUNDED walk would loop the CTE forever
+    # (a DB-level hang / DoS). The `anchor.c.depth < _MAX_CATEGORY_DEPTH` clause forces
+    # termination even on a cycle. The service layer prevents cycles, but no DB CHECK
+    # does — so corruption is reachable; we build a cycle directly and assert the
+    # resolution still RETURNS (picking A's budget) instead of hanging. Removing the
+    # cap would make this test loop forever, surfacing the regression loudly.
+    user_factory, account_factory, _ = await bound_account_factories()
+
+    def _seed(s: Session) -> tuple[UUID, UUID]:
+        alice = user_factory(email=f"cyc-{uuid4().hex[:8]}@example.com")
+        acc = account_factory(owner_id=None, name="Commun")
+        s.add(AccountMember(account_id=acc.id, user_id=alice.id, default_share_ratio=Decimal("1")))
+        s.flush()
+        cat_a = Category(name="A")
+        cat_b = Category(name="B")
+        s.add_all([cat_a, cat_b])
+        s.flush()
+        cat_a.parent_id = cat_b.id  # A → B
+        cat_b.parent_id = cat_a.id  # B → A: cycle, no root (only reachable via raw corruption)
+        s.flush()
+        budget = Budget(
+            category_id=cat_a.id,
+            period_kind="monthly",
+            period_start=_PERIOD_START,
+            amount_cents=5000,
+            currency="EUR",
+            scope="shared",
+            created_by=alice.id,
+        )
+        s.add(budget)
+        s.flush()
+        s.add(BudgetContributor(budget_id=budget.id, user_id=alice.id))
+        s.flush()
+        return acc.id, cat_a.id
+
+    account_id, cat_a_id = await household_singleton.run_sync(_seed)
+    ctx = await resolve_overflow_context(
+        household_singleton,
+        category_ids={cat_a_id},
+        account_id=account_id,
+        as_of=_AS_OF,
+        before=(_AS_OF, uuid4()),
+    )
+    assert ctx is not None  # the depth cap broke the cycle → resolution terminated
+    assert ctx.remaining_before_cents == 5000  # A's budget (depth 0), full remaining

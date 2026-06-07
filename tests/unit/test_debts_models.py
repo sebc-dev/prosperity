@@ -120,8 +120,11 @@ def test_overflow_unique_index_is_partial_on_four_columns() -> None:
         "to_user_id",
         "origin",
     ]
+    # Pin the FULL predicate: it must bind the overflow literal to the `origin`
+    # column specifically (not merely "some WHERE that mentions the literal") —
+    # that binding is what guarantees exclusivité d'origine.
     predicate = str(overflow.dialect_options["postgresql"]["where"])
-    assert "shared_account_overflow" in predicate
+    assert predicate == "origin = 'shared_account_overflow'"
 
 
 def test_debt_has_no_account_id_index() -> None:

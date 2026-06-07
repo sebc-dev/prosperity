@@ -524,7 +524,12 @@ async def test_overflow_unique_index_exists_partial_on_four_columns(
     # Partial predicate must be on `origin` specifically (not merely "some WHERE"):
     # this is what guarantees exclusivité d'origine — a `personal_share_request`
     # row is outside the index, so it can never collide with an overflow upsert.
-    assert "WHERE ((origin)::text = 'shared_account_overflow'::text)" in indexdef
+    # Normalise away Postgres' `::text` casts and parens so the assertion pins the
+    # SEMANTIC predicate (`origin = literal`) rather than the exact
+    # `pg_get_indexdef` text rendering, which can shift across PG versions.
+    where_clause = indexdef.split("WHERE", 1)[1]
+    normalised = where_clause.replace("::text", "").replace("(", "").replace(")", "").strip()
+    assert normalised == "origin = 'shared_account_overflow'"
 
 
 async def test_two_overflow_debts_same_quad_violate_unique(

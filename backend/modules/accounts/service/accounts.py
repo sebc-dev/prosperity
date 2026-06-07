@@ -281,7 +281,7 @@ async def shared_account_members_with_ratios(
     state for the consumption contributor filter; here the empty list is the
     faithful answer (`None` is reserved for "not a live shared account").
     """
-    is_common = (
+    live_shared_account_id = (
         await session.execute(
             select(Account.id).where(
                 Account.id == account_id,
@@ -290,7 +290,7 @@ async def shared_account_members_with_ratios(
             )
         )
     ).scalar_one_or_none()
-    if is_common is None:
+    if live_shared_account_id is None:
         return None
     rows = await session.execute(
         select(AccountMember.user_id, AccountMember.default_share_ratio).where(

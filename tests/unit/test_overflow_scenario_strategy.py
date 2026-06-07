@@ -17,7 +17,8 @@ from datetime import date
 from decimal import Decimal
 
 import hypothesis.strategies as st
-from hypothesis import given
+from hypothesis import event, given
+from hypothesis import target as hyp_target
 
 from tests.strategies import OverflowScenario, overflow_scenario_strategy
 
@@ -44,20 +45,44 @@ def test_property_payer_is_member(sc: OverflowScenario) -> None:
 @given(sc=overflow_scenario_strategy())
 def test_property_tx_bounded(sc: OverflowScenario) -> None:
     # Terminaison + tx TOUJOURS dans la fenêtre mensuelle du budget (D11).
+    # `event`/`target` PROUVENT l'atteignabilité des bornes (sinon l'assertion
+    # resterait vraie même si la strategy se bloquait p. ex. à amount=1 — review T2,
+    # gabarit test_budget_strategies).
     assert sc.txs  # min_size=1 garanti
+    max_amount = 0
     for tx in sc.txs:
         assert 1 <= tx.amount_cents <= _AMOUNT_BOUND
         assert _PERIOD_START <= tx.on <= _PERIOD_END
+        max_amount = max(max_amount, tx.amount_cents)
+    hyp_target(float(max_amount), label="montant tx max observé")
+    event(f"≥ moitié de la borne haute ({max_amount >= _AMOUNT_BOUND // 2})")
+    event(f"borne basse (amount=1) atteinte ({any(tx.amount_cents == 1 for tx in sc.txs)})")
+    event(f"début de fenêtre atteint ({any(tx.on == _PERIOD_START for tx in sc.txs)})")
+    event(f"fin de fenêtre atteinte ({any(tx.on == _PERIOD_END for tx in sc.txs)})")
 
 
 @given(data=st.data())
 def test_property_override_forced_when_pinned(data: st.DataObject) -> None:
-    # `override=ov` ⇒ TOUTES les tx portent `ov` (les properties persistées
-    # `force_no_debt`/`force_full_debt` dépendent de ce forçage). `st.data()` permet
-    # de tirer le scénario avec l'override courant de la boucle.
-    for ov in ("force_no_debt", "force_full_debt"):
+    # `override=ov` ⇒ TOUTES les tx portent `ov`, pour les TROIS valeurs du Literal
+    # (les properties persistées `force_no_debt`/`force_full_debt` dépendent de ce
+    # forçage ; `default` ferme la 3ᵉ branche — review T3). `st.data()` permet de
+    # tirer le scénario avec l'override courant de la boucle.
+    for ov in ("default", "force_no_debt", "force_full_debt"):
         sc = data.draw(overflow_scenario_strategy(override=ov))
         assert all(tx.override == ov for tx in sc.txs)
+
+
+@given(sc=overflow_scenario_strategy())
+def test_property_override_drawn_per_tx_when_unpinned(sc: OverflowScenario) -> None:
+    # `override=None` (défaut) ⇒ chaque tx tire SON override parmi les 3 valeurs
+    # licites — c'est le mode des properties persistées `default`/idempotence (review
+    # T3). `event` prouve l'atteignabilité des 3 valeurs ET des scénarios mixtes
+    # (overrides distincts dans un même scénario ⇒ tirage réellement PAR tx).
+    valid = {"default", "force_full_debt", "force_no_debt"}
+    assert all(tx.override in valid for tx in sc.txs)
+    for v in sorted(valid):
+        event(f"override {v} généré ({any(tx.override == v for tx in sc.txs)})")
+    event(f"overrides mixtes intra-scénario ({len({tx.override for tx in sc.txs}) > 1})")
 
 
 @given(sc=overflow_scenario_strategy(n_members=2, with_budget=True))

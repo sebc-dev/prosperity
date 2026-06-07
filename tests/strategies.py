@@ -804,7 +804,9 @@ def confirmed_tx_on_shared_account_strategy(
 
     `override=None` ⇒ tiré dans les 3 valeurs ; sinon imposé (les properties
     `force_no_debt`/`force_full_debt` fixent l'axe). `on` tiré dans la période
-    mensuelle fixe ⇒ équilibrée ET dans la fenêtre du budget. SANS rejet.
+    mensuelle fixe ⇒ TOUJOURS dans la fenêtre du budget (D11). Le zero-sum (forme
+    canonique B) est assuré par la jambe `funding` ajoutée par le seeder, pas par
+    `on`. SANS rejet.
     """
     ov: DebtGenerationOverrideLit = (
         override

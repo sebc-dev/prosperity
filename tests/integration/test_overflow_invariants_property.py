@@ -41,7 +41,7 @@ from uuid import UUID
 import pytest
 from hypothesis import HealthCheck, assume, given, settings
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import Session
 
 from backend.modules.accounts.models import Account, AccountMember, Household
@@ -54,6 +54,7 @@ from backend.modules.transactions.models import Split, Transaction
 from backend.shared.events import clear_subscribers, dispatch, subscribe_async
 from backend.shared.models import Base
 from backend.shared.money import Money
+from tests.integration._debts_helpers import run_hypothesis_db_example
 from tests.strategies import OverflowScenario, overflow_scenario_strategy
 
 _OVERFLOW = "shared_account_overflow"
@@ -258,24 +259,10 @@ def _run_scenario(
     sc: OverflowScenario,
     body: Callable[[AsyncSession, _Seeded], Awaitable[None]],
 ) -> None:
-    """Engine + session par exemple (gabarit D15) : `begin` → seed → `body` → `rollback`.
-
-    Un nouvel `engine` par exemple (proven S11.3) évite les soucis d'event-loop avec
-    Hypothesis ; le `rollback` + `dispose` garantissent l'isolation inter-exemples."""
-
-    async def _run() -> None:
-        engine = create_async_engine(url)
-        try:
-            sm = async_sessionmaker(engine, expire_on_commit=False)
-            async with sm() as s:
-                await s.begin()
-                seeded = await s.run_sync(lambda sync: _seed_scenario_sync(sync, sc))
-                await body(s, seeded)
-                await s.rollback()
-        finally:
-            await engine.dispose()
-
-    asyncio.run(_run())
+    """Matérialise `sc` puis délègue au runner partagé `run_hypothesis_db_example`
+    (gabarit D15 extrait dans `_debts_helpers` — review Nit : un seul corps à
+    maintenir pour toute suite « Hypothesis sur DB »)."""
+    run_hypothesis_db_example(url, lambda sync: _seed_scenario_sync(sync, sc), body)
 
 
 # ---------------------------------------------------------------------------

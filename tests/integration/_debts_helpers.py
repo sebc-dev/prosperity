@@ -17,6 +17,7 @@ insérée directement, ce qui suffit au chemin de lecture S10.3.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import uuid
 from collections.abc import Awaitable, Callable
@@ -24,7 +25,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import Session
 
 from backend.modules.accounts.models import AccountMember
@@ -36,6 +37,37 @@ from tests.factories.sqlalchemy import (
     TransactionFactory,
     UserFactory,
 )
+
+
+def run_hypothesis_db_example[Seeded](
+    url: str,
+    seed_sync: Callable[[Session], Seeded],
+    body: Callable[[AsyncSession, Seeded], Awaitable[None]],
+) -> None:
+    """Engine + session par exemple Hypothesis (gabarit D15 S11.3) : un nouvel
+    `engine` → `begin` → `seed_sync` (dans `run_sync`) → `body` → `rollback` → `dispose`.
+
+    Le moteur neuf par exemple évite les soucis d'event-loop avec Hypothesis ; le
+    `rollback` + `dispose` garantissent l'isolation inter-exemples (rien ne persiste).
+    Factorisé depuis le `_run_scenario` de la suite property overflow S11.5 pour que
+    toute suite « Hypothesis sur DB » (schéma `create_all` module-scoped + seed/assert
+    par exemple) réutilise un seul corps. Fonction synchrone (les tests `@given` le
+    sont) : elle pilote elle-même la boucle via `asyncio.run`.
+    """
+
+    async def _run() -> None:
+        engine = create_async_engine(url)
+        try:
+            sm = async_sessionmaker(engine, expire_on_commit=False)
+            async with sm() as s:
+                await s.begin()
+                seeded = await s.run_sync(seed_sync)
+                await body(s, seeded)
+                await s.rollback()
+        finally:
+            await engine.dispose()
+
+    asyncio.run(_run())
 
 # Precise mirror of `bound_transaction_factories`'s return (conftest.py): the
 # bundle yields the four bound factory CLASSES in order user/account/tx/split.

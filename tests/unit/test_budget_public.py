@@ -13,11 +13,15 @@ from backend.modules.budget import domain as _domain
 from backend.modules.budget import events as _events
 from backend.modules.budget.public import (
     BudgetConsumption,
+    BudgetCreatedEvent,
     BudgetThresholdEvent,
+    BudgetUpdatedEvent,
     BudgetWithConsumption,
     OverflowBudgetContext,
     compute_consumption,
     list_active_budgets_for_user,
+    list_overflow_budget_ids_for_categories,
+    list_overflow_recompute_tx_ids,
     on_transaction_confirmed,
     resolve_overflow_context,
 )
@@ -27,11 +31,15 @@ from backend.modules.budget.service import threshold_detector as _threshold_dete
 
 _EXPECTED = {
     "BudgetConsumption",
+    "BudgetCreatedEvent",
     "BudgetThresholdEvent",
+    "BudgetUpdatedEvent",
     "BudgetWithConsumption",
     "OverflowBudgetContext",
     "compute_consumption",
     "list_active_budgets_for_user",
+    "list_overflow_budget_ids_for_categories",
+    "list_overflow_recompute_tx_ids",
     "on_transaction_confirmed",
     "resolve_overflow_context",
 }
@@ -53,3 +61,10 @@ def test_public_names_are_identical_re_exports() -> None:
     assert on_transaction_confirmed is _threshold_detector.on_transaction_confirmed
     assert resolve_overflow_context is _consumption.resolve_overflow_context
     assert OverflowBudgetContext is _consumption.OverflowBudgetContext
+    assert BudgetCreatedEvent is _events.BudgetCreatedEvent
+    assert BudgetUpdatedEvent is _events.BudgetUpdatedEvent
+    assert list_overflow_recompute_tx_ids is _consumption.list_overflow_recompute_tx_ids
+    assert (
+        list_overflow_budget_ids_for_categories
+        is _consumption.list_overflow_budget_ids_for_categories
+    )

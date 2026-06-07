@@ -13,14 +13,22 @@ confirm/void/edit back):
 * `remove_overflow_on_void` (`TransactionVoidedEvent`, P11.3.3) — deletes the
   tx's overflow debts.
 * `rematerialize_overflow_on_edit` (`TransactionEditableFieldsChangedEvent`,
-  P11.3.4) — re-runs the materialisation path when `debt_generation_override`
-  changed.
+  P11.3.4 + S11.4 P11.4.4) — re-runs the materialisation path when
+  `debt_generation_override` OR `category_id` (reclassement) changed, plus the
+  period neighbours whose ordered-window remaining the reclassement shifts.
+* `recompute_overflow_on_budget_event` (`BudgetCreatedEvent`/`BudgetUpdatedEvent`,
+  S11.4 P11.4.1) — a budget that appears / changes / is archived re-materialises
+  the overflow of **all** the past transactions it covers, idempotently, REUSING
+  the same per-tx path (`_materialize_for_tx`) — never a second materialisation
+  voie. Emits a server-only audit trace (P11.4.2) bounding the recompute cost.
 
 Layering (ADR 0005, contract `2-debts`): `debts` sits *above* `transactions`,
 `budget` and `accounts`, so it imports their `.public` surfaces directly
-(`get_transaction`/events, `resolve_overflow_context`, `shared_account_members_with_ratios`)
-— the `debts → budget.public` arc is the first import of `budget` by `debts`,
-covered by the `2-debts` `ignore_imports` block. The transaction aggregate is
+(`get_transaction`/events, `resolve_overflow_context`/budget events/enumerators,
+`shared_account_members_with_ratios`) — the `debts → budget.public` arc is the
+first import of `budget` by `debts`, covered by the `2-debts` `ignore_imports`
+block (the `budget.events` second-hop is not forbidden — it imports only
+`shared.events`). The transaction aggregate is
 duck-typed via a `Protocol` (gabarit `threshold_detector._ConfirmedEvent`) so the
 service never names `transactions.domain.Transaction` (a forbidden internal),
 while still being strict-typed.
@@ -33,6 +41,7 @@ touched.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
@@ -44,7 +53,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.accounts.public import shared_account_members_with_ratios
-from backend.modules.budget.public import resolve_overflow_context
+from backend.modules.budget.public import (
+    BudgetCreatedEvent,
+    BudgetUpdatedEvent,
+    list_overflow_recompute_tx_ids,
+    resolve_overflow_context,
+)
 from backend.modules.debts.domain import (
     Debt as DebtDomain,
 )
@@ -62,6 +76,8 @@ from backend.modules.transactions.public import (
     get_transaction,
 )
 from backend.shared.money import Money
+
+logger = logging.getLogger(__name__)
 
 _OVERFLOW = "shared_account_overflow"
 
@@ -245,9 +261,46 @@ async def rematerialize_overflow_on_edit(
     is also editable post-confirm and IS overflow-relevant (it picks the covering
     budget, hence `remaining_before`, hence the base) — but re-materialising on a
     category edit (and re-materialising the period *neighbours* whose remaining it
-    shifts) is deferred to S11.4 (reclassement). Until then a category edit leaves a
-    stale overflow amount. Tracked in `CONTEXT.md` §Excédent _Limite V1_ + roadmap
+    shifts) is handled by S11.4 P11.4.4. Tracked in `CONTEXT.md` §Excédent + roadmap
     E11 §S11.4."""
     if "debt_generation_override" not in event.changed_fields:
         return
     await _materialize_for_tx(session, tx_id=event.transaction_id)
+
+
+# --- Budget reclassement (S11.4 P11.4.1 / P11.4.2) --------------------------
+
+
+async def recompute_overflow_for_budget(session: AsyncSession, *, budget_id: UUID) -> int:
+    """Re-materialise the overflow of every tx covered by `budget_id`, REUSING the
+    idempotent S11.3 path (`_materialize_for_tx` per tx, D5) — never a second
+    materialisation voie. Returns the number of txs traversed (audit counter,
+    P11.4.2).
+
+    MVP: NO optimisation (note implémenteur). A `BudgetCreatedEvent` may sweep many
+    past transactions; the async batch split is deferred to V1.5 — the audit trace
+    is the instrumentation that bounds the cost.
+    """
+    tx_ids = await list_overflow_recompute_tx_ids(session, budget_id=budget_id)
+    for tx_id in tx_ids:
+        await _materialize_for_tx(session, tx_id=tx_id)
+    return len(tx_ids)
+
+
+async def recompute_overflow_on_budget_event(
+    session: AsyncSession, event: BudgetCreatedEvent | BudgetUpdatedEvent
+) -> None:
+    """Mini-bus handler (S11.4): a budget created / updated / archived re-materialises
+    the overflow of the past transactions it covers. Idempotent (upsert S11.3).
+
+    P11.4.2 audit trace: a server-only structured log (no table, no migration), the
+    gabarit of the `budget`/`consumption` logs. WITHOUT PII — only `budget_id` (an
+    opaque UUID) and the recomputed-tx counter, never an email / label / amount. The
+    trace is ALWAYS written (even at count 0) so the sweep is observable.
+    """
+    count = await recompute_overflow_for_budget(session, budget_id=event.budget_id)
+    logger.info(
+        "debts_recomputed_on_budget_event budget_id=%s transactions_recomputed_count=%d",
+        event.budget_id,
+        count,
+    )

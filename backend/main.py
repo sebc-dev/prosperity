@@ -22,11 +22,16 @@ from backend.modules.auth.transports.http import (
 from backend.modules.auth.transports.http import (
     router as auth_router,
 )
-from backend.modules.budget.public import on_transaction_confirmed
+from backend.modules.budget.public import (
+    BudgetCreatedEvent,
+    BudgetUpdatedEvent,
+    on_transaction_confirmed,
+)
 from backend.modules.budget.transports.budgets_http import budgets_router
 from backend.modules.budget.transports.http import categories_router
 from backend.modules.debts.public import (
     materialize_overflow,
+    recompute_overflow_on_budget_event,
     rematerialize_overflow_on_edit,
     remove_overflow_on_void,
 )
@@ -65,11 +70,16 @@ def _register_event_subscribers() -> None:
 
     S11.3 wires the `debts` overflow materializer (F10) to three `transactions`
     events: confirm/edit re-materialise the overflow debts, void removes them.
+    S11.4 wires it to the `budget` created/updated events too (reclassement F10): a
+    budget that appears / changes / is archived re-materialises the overflow of the
+    past transactions it covers.
     """
     subscribe_async(TransactionConfirmedEvent, on_transaction_confirmed)
     subscribe_async(TransactionConfirmedEvent, materialize_overflow)
     subscribe_async(TransactionVoidedEvent, remove_overflow_on_void)
     subscribe_async(TransactionEditableFieldsChangedEvent, rematerialize_overflow_on_edit)
+    subscribe_async(BudgetCreatedEvent, recompute_overflow_on_budget_event)
+    subscribe_async(BudgetUpdatedEvent, recompute_overflow_on_budget_event)
 
 
 @asynccontextmanager

@@ -26,7 +26,9 @@ The S11.3 **overflow materializer** handlers (`materialize_overflow`,
 `remove_overflow_on_void`, `rematerialize_overflow_on_edit`) are re-exported so the
 composition root (`backend/main.py`) can `subscribe_async` them to the
 `transactions` events — `debts ⊥` the wiring (it must not know the subscriptions),
-`main` sits above all modules (ADR 0005). All re-exports are intra-module.
+`main` sits above all modules (ADR 0005). S11.4 adds
+`recompute_overflow_on_budget_event`, wired the same way to the `budget`
+created/updated events (reclassement F10). All re-exports are intra-module.
 """
 
 from __future__ import annotations
@@ -40,6 +42,7 @@ from backend.modules.debts.service.dashboard import (
 )
 from backend.modules.debts.service.overflow_materializer import (
     materialize_overflow,
+    recompute_overflow_on_budget_event,
     rematerialize_overflow_on_edit,
     remove_overflow_on_void,
 )
@@ -98,6 +101,7 @@ __all__ = [
     "list_debts_for_user",
     "list_open_debts_between",
     "materialize_overflow",
+    "recompute_overflow_on_budget_event",
     "rematerialize_overflow_on_edit",
     "remove_overflow_on_void",
     "revoke_share_request",

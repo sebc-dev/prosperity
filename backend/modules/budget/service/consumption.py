@@ -125,20 +125,26 @@ def _consumption_filters(  # noqa: PLR0913 — flat keyword-only filter knobs (s
     subtree: Sequence[UUID],
     accounts: Sequence[UUID],
     currency: str,
-    start: date,
-    end: date,
+    start: date | None = None,
+    end: date | None = None,
     before: tuple[date, UUID] | None = None,
 ) -> list[ColumnElement[bool]]:
-    """Bloc `.where(...)` commun à `compute_consumption` ET `list_contributing_splits`
-    (D13 — **source unique**).
+    """Bloc `.where(...)` commun à `compute_consumption`, `list_contributing_splits`
+    ET `list_overflow_recompute_tx_ids` (D13 — **source unique**).
 
-    Les sept prédicats qui définissent « un split compté » : leg catégorie ∈
+    Les prédicats qui définissent « un split compté » : leg catégorie ∈
     sous-arbre, compte éligible, devise du budget, transaction `confirmed`, hors
     `force_full_debt` (CONTEXT.md §debt_generation_override), fenêtre `[start,
-    end)`. Une seule définition ⇒ `splits_count` (agrégat) et le drill-down
-    (liste paginée) ne peuvent pas diverger silencieusement si un prédicat évolue
-    (affinage forme canonique E15, nouvel état). Seul le `select(...)` (SUM/COUNT
-    vs colonnes + keyset) diffère entre les deux consommateurs.
+    end)`. Une seule définition ⇒ `splits_count` (agrégat), le drill-down (liste
+    paginée) et l'énumération du reclassement (S11.4) ne peuvent pas diverger
+    silencieusement si un prédicat évolue (affinage forme canonique E15, nouvel
+    état). Seul le `select(...)` (SUM/COUNT vs colonnes + keyset vs DISTINCT id)
+    diffère entre les consommateurs.
+
+    `start`/`end` sont **optionnels** (défaut `None`) : la re-matérialisation F10
+    (S11.4) balaye **toute** l'histoire d'un budget récurrent sans borne de fenêtre
+    (D4 — la fenêtre par tx est rétablie par le materializer via `before`). Les
+    appelants S08 passent toujours les deux ⇒ inchangés.
 
     `before` (overflow F10, S11.3) borne en plus la fenêtre aux transactions
     **strictement antérieures** dans l'ordre total `(date, id)` : c'est le
@@ -152,9 +158,11 @@ def _consumption_filters(  # noqa: PLR0913 — flat keyword-only filter knobs (s
         _splits.c.currency == currency,
         _transactions.c.state == "confirmed",
         _transactions.c.debt_generation_override != "force_full_debt",
-        _transactions.c.date >= start,
-        _transactions.c.date < end,
     ]
+    if start is not None:
+        filters.append(_transactions.c.date >= start)
+    if end is not None:
+        filters.append(_transactions.c.date < end)
     if before is not None:
         filters.append(tuple_(_transactions.c.date, _transactions.c.id) < before)
     return filters
@@ -323,6 +331,73 @@ async def resolve_overflow_context(
             currency=budget.currency,
         )
     return None
+
+
+async def list_overflow_recompute_tx_ids(session: AsyncSession, *, budget_id: UUID) -> list[UUID]:
+    """Distinct `transaction_id`s whose a classification split counts for `budget_id`
+    (S11.4 reclassement F10), over the WHOLE history — NO window bound (D4).
+
+    Reuses `_consumption_filters` (single source, D13) without `start`/`end`:
+    subtree + eligible accounts + currency + `confirmed`, excluding
+    `force_full_debt`. The per-tx window is restored downstream by the materializer
+    (`before=(tx.date, tx.id)`), so this enumeration must NOT know it — a recurring
+    budget covers all its past/future windows, and reclassement targets « les
+    transactions passées ». `[]` if the budget is unknown or its subtree / eligible
+    accounts are empty. Read-only (ADR 0015).
+    """
+    budget = await session.get(Budget, budget_id)
+    if budget is None:
+        return []
+    subtree = await _load_descendant_ids(session, budget.category_id)
+    accounts = await _eligible_account_ids(session, budget)
+    if not subtree or not accounts:
+        return []
+    stmt = (
+        select(_splits.c.transaction_id)
+        .select_from(_splits.join(_transactions, _splits.c.transaction_id == _transactions.c.id))
+        .where(
+            *_consumption_filters(
+                subtree=list(subtree), accounts=list(accounts), currency=budget.currency
+            )
+        )
+        .distinct()
+    )
+    return list((await session.execute(stmt)).scalars().all())
+
+
+async def list_overflow_budget_ids_for_categories(
+    session: AsyncSession, *, category_ids: set[UUID], account_id: UUID
+) -> list[UUID]:
+    """Active budgets CONCERNED by a category of `category_ids` (the budget's category
+    is an ancestor-or-self) AND eligible for `account_id` (S11.4 P11.4.4).
+
+    Over-resolution is safe (gabarit `_concerned_budgets`): this only WIDENS the set
+    to recompute — each tx re-resolves its own most-specific budget via the
+    materializer. Covers the ancestor-budget case (a tx in a sub-category also
+    consumes the parent budget ⇒ the parent's neighbours must be recomputed). `[]`
+    if `category_ids` is empty. REUSES the ancestor walk-up of `_concerned_budgets`
+    (no second CTE), adding only the `_eligible_account_ids` filter. Read-only.
+
+    The `_concerned_budgets` import is intra-`budget` (not constrained by
+    import-linter, whose contracts are cross-module) and done lazily here to avoid
+    the `consumption ↔ threshold_detector` import cycle (`threshold_detector`
+    imports `compute_consumption` at module load).
+    """
+    if not category_ids:
+        return []
+    # Lazy + intra-module: top-level would cycle (`threshold_detector` imports
+    # `compute_consumption` at load). Private reuse is deliberate (single source of
+    # the ancestor walk-up, no second CTE — gabarit `_consumption_filters`).
+    from backend.modules.budget.service.threshold_detector import (  # noqa: PLC0415
+        _concerned_budgets,  # pyright: ignore[reportPrivateUsage]
+    )
+
+    budgets = await _concerned_budgets(session, category_ids)
+    out: list[UUID] = []
+    for budget in budgets:
+        if account_id in await _eligible_account_ids(session, budget):
+            out.append(budget.id)
+    return out
 
 
 # --- Drill-down: contributing splits, paginated (S08.4 P08.4.3) -------------

@@ -41,8 +41,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.accounts.public import get_household, shared_account_member_ids
 from backend.modules.budget.domain import BudgetContributorError, validate_contributor_count
+from backend.modules.budget.events import BudgetCreatedEvent, BudgetUpdatedEvent
 from backend.modules.budget.models import Budget, BudgetContributor
 from backend.modules.budget.service.budgets import get_visible_budget
+from backend.shared.events import dispatch
 
 
 async def _assert_contributors_eligible(
@@ -102,6 +104,16 @@ async def create_budget(  # noqa: PLR0913 — flat keyword surface mirroring the
     await session.flush()  # surface l'id ; FK 23503 si category_id inconnu
     session.add_all(BudgetContributor(budget_id=budget.id, user_id=uid) for uid in contributor_ids)
     await session.flush()
+    # S11.4 : un budget qui apparaît re-matérialise l'overflow des tx passées qu'il
+    # couvre (abonné `debts` async ⇒ `dispatch`, jamais `publish`). Après le 2e flush
+    # (id + contributeurs visibles). Flush-only conservé (ADR 0015 : `dispatch` ne
+    # commit pas ; le handler tourne dans la transaction du request).
+    await dispatch(
+        session,
+        BudgetCreatedEvent(
+            budget_id=budget.id, category_id=budget.category_id, currency=budget.currency
+        ),
+    )
     return budget
 
 
@@ -143,6 +155,15 @@ async def update_budget(
     for key, value in fields.items():
         setattr(budget, key, value)
     await session.flush()
+    # S11.4 : le restant (montant) ou l'éligibilité (contributeurs) a pu bouger ⇒
+    # recalcul overflow des tx couvertes (abonné `debts` async ⇒ `dispatch`). Idempotent
+    # côté handler ⇒ coût nul si rien de matériel n'a changé.
+    await dispatch(
+        session,
+        BudgetUpdatedEvent(
+            budget_id=budget.id, category_id=budget.category_id, currency=budget.currency
+        ),
+    )
     return budget
 
 
@@ -160,4 +181,14 @@ async def archive_budget(session: AsyncSession, *, budget_id: UUID, user_id: UUI
         return False
     budget.archived_at = datetime.now(UTC)
     await session.flush()
+    # S11.4 (D3) : archiver retire la couverture ⇒ les tx couvertes re-résolvent
+    # « sans budget » (base = M, dette plus élevée) — symétrique à la création. La
+    # projection `Debt` (ADR 0002) doit refléter l'état courant ⇒ on émet aussi. Le
+    # handler lit le budget PAR id (`session.get`), donc fonctionne même archivé.
+    await dispatch(
+        session,
+        BudgetUpdatedEvent(
+            budget_id=budget.id, category_id=budget.category_id, currency=budget.currency
+        ),
+    )
     return True

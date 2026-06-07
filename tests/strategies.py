@@ -47,6 +47,7 @@ Pur et sans effet de bord : importable depuis n'importe quel test.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from decimal import ROUND_CEILING, Decimal
 from typing import Final, Literal
 from uuid import UUID, uuid4
@@ -730,3 +731,146 @@ def settlement_scenario_strategy(
     ctxs, lines = zip(*pairs, strict=True)
     stype: SettlementType = draw(st.sampled_from(["internal_transfer", "external_transfer"]))
     return SettlementScenario(stype, tuple(ctxs), tuple(lines), total, total)
+
+
+# ---------------------------------------------------------------------------
+# S11.5 — specs de scénario overflow PERSISTÉ (F10). Purs (UUID/int/Decimal/date),
+# matérialisés par le seeder du tier d'intégration (ce module reste sans effet de
+# bord). Gabarit `GeneratedAccount`/`GeneratedCategoryTree`. RÉUTILISENT
+# `account_with_members_strategy` (S05.5, forme `shared` Σ=1, ratios > 0) et
+# `share_ratios` — S11.5 n'ajoute QUE le budget, la tx confirmée et leur composition.
+# ---------------------------------------------------------------------------
+
+# Période mensuelle FIXE : le budget couvre toujours les dates tx générées (D11) ⇒
+# le resolver overflow renvoie un contexte (sauf scénario « sans budget » voulu),
+# jamais un cas dégénéré « budget hors période » non désiré.
+_OVERFLOW_PERIOD_START: Final[date] = date(2026, 6, 1)
+_OVERFLOW_PERIOD_END: Final[date] = date(2026, 6, 30)
+_OVERFLOW_AMOUNT_BOUND: Final[int] = 10**7  # cents — calque `_SPLIT_AMOUNT_BOUND`
+
+DebtGenerationOverrideLit = Literal["default", "force_full_debt", "force_no_debt"]
+
+
+@dataclass(frozen=True, slots=True)
+class GeneratedBudget:
+    """Spec d'un budget mensuel `shared` couvrant la catégorie de dépense (F10).
+
+    `period_kind`/`scope` sont des `Literal` à valeur figée (V1 mono-forme) plutôt
+    que des `str` libres — cohérent avec `DebtGenerationOverrideLit` ci-dessus et la
+    rigueur Literal du module. Le seeder du tier d'intégration matérialise ce spec.
+    """
+
+    amount_cents: int  # > 0
+    period_start: date = _OVERFLOW_PERIOD_START
+    period_kind: Literal["monthly"] = "monthly"
+    scope: Literal["shared"] = "shared"
+
+
+@st.composite
+def budget_strategy(
+    draw: st.DrawFn, *, max_amount: int = _OVERFLOW_AMOUNT_BOUND
+) -> GeneratedBudget:
+    """Budget `shared` mensuel, `amount_cents ∈ [1, max_amount]`.
+
+    Jamais 0 ⇒ le restant budget est toujours défini. SANS rejet (convention repo).
+    Des montants minuscules sont volontairement atteignables (alimente la property
+    `force_no_debt` inerte : « aucune dette même en dépassement »).
+    """
+    return GeneratedBudget(amount_cents=draw(st.integers(min_value=1, max_value=max_amount)))
+
+
+@dataclass(frozen=True, slots=True)
+class GeneratedConfirmedTx:
+    """Spec d'une dépense `confirmed` équilibrée (forme canonique B, ADR 0001/0017).
+
+    `amount_cents` = total de la (des) jambe(s) `classification` ; le seeder ajoute
+    la jambe `funding` `-amount_cents` (même compte) ⇒ zero-sum EXACT (ADR 0001).
+    `on ∈ [period_start, period_end]` ⇒ dans la fenêtre du budget (D11).
+    """
+
+    amount_cents: int  # > 0
+    on: date
+    override: DebtGenerationOverrideLit
+
+
+@st.composite
+def confirmed_tx_on_shared_account_strategy(
+    draw: st.DrawFn,
+    *,
+    override: DebtGenerationOverrideLit | None = None,
+    max_amount: int = _OVERFLOW_AMOUNT_BOUND,
+) -> GeneratedConfirmedTx:
+    """Dépense `confirmed` valide sur le compte commun généré (#168 strategy 3).
+
+    `override=None` ⇒ tiré dans les 3 valeurs ; sinon imposé (les properties
+    `force_no_debt`/`force_full_debt` fixent l'axe). `on` tiré dans la période
+    mensuelle fixe ⇒ équilibrée ET dans la fenêtre du budget. SANS rejet.
+    """
+    ov: DebtGenerationOverrideLit = (
+        override
+        if override is not None
+        else draw(st.sampled_from(["default", "force_full_debt", "force_no_debt"]))
+    )
+    return GeneratedConfirmedTx(
+        amount_cents=draw(st.integers(min_value=1, max_value=max_amount)),
+        on=draw(st.dates(min_value=_OVERFLOW_PERIOD_START, max_value=_OVERFLOW_PERIOD_END)),
+        override=ov,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class OverflowScenario:
+    """Scénario overflow PERSISTABLE : compte commun (Σ=1) + budget ∅/présent + 1..N tx.
+
+    `payer_user_id` = `account.members[0].user_id` (créancier ; sa quote-part
+    `payer_ratio` est exposée pour la conservation `force_full_debt`, D7).
+    """
+
+    account: GeneratedAccount  # shape="shared", Σ ratio == 1, ratios > 0
+    budget: GeneratedBudget | None  # None ⇒ « sans budget » (base = M côté prod, D9)
+    txs: tuple[GeneratedConfirmedTx, ...]  # 1..N, toutes sur `account`
+
+    @property
+    def payer_user_id(self) -> UUID:
+        return self.account.members[0].user_id
+
+    @property
+    def payer_ratio(self) -> Decimal:
+        return self.account.members[0].ratio
+
+
+@st.composite
+def overflow_scenario_strategy(
+    draw: st.DrawFn,
+    *,
+    n_members: int | None = None,
+    override: DebtGenerationOverrideLit | None = None,
+    with_budget: bool | None = None,
+    max_txs: int = 4,
+) -> OverflowScenario:
+    """Compose les 3 strategies #168 en un scénario persistable, borné, déterministe (D11).
+
+    - `n_members` ⇒ cardinalité du roster (None ⇒ 2..5 via la strategy compte) ;
+    - `override` ⇒ impose l'override de TOUTES les tx (None ⇒ tiré par tx) ;
+    - `with_budget` ⇒ force présence/absence (None ⇒ tiré).
+
+    `max_members=5` EXPLICITE : sans lui le défaut 6 de `account_with_members_strategy`
+    donnerait un roster 2..6, contredisant la borne D11. Les `user_id` des membres sont
+    tirés via `uuid4()` PAR la strategy réutilisée ⇒ distincts intra-scénario par
+    construction (collision inter-scénarios sans effet : rollback entre exemples).
+    """
+    account = draw(
+        account_with_members_strategy(shape="shared", n_members=n_members, max_members=5)
+    )
+    has_budget = with_budget if with_budget is not None else draw(st.booleans())
+    budget = draw(budget_strategy()) if has_budget else None
+    txs = tuple(
+        draw(
+            st.lists(
+                confirmed_tx_on_shared_account_strategy(override=override),
+                min_size=1,
+                max_size=max_txs,
+            )
+        )
+    )
+    return OverflowScenario(account=account, budget=budget, txs=txs)

@@ -1,0 +1,68 @@
+"""Propriétés pures sur les strategies de scénario overflow S11.5 (P11.5.1.a).
+
+Verrouille la COMPOSITION propre à S11.5 (forçage override, bornes tx/dates,
+payer-membre, forme 2-membres pour la conservation D7) — périmètre `Stratégie de
+tests §4.2` (Hypothesis sur le pur, sans DB).
+
+⚠️ On NE re-teste PAS ici les invariants de la strategy réutilisée
+`account_with_members_strategy` (Σ ratio == 1, ratios > 0, owner_id None,
+acceptation par `AccountValidator`) : ils sont DÉJÀ verrouillés par
+`test_accounts_strategies.py` (S05.5). Les re-prouver serait un doublon (review
+m3) — S11.5 réutilise la strategy telle quelle (D6).
+"""
+
+from __future__ import annotations
+
+from datetime import date
+from decimal import Decimal
+
+import hypothesis.strategies as st
+from hypothesis import given
+
+from tests.strategies import OverflowScenario, overflow_scenario_strategy
+
+# Bornes ancrées EN DUR (oracle indépendant) — ne pas importer les constantes
+# privées de `strategies.py` qu'on vérifie justement (et évite `reportPrivateUsage`).
+_PERIOD_START = date(2026, 6, 1)
+_PERIOD_END = date(2026, 6, 30)
+_AMOUNT_BOUND = 10**7
+_MIN_MEMBERS = 2
+_MAX_MEMBERS = 5
+
+
+@given(sc=overflow_scenario_strategy())
+def test_property_payer_is_member(sc: OverflowScenario) -> None:
+    # Contrat porteur de la conservation D7 : le payeur EST un membre, sa quote-part
+    # est connue (== celle du membre 0). Roster borné 2..5 (D11, max_members explicite).
+    member_ids = {m.user_id for m in sc.account.members}
+    assert sc.payer_user_id in member_ids
+    assert sc.payer_ratio == sc.account.members[0].ratio
+    assert _MIN_MEMBERS <= len(sc.account.members) <= _MAX_MEMBERS
+
+
+@given(sc=overflow_scenario_strategy())
+def test_property_tx_bounded(sc: OverflowScenario) -> None:
+    # Terminaison + tx TOUJOURS dans la fenêtre mensuelle du budget (D11).
+    assert sc.txs  # min_size=1 garanti
+    for tx in sc.txs:
+        assert 1 <= tx.amount_cents <= _AMOUNT_BOUND
+        assert _PERIOD_START <= tx.on <= _PERIOD_END
+
+
+@given(data=st.data())
+def test_property_override_forced_when_pinned(data: st.DataObject) -> None:
+    # `override=ov` ⇒ TOUTES les tx portent `ov` (les properties persistées
+    # `force_no_debt`/`force_full_debt` dépendent de ce forçage). `st.data()` permet
+    # de tirer le scénario avec l'override courant de la boucle.
+    for ov in ("force_no_debt", "force_full_debt"):
+        sc = data.draw(overflow_scenario_strategy(override=ov))
+        assert all(tx.override == ov for tx in sc.txs)
+
+
+@given(sc=overflow_scenario_strategy(n_members=2, with_budget=True))
+def test_property_two_member_form(sc: OverflowScenario) -> None:
+    # Forme close D7 : exactement 2 membres (payer + autre), Σ ratio == 1 ⇒
+    # `payer_ratio + s_o == 1` ; budget présent quand `with_budget=True`.
+    assert len(sc.account.members) == 2  # noqa: PLR2004 — exactement payer + 1 débiteur
+    assert sc.payer_ratio + sc.account.members[1].ratio == Decimal(1)
+    assert sc.budget is not None

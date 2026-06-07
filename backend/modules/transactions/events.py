@@ -61,10 +61,19 @@ class TransactionEditableFieldsChangedEvent(DomainEvent):
     (a finite set known at compile time) and built at the emission site in
     `update_editable_fields`. A subscriber needing the new value re-reads it from
     the session it is handed.
+
+    `previous_category_ids` (S11.4) is the ONE exception to the names-only rule:
+    the classification categories the tx carried **before** the edit. It is the
+    only value a subscriber cannot re-read (the old category is gone post-edit),
+    and the overflow re-materialisation needs it to recompute the period neighbours
+    of the *former* covering budget (P11.4.4). The relaxation is narrow — an opaque
+    UUID identifier, not the free-text `description`/`reason` the rule guards
+    against. Empty unless `category_id` actually changed.
     """
 
     transaction_id: UUID
     changed_fields: frozenset[str]
+    previous_category_ids: frozenset[UUID] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)

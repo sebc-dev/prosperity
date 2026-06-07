@@ -68,6 +68,7 @@ def test_public_exports_exact_set() -> None:
         "list_debts_for_user",
         "list_open_debts_between",
         "materialize_overflow",
+        "recompute_overflow_on_budget_event",
         "rematerialize_overflow_on_edit",
         "remove_overflow_on_void",
         "revoke_share_request",

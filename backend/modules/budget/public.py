@@ -21,7 +21,11 @@ module, pas re-exportée ici (aucun consommateur cross-module à ce jour).
 from __future__ import annotations
 
 from backend.modules.budget.domain import BudgetConsumption
-from backend.modules.budget.events import BudgetThresholdEvent
+from backend.modules.budget.events import (
+    BudgetCreatedEvent,
+    BudgetThresholdEvent,
+    BudgetUpdatedEvent,
+)
 from backend.modules.budget.service.budgets import (
     BudgetWithConsumption,
     list_active_budgets_for_user,
@@ -29,17 +33,23 @@ from backend.modules.budget.service.budgets import (
 from backend.modules.budget.service.consumption import (
     OverflowBudgetContext,
     compute_consumption,
+    list_overflow_budget_ids_for_categories,
+    list_overflow_recompute_tx_ids,
     resolve_overflow_context,
 )
 from backend.modules.budget.service.threshold_detector import on_transaction_confirmed
 
 __all__ = [
     "BudgetConsumption",
+    "BudgetCreatedEvent",
     "BudgetThresholdEvent",
+    "BudgetUpdatedEvent",
     "BudgetWithConsumption",
     "OverflowBudgetContext",
     "compute_consumption",
     "list_active_budgets_for_user",
+    "list_overflow_budget_ids_for_categories",
+    "list_overflow_recompute_tx_ids",
     "on_transaction_confirmed",
     "resolve_overflow_context",
 ]

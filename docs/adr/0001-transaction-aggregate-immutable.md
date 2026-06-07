@@ -13,3 +13,7 @@ PowerSync est server-authoritative avec un défaut last-write-wins par endpoint,
 - Les **dettes** ne sont pas des entités mutables côté client : elles sont une projection serveur recalculée à chaque write de transaction. Seuls `share_ratio` (scalaire LWW-safe) et `debt_generation_override` (sur la transaction source) sont des leviers utilisateur.
 - Les **soldes passés** sont stables : aucune édition rétroactive d'une transaction confirmée ne peut faire bouger un solde historique.
 - La **stratégie de test PowerSync** (`docs/Stratégie de tests.md` §7) doit vérifier les propriétés Hypothesis de convergence sur ce contrat précis : aggregate immutable + projection serveur, **pas** sur un modèle LWW générique.
+
+### Clarification S11.4 — l'édition de `category_id` se propage à la jambe `classification`
+
+L'éditabilité post-`confirmed` de `category_id` (reclassement F10) se **propage à la jambe `classification`** du split, source de vérité de la consommation budget et de l'overflow (E08.5 : la colonne `transactions.category_id` et la jambe restent synchronisées). C'est une réécriture **bornée au champ catégorie** : ni montant ni structure de split ne change ⇒ la double-entrée (somme = 0) est préservée et l'immuabilité de l'aggregate tient. Le grain de sync reste la transaction entière. Sans cette propagation, éditer `category_id` serait un no-op pour la consommation comme pour l'overflow (tous deux lisent la jambe, pas la colonne).

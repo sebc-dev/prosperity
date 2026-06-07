@@ -56,6 +56,7 @@ from backend.modules.accounts.public import shared_account_members_with_ratios
 from backend.modules.budget.public import (
     BudgetCreatedEvent,
     BudgetUpdatedEvent,
+    list_overflow_budget_ids_for_categories,
     list_overflow_recompute_tx_ids,
     resolve_overflow_context,
 )
@@ -253,19 +254,42 @@ async def remove_overflow_on_void(session: AsyncSession, event: TransactionVoide
 async def rematerialize_overflow_on_edit(
     session: AsyncSession, event: TransactionEditableFieldsChangedEvent
 ) -> None:
-    """Editable-field change post-confirm → re-materialise the overflow IF
-    `debt_generation_override` changed (else no-op, avoids churn). The recompute
-    is idempotent (ADR 0002) via the P11.3.2 path (P11.3.4).
+    """Editable-field change post-confirm → re-materialise the overflow.
 
-    Scope V1: ONLY `debt_generation_override` triggers a recompute. `category_id`
-    is also editable post-confirm and IS overflow-relevant (it picks the covering
-    budget, hence `remaining_before`, hence the base) — but re-materialising on a
-    category edit (and re-materialising the period *neighbours* whose remaining it
-    shifts) is handled by S11.4 P11.4.4. Tracked in `CONTEXT.md` §Excédent + roadmap
-    E11 §S11.4."""
-    if "debt_generation_override" not in event.changed_fields:
+    Reacts to `debt_generation_override` (S11.3) AND, since S11.4 (P11.4.4), to
+    `category_id` (reclassement F10): a category edit moves the tx to a different
+    covering budget (or out of any), so its overflow is recomputed — AND the
+    **period neighbours** of BOTH the former and the new covering budget (their
+    ordered-window `(date, id)` remaining is shifted) are recomputed too. Anything
+    else is a no-op (avoids churn). All recomputes REUSE the idempotent P11.3.2 path
+    (`_materialize_for_tx` / `recompute_overflow_for_budget`), never a second voie
+    (ADR 0002 — the upsert + prune guarantees no duplicate across passes).
+
+    The former categories travel on `event.previous_category_ids` — the one value
+    the subscriber cannot re-read (the old category is gone post-edit, P11.4.3)."""
+    if event.changed_fields & {"debt_generation_override", "category_id"}:
+        await _materialize_for_tx(session, tx_id=event.transaction_id)
+
+    if "category_id" not in event.changed_fields:
         return
-    await _materialize_for_tx(session, tx_id=event.transaction_id)
+    # Reclassement: recompute the neighbours of every budget concerned by the FORMER
+    # (`previous_category_ids`) AND the new category, on the tx's account. The tx
+    # itself is re-included idempotently by `recompute_overflow_for_budget` of the
+    # new budget — `_upsert_and_prune` dedups. If the new category is unbudgeted, the
+    # tx re-resolves « sans budget » (base = M) via `_materialize_for_tx` above.
+    tx = await get_transaction(session, tx_id=event.transaction_id)
+    if tx is None:
+        return
+    _, new_category_ids = _classification_total_and_categories(tx)
+    budget_ids: set[UUID] = set()
+    for category_ids in (event.previous_category_ids, new_category_ids):
+        budget_ids.update(
+            await list_overflow_budget_ids_for_categories(
+                session, category_ids=set(category_ids), account_id=tx.account_id
+            )
+        )
+    for budget_id in budget_ids:
+        await recompute_overflow_for_budget(session, budget_id=budget_id)
 
 
 # --- Budget reclassement (S11.4 P11.4.1 / P11.4.2) --------------------------

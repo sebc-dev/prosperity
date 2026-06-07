@@ -344,6 +344,21 @@ async def update_editable_fields(
         if key in domain.EDITABLE_AFTER_CONFIRMED:  # write ONLY the editable scalars
             value = list(raw) if key == "tags" else raw  # type: ignore[call-overload]  # tags: tuple→list(ORM ARRAY)
             setattr(tx, key, value)
+    # S11.4 (reclassement F10): a `category_id` edit on a CONFIRMED tx must reach the
+    # SOURCE OF TRUTH of consumption/overflow — the classification leg (E08.5), not
+    # just the tx column. The budget consumption (`_consumption_filters`) and the
+    # overflow (`_classification_total_and_categories`) read `splits.category_id` of
+    # the classification leg, so propagating the new category there is what makes the
+    # reclassement visible. Write BOUNDED to the category field — neither amount nor
+    # split structure changes — so the double-entry (sum = 0) and ADR 0001 immutability
+    # hold (note S11.4). GUARDED on `confirmed`: below it the splits are still edited
+    # via `add_split`/`remove_split` and the header `tx.category_id` (which the create
+    # route passes here, possibly NULL) is independent of the leg — propagating then
+    # would clobber a categorised leg. A transfer (no classification leg) is a no-op.
+    if old.state is domain.TransactionState.CONFIRMED and "category_id" in fields:
+        for split in splits:
+            if split.leg_role == "classification":
+                split.category_id = fields["category_id"]  # type: ignore[assignment]
     await session.flush()
     after = _to_domain(tx, splits)
     # S11.1: feeds the overflow re-materialisation (`debts`, wired at the
@@ -362,10 +377,25 @@ async def update_editable_fields(
             if getattr(old, field) != getattr(after, field)
         )
         if changed:
+            # S11.4: the classification categories BEFORE the edit — the one value the
+            # subscriber cannot re-read (gone post-edit), needed to recompute the
+            # neighbours of the FORMER covering budget (P11.4.4). Read from `old`
+            # (built before the mutation). Empty unless `category_id` changed.
+            previous_category_ids: frozenset[UUID] = (
+                frozenset(
+                    s.category_id
+                    for s in old.splits
+                    if s.leg_role == "classification" and s.category_id is not None
+                )
+                if "category_id" in changed
+                else frozenset()
+            )
             await dispatch(
                 session,
                 events.TransactionEditableFieldsChangedEvent(
-                    transaction_id=tx.id, changed_fields=changed
+                    transaction_id=tx.id,
+                    changed_fields=changed,
+                    previous_category_ids=previous_category_ids,
                 ),
             )
     return after

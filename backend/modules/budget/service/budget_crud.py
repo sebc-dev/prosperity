@@ -157,13 +157,16 @@ async def update_budget(
     await session.flush()
     # S11.4 : le restant (montant) ou l'éligibilité (contributeurs) a pu bouger ⇒
     # recalcul overflow des tx couvertes (abonné `debts` async ⇒ `dispatch`). Idempotent
-    # côté handler ⇒ coût nul si rien de matériel n'a changé.
-    await dispatch(
-        session,
-        BudgetUpdatedEvent(
-            budget_id=budget.id, category_id=budget.category_id, currency=budget.currency
-        ),
-    )
+    # côté handler ⇒ coût nul si rien de matériel n'a changé. Garde no-op (review S11.4) :
+    # un PATCH sans aucun champ NI remplacement de contributeurs ne peut décaler aucun
+    # restant ⇒ on évite un balayage tout-historique strictement inutile.
+    if fields or contributor_ids is not None:
+        await dispatch(
+            session,
+            BudgetUpdatedEvent(
+                budget_id=budget.id, category_id=budget.category_id, currency=budget.currency
+            ),
+        )
     return budget
 
 

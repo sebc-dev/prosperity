@@ -355,9 +355,14 @@ async def update_editable_fields(
     # via `add_split`/`remove_split` and the header `tx.category_id` (which the create
     # route passes here, possibly NULL) is independent of the leg — propagating then
     # would clobber a categorised leg. A transfer (no classification leg) is a no-op.
+    # V1 mono-category (canonical expense form): exactly ONE classification leg, so the
+    # loop writes a single leg. A future multi-category form would be flattened to one
+    # category here — out of scope V1, revisit with the split-level edit story.
     if old.state is domain.TransactionState.CONFIRMED and "category_id" in fields:
         for split in splits:
             if split.leg_role == "classification":
+                # `fields["category_id"]` is typed `object` (**fields: object); the
+                # caller passes the validated `UUID | None` from `TransactionPatch`.
                 split.category_id = fields["category_id"]  # type: ignore[assignment]
     await session.flush()
     after = _to_domain(tx, splits)
@@ -380,7 +385,10 @@ async def update_editable_fields(
             # S11.4: the classification categories BEFORE the edit — the one value the
             # subscriber cannot re-read (gone post-edit), needed to recompute the
             # neighbours of the FORMER covering budget (P11.4.4). Read from `old`
-            # (built before the mutation). Empty unless `category_id` changed.
+            # (built before the mutation). `changed` is computed on the HEADER
+            # `category_id`, while this reads the classification LEG — the two stay in
+            # sync post-confirm (E08.5, ADR 0001 note S11.4), which is why a header
+            # change reliably signals a leg change. Empty unless `category_id` changed.
             previous_category_ids: frozenset[UUID] = (
                 frozenset(
                     s.category_id

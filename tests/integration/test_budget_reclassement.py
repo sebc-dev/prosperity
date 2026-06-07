@@ -32,13 +32,19 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
+from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 import backend.modules.debts.service.overflow_materializer as _materializer_module
+from backend.config import get_settings
+from backend.main import (  # composition-root wiring under test
+    _register_event_subscribers,  # pyright: ignore[reportPrivateUsage]
+)
 from backend.modules.accounts.models import HOUSEHOLD_SINGLETON_UUID, AccountMember, Household
 from backend.modules.accounts.service.household import invalidate_household_cache
+from backend.modules.auth.service.jwt import issue_access_token
 from backend.modules.budget.events import BudgetCreatedEvent, BudgetUpdatedEvent
 from backend.modules.budget.models import Budget, BudgetContributor, Category
 from backend.modules.budget.service.budget_crud import (
@@ -70,6 +76,11 @@ FactoryBundle = Callable[[], Awaitable[tuple[type, type, type]]]
 _OVERFLOW = "shared_account_overflow"
 _TODAY = dt.date(2026, 6, 15)
 _PERIOD_START = dt.date(2026, 6, 1)
+_settings = get_settings()
+
+
+def _bearer(user_id: UUID) -> dict[str, str]:
+    return {"Authorization": f"Bearer {issue_access_token(user_id, settings=_settings)}"}
 
 
 @pytest.fixture(autouse=True)
@@ -1010,3 +1021,253 @@ async def test_reclass_does_not_touch_share_request(
     await update_editable_fields(household_singleton, tx_id=tx, category_id=base.cat_b)
     sr = (await household_singleton.execute(select(Debt).where(Debt.id == sr_id))).scalar_one()
     assert sr.origin == "personal_share_request" and sr.amount_cents == 321
+
+
+async def test_reclass_recomputes_new_budget_neighbours(
+    household_singleton: AsyncSession, bound_account_factories: FactoryBundle
+) -> None:
+    # Symmetric to the OLD-budget neighbours case: budget B=100 on cat_b already has a
+    # tx Z (within budget → 0). Reclass an EARLIER unbudgeted tx X INTO cat_b → X
+    # consumes B's remaining first → Z's ordered remaining shifts → Z now overflows.
+    # Proves the NEW-budget branch (`new_category_ids`) recomputes neighbours, not just
+    # the reclassed tx itself.
+    base = await _seed_two_categories(
+        household_singleton, bound_account_factories, ratio=Decimal("1")
+    )
+    await household_singleton.run_sync(
+        lambda s: _make_budget_row(
+            s,
+            category_id=base.cat_b,
+            created_by=base.payer,
+            amount_cents=10000,
+            contributor_ids=(base.payer, base.bob),
+        )
+    )
+    earlier = dt.date(2026, 6, 10)
+    tx_x = await household_singleton.run_sync(
+        lambda s: _add_expense(
+            s,
+            account_id=base.account,
+            category_id=base.cat_a,
+            amount=10000,
+            created_by=base.payer,
+            on=earlier,
+        )
+    )
+    tx_z = await household_singleton.run_sync(
+        lambda s: _add_expense(
+            s,
+            account_id=base.account,
+            category_id=base.cat_b,
+            amount=10000,
+            created_by=base.payer,
+            on=_TODAY,
+        )
+    )
+    for tx in (tx_x, tx_z):
+        await transition_to_confirmed(household_singleton, tx_id=tx)
+    # X unbudgeted (cat_a) → full debt; Z alone within budget B → 0.
+    assert await _overflow_by_debtor(household_singleton, tx_x) == {base.bob: 10000}
+    assert await _overflow_by_debtor(household_singleton, tx_z) == {}
+
+    await update_editable_fields(household_singleton, tx_id=tx_x, category_id=base.cat_b)
+    assert await _overflow_by_debtor(household_singleton, tx_x) == {}  # X now first in B
+    # Z, the LATER neighbour of the NEW budget, is recomputed: B is now exhausted by X.
+    assert await _overflow_by_debtor(household_singleton, tx_z) == {base.bob: 10000}
+
+
+# ---------------------------------------------------------------------------
+# P11.4.4 — D6 walk-up: an ANCESTOR budget's neighbours are recomputed
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class HierBase:
+    payer: UUID
+    bob: UUID
+    account: UUID
+    parent: UUID  # budgeted
+    child: UUID  # sub-category of `parent`, where the expenses live
+    sibling: UUID  # unbudgeted root, outside the parent subtree
+
+
+async def _seed_hierarchy(session: AsyncSession, factories: FactoryBundle) -> HierBase:
+    """Shared account (Alice payer + Bob, ratio 1 ⇒ Bob bears the full base) with a
+    `parent → child` category tree and an unrelated unbudgeted `sibling` root."""
+    user_factory, account_factory, _ = await factories()
+
+    def _do(s: Session) -> HierBase:
+        alice = user_factory(email=f"a-{uuid4().hex[:8]}@example.com").id
+        bob = user_factory(email=f"b-{uuid4().hex[:8]}@example.com").id
+        account = account_factory(owner_id=None, name="Commun")
+        s.add_all(
+            [
+                AccountMember(
+                    account_id=account.id, user_id=alice, default_share_ratio=Decimal("1")
+                ),
+                AccountMember(account_id=account.id, user_id=bob, default_share_ratio=Decimal("1")),
+            ]
+        )
+        s.flush()
+        parent = Category(name="Parent")
+        sibling = Category(name="Sibling")
+        s.add_all([parent, sibling])
+        s.flush()
+        child = Category(name="Child", parent_id=parent.id)
+        s.add(child)
+        s.flush()
+        return HierBase(alice, bob, account.id, parent.id, child.id, sibling.id)
+
+    return await session.run_sync(_do)
+
+
+async def test_reclass_walk_up_recomputes_ancestor_budget_neighbours(
+    household_singleton: AsyncSession, bound_account_factories: FactoryBundle
+) -> None:
+    # D6 (walk-up): the budget sits on the PARENT category; both txs live in the CHILD
+    # sub-category and consume the parent budget via its descendant subtree. Reclass X
+    # OUT of the hierarchy (to an unbudgeted sibling root) → the PARENT budget's
+    # neighbour Y is recomputed — found by walking UP from the child category in
+    # `list_overflow_budget_ids_for_categories`. Exercises the ancestor path, which the
+    # sibling-only `test_reclass_recomputes_old_budget_neighbours` never reaches.
+    base = await _seed_hierarchy(household_singleton, bound_account_factories)
+    await household_singleton.run_sync(
+        lambda s: _make_budget_row(
+            s,
+            category_id=base.parent,
+            created_by=base.payer,
+            amount_cents=10000,
+            contributor_ids=(base.payer, base.bob),
+        )
+    )
+    earlier = dt.date(2026, 6, 10)
+    tx_x = await household_singleton.run_sync(
+        lambda s: _add_expense(
+            s,
+            account_id=base.account,
+            category_id=base.child,
+            amount=10000,
+            created_by=base.payer,
+            on=earlier,
+        )
+    )
+    tx_y = await household_singleton.run_sync(
+        lambda s: _add_expense(
+            s,
+            account_id=base.account,
+            category_id=base.child,
+            amount=10000,
+            created_by=base.payer,
+            on=_TODAY,
+        )
+    )
+    for tx in (tx_x, tx_y):
+        await transition_to_confirmed(household_singleton, tx_id=tx)
+    # X (earlier, in child) fills the parent budget → 0; Y (later) bears the 100 excess.
+    assert await _overflow_by_debtor(household_singleton, tx_x) == {}
+    assert await _overflow_by_debtor(household_singleton, tx_y) == {base.bob: 10000}
+
+    # Reclass X to the unbudgeted sibling (out of the parent subtree) → the parent
+    # budget's neighbour Y is freed (walk-up from `previous_category_ids={child}`).
+    await update_editable_fields(household_singleton, tx_id=tx_x, category_id=base.sibling)
+    assert (
+        await _overflow_by_debtor(household_singleton, tx_y) == {}
+    )  # ancestor neighbour recomputed
+    assert await _overflow_by_debtor(household_singleton, tx_x) == {
+        base.bob: 10000
+    }  # now unbudgeted
+
+
+async def test_category_edit_on_transfer_is_graceful_noop(
+    household_singleton: AsyncSession, bound_account_factories: FactoryBundle
+) -> None:
+    # A transfer (NO classification leg — both legs `category_id NULL` ⇒ funding)
+    # edited on `category_id` propagates to no leg and recomputes nothing: no crash,
+    # no overflow debt, legs untouched. Proves the « transfer is a no-op » claim.
+    base = await _seed_two_categories(household_singleton, bound_account_factories)
+
+    def _add_transfer(s: Session) -> UUID:
+        tx = Transaction(
+            account_id=base.account,
+            date=_TODAY,
+            state="confirmed",
+            created_by=base.payer,
+            debt_generation_override="default",
+        )
+        s.add(tx)
+        s.flush()
+        s.add_all(
+            [
+                Split(
+                    transaction_id=tx.id,
+                    account_id=base.account,
+                    category_id=None,
+                    amount_cents=-10000,
+                    currency="EUR",
+                ),
+                Split(
+                    transaction_id=tx.id,
+                    account_id=base.account,
+                    category_id=None,
+                    amount_cents=10000,
+                    currency="EUR",
+                ),
+            ]
+        )
+        s.flush()
+        return tx.id
+
+    tx = await household_singleton.run_sync(_add_transfer)
+    # The category edit must not raise and must leave no overflow behind.
+    await update_editable_fields(household_singleton, tx_id=tx, category_id=base.cat_a)
+    assert await _overflow_debts(household_singleton, tx) == []
+    # No classification leg was created/touched — both legs stay funding (NULL).
+    legs = (
+        (await household_singleton.execute(select(Split).where(Split.transaction_id == tx)))
+        .scalars()
+        .all()
+    )
+    assert {s.category_id for s in legs} == {None}
+
+
+# ---------------------------------------------------------------------------
+# Composition-root wiring — the REAL POST /budgets route materialises overflow
+# ---------------------------------------------------------------------------
+
+
+async def test_post_budgets_route_recomputes_overflow_end_to_end(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_account_factories: FactoryBundle,
+) -> None:
+    # Drive the REAL `POST /budgets` route (not a manual `dispatch`) and rely on
+    # `backend.main._register_event_subscribers` — the production composition root — to
+    # wire `BudgetCreatedEvent` to the reclassement handler. If that wiring line ever
+    # disappears from `main.py`, the overflow survives and this test fails: the silent
+    # regression the manual `_wire_reclass` fixture structurally cannot catch.
+    clear_subscribers()
+    _register_event_subscribers()  # the actual production wiring under test
+
+    sc = await _seed(
+        household_singleton,
+        bound_account_factories,
+        member_ratios={"alice": Decimal("0.5"), "bob": Decimal("0.5")},
+        amount=10000,
+    )
+    await transition_to_confirmed(household_singleton, tx_id=sc.tx)
+    assert await _overflow_by_debtor(household_singleton, sc.tx) == {sc.members["bob"]: 5000}
+
+    resp = await async_client.post(
+        "/budgets",
+        json={
+            "category_id": str(sc.category),
+            "period_kind": "monthly",
+            "period_start": _PERIOD_START.isoformat(),
+            "amount_cents": 50000,
+            "scope": "shared",
+            "contributor_ids": [str(uid) for uid in sc.members.values()],
+        },
+        headers=_bearer(sc.payer),
+    )
+    assert resp.status_code == 201, resp.text
+    assert await _overflow_debts(household_singleton, sc.tx) == []  # recomputed end-to-end

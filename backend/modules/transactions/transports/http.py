@@ -85,6 +85,9 @@ _NOT_FOUND_DETAIL = "Transaction not found."
 # Generic on purpose — it never echoes the offending id (C-SEC-1).
 _INACCESSIBLE_SPLIT_DETAIL = "A split references an inaccessible account."
 _BAD_DEBT_OVERRIDE_DETAIL = "Invalid debt generation override."
+# 422 body when a PATCH edits `category_id` to a row that does not exist (FK
+# RESTRICT 23503). Generic — never echoes the offending id (C-SEC-1).
+_UNKNOWN_CATEGORY_DETAIL = "Unknown category."
 _BAD_CURSOR_DETAIL = "Malformed pagination cursor."
 _DEFAULT_LIMIT = 50
 _MAX_LIMIT = 100
@@ -288,8 +291,10 @@ async def patch_transaction(
     is a no-op (no wipe-to-None). On a `confirmed` transaction the service runs
     `check_mutation_allowed`; since all four allowed fields are editable, an
     `ImmutableFieldViolation` cannot fire via this route — the 409 mapping stays
-    a defensive guard. The `23514` backstop is unreachable via the body (the
-    `Literal` pre-empts it) but kept fail-closed, never a 500.
+    a defensive guard. Two fail-closed FK/CHECK backstops map to 422 (never a
+    500 on body data): `23514` (bad `debt_generation_override`, pre-empted by the
+    `Literal`) and `23503` (a `category_id` editing to a row that does not exist
+    — RESTRICT, now propagated to the classification leg too, S11.4).
     """
     await _require_accessible_tx(session, tx_id, user)
     fields = body.model_dump(exclude_unset=True)
@@ -298,15 +303,18 @@ async def patch_transaction(
     try:
         tx = await update_editable_fields(session, tx_id=tx_id, **fields)
     except IntegrityError as exc:
-        if getattr(exc.orig, "sqlstate", None) == "23514":
+        sqlstate = getattr(exc.orig, "sqlstate", None)
+        if sqlstate == "23514":  # CHECK ck_transactions_debt_generation_override (S07.4)
             logger.info("tx_patch_rejected", extra={"error": "bad_debt_override"})
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_BAD_DEBT_OVERRIDE_DETAIL
             ) from exc
-        logger.error(
-            "tx_patch_unexpected_integrity",
-            extra={"sqlstate": getattr(exc.orig, "sqlstate", None)},
-        )
+        if sqlstate == "23503":  # FK splits/tx category_id → unknown category (S11.4)
+            logger.info("tx_patch_rejected", extra={"error": "unknown_category"})
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_UNKNOWN_CATEGORY_DETAIL
+            ) from exc
+        logger.error("tx_patch_unexpected_integrity", extra={"sqlstate": sqlstate})
         raise
     except (TransactionError, IncompatibleCurrencyError) as exc:
         raise _map_domain_exc(exc) from exc

@@ -117,6 +117,40 @@ async def test_patch_allowed_fields_on_confirmed(
     assert row.state == "confirmed"  # editing a confirmed tx does not change its state
 
 
+async def test_patch_unknown_category_422(
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    bound_transaction_factories: TxFactoryBundle,
+    bound_category_factory: CategoryFactory,
+) -> None:
+    # Editing `category_id` to a row that does not exist hits the FK RESTRICT
+    # (23503) — now propagated to the classification leg too (S11.4). The route maps
+    # it to a curated 422 (never a 500, never echoing the id), gabarit create route.
+    user_factory, account_factory, tx_factory, split_factory = await bound_transaction_factories()
+    category = await bound_category_factory(name="Courses")
+    cat_id = category.id  # type: ignore[attr-defined]
+
+    def _seed(_s: Session) -> tuple[UUID, UUID]:
+        owner = user_factory(email="unknown-cat@example.com")
+        acc = account_factory(owner_id=owner.id, name="Perso")
+        tx = tx_factory(account_id=acc.id, created_by=owner.id, state="confirmed", splits=False)
+        split_factory(transaction_id=tx.id, account_id=acc.id, amount_cents=-1000, category_id=None)
+        split_factory(
+            transaction_id=tx.id, account_id=acc.id, amount_cents=1000, category_id=cat_id
+        )
+        return owner.id, tx.id
+
+    owner_id, tx_id = await household_singleton.run_sync(_seed)
+
+    resp = await async_client.patch(
+        f"/transactions/{tx_id}",
+        json={"category_id": str(uuid4())},  # no such category
+        headers=_bearer(owner_id),
+    )
+    assert resp.status_code == 422, resp.text
+    assert str(tx_id) not in resp.text  # never echoes ids (C-SEC-1)
+
+
 async def test_patch_frozen_field_422(
     async_client: AsyncClient,
     household_singleton: AsyncSession,

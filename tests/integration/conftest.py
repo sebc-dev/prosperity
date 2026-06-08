@@ -41,6 +41,11 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import Session
 from testcontainers.postgres import PostgresContainer
 
+# Side-effect import: registers `bank_account_external_refs` on `Base.metadata`
+# (S12.1, #176) so `auth_schema`'s `create_all` materialises the banking table
+# and the migration-parity test can diff it against the snapshot.
+import backend.modules.banking.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
+
 # Side-effect import: registers both `debts` tables (`debts` + `share_requests`)
 # on `Base.metadata`. REQUIRED here (not optional like transactions, which the
 # factory imports pull in): S09.1 activates the FK

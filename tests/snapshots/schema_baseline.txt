@@ -47,6 +47,17 @@ table alembic_version
   col version_num: VARCHAR(32) NOT NULL
   pk alembic_version_pkc(version_num)
 
+table bank_account_external_refs
+  col created_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col external_ref: VARCHAR NOT NULL
+  col id: UUID NOT NULL
+  col internal_account_id: UUID NOT NULL
+  col provider: VARCHAR NOT NULL
+  pk pk_bank_account_external_refs(id)
+  fk fk_bank_account_external_refs_internal_account_id_accounts: (internal_account_id) -> accounts(id) ON DELETE RESTRICT
+  idx ix_bank_account_external_refs_internal_account_id INDEX: internal_account_id
+  idx uq_bank_account_external_refs_external_ref_provider UNIQUE: external_ref, provider
+
 table budget_contributors
   col budget_id: UUID NOT NULL
   col id: UUID NOT NULL

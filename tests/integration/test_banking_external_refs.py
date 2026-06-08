@@ -113,6 +113,10 @@ async def test_find_isolates_by_provider(
     )
     await auth_schema.flush()
 
+    # `find` only accepts `"ofx"` in V1, so the symmetric `"enable_banking"`
+    # lookup can't go through the service. A bug dropping the `provider` filter
+    # would still be caught here: two rows share `external_ref`, so
+    # `scalar_one_or_none` would raise `MultipleResultsFound`.
     assert await find_internal_account(auth_schema, external_ref="XXXX1234", provider="ofx") == (
         ofx_account
     )

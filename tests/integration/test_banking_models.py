@@ -44,6 +44,39 @@ async def _make_account(session: AsyncSession, owner_id: uuid.UUID) -> uuid.UUID
     return account.id
 
 
+async def test_external_ref_persists_and_rehydrates(
+    auth_schema: AsyncSession,
+    bound_user_factory: Callable[..., Awaitable[User]],
+) -> None:
+    # Positive round-trip: the server-side defaults (`id`, `created_at`) are
+    # materialised by Postgres, not just by the ORM. Gabarit
+    # `test_transactions_models.test_transaction_and_splits_persist`.
+    user = await bound_user_factory()
+    account_id = await _make_account(auth_schema, user.id)
+    ref = BankAccountExternalRef(
+        external_ref="XXXX1234",
+        internal_account_id=account_id,
+        provider="ofx",
+    )
+    auth_schema.add(ref)
+    await auth_schema.flush()
+    ref_id = ref.id
+
+    # `expire_all()` forces a re-hydrate from Postgres — without it the
+    # identity-map returns the in-memory object and the `server_default` on
+    # `created_at` is never exercised against the DB.
+    auth_schema.expire_all()
+    reloaded = (
+        await auth_schema.execute(
+            select(BankAccountExternalRef).where(BankAccountExternalRef.id == ref_id)
+        )
+    ).scalar_one()
+    assert reloaded.external_ref == "XXXX1234"
+    assert reloaded.internal_account_id == account_id
+    assert reloaded.provider == "ofx"
+    assert reloaded.created_at is not None  # server_default=func.now()
+
+
 async def test_duplicate_external_ref_provider_violates_unique(
     auth_schema: AsyncSession,
     bound_user_factory: Callable[..., Awaitable[User]],
@@ -95,12 +128,12 @@ async def test_same_external_ref_two_providers_coexist(
     )
     await auth_schema.flush()
 
-    count = (
+    rows = (
         await auth_schema.execute(
             select(BankAccountExternalRef).where(BankAccountExternalRef.external_ref == "XXXX1234")
         )
     ).all()
-    assert len(count) == 2
+    assert len(rows) == 2
 
 
 async def test_delete_linked_account_raises_restrict(

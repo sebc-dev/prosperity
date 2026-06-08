@@ -1,0 +1,4 @@
+# OFX fixtures encode exact-byte scenarios (UTF-8 BOM, UTF-16, windows-1252,
+# CRLF line endings of the OFX SGML spec). Treat them as binary so Git never
+# normalises EOL/encoding — byte stability is the whole point (S12.2 → S12.5).
+tests/fixtures/ofx/*.ofx -text

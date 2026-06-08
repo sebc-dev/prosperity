@@ -704,13 +704,39 @@ forbidden_modules =
 [importlinter:contract:4]
 name = BankingProvider used only by polling
 type = forbidden
+# `banking.providers` is internal to `banking`; ADR 0009 + F14 require that the
+# only importer is `banking.service.polling` (consumed cross-module via the
+# `banking.public` re-export). `source_modules` can NOT be `backend` here: now
+# that `providers` exists as a real subpackage, the pair (`backend`,
+# `banking.providers`) shares a descendant -> grimp's shared-descendants rule
+# rejects it (same workaround as contract:2). We therefore enumerate every
+# consumer subtree — all peer modules PLUS banking's own non-`providers`
+# internals — so no source subtree overlaps `banking.providers`. The legitimate
+# arcs (`service.polling` / `public` -> providers) are whitelisted below; the
+# package-level `public -> providers` stays (harmless, unmatched: ignore_imports
+# match literal direct edges, and the real edge is `public -> providers.ofx`).
 source_modules =
-    backend
+    backend.modules.accounts
+    backend.modules.auth
+    backend.modules.budget
+    backend.modules.debts
+    backend.modules.forecasting
+    backend.modules.mcp
+    backend.modules.notifications
+    backend.modules.reconciliation
+    backend.modules.savings
+    backend.modules.sync
+    backend.modules.transactions
+    backend.modules.banking.domain
+    backend.modules.banking.models
+    backend.modules.banking.public
+    backend.modules.banking.service
 forbidden_modules =
     backend.modules.banking.providers
 ignore_imports =
     backend.modules.banking.service.polling -> backend.modules.banking.providers
     backend.modules.banking.public -> backend.modules.banking.providers
+    backend.modules.banking.public -> backend.modules.banking.providers.ofx
 unmatched_ignore_imports_alerting = none
 
 [importlinter:contract:5]

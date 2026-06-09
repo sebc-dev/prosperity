@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, computed_field
 
 EncodingConfidence = Literal["high", "low"]
 """Confiance de la détection d'encoding. `low` (fallback cp1252) imposera la
@@ -63,6 +63,65 @@ class ParsedOFX:
     accounts: tuple[str, ...]  # external_refs distincts présents dans le fichier
     transactions: tuple[BankTransaction, ...]
     encoding_confidence: EncodingConfidence
+
+
+class AutoValidationCriteria(BaseModel):
+    """Les 5 critères F04 d'auto-validation (TOUS requis).
+
+    Détail exposé pour que la preview puisse mettre en évidence le(s) critère(s)
+    en échec. `all_met` est l'invariant central de la story (`auto_validatable`
+    en dérive) ; verrouillé par un test exhaustif sur les 32 combinaisons.
+    """
+
+    model_config = ConfigDict(frozen=True, strict=True)
+
+    no_duplicates: bool  # ① aucun doublon (hash déjà connu)
+    encoding_high_confidence: bool  # ② encoding_confidence == "high"
+    within_date_window: bool  # ③ toutes les tx dans ±3 ans
+    amounts_within_cap: bool  # ④ |montant| ≤ 10 000 €
+    volume_under_limit: bool  # ⑤ < 50 tx
+
+    @property
+    def all_met(self) -> bool:
+        return (
+            self.no_duplicates
+            and self.encoding_high_confidence
+            and self.within_date_window
+            and self.amounts_within_cap
+            and self.volume_under_limit
+        )
+
+
+class ImportPreview(BaseModel):
+    """Résultat read-only d'`analyze_import` (F04 preview hybride conditionnel).
+
+    ⚠️ INV-S12.3-PREVIEW-ACCESS : `account_not_linked` et `duplicate_count` sont
+    calculés sur des comptes internes BRUTS (résolus depuis un fichier importé),
+    NON filtrés par accessibilité. Cet objet est donc un ORACLE potentiel ; la
+    route S12.4 DOIT gater chaque `external_ref` sur `accessible_account_ids(
+    user_id)` avant exposition et rendre « lié-inaccessible » indistinguable de
+    « non-lié ». Cf. docstring `analyze_import` / `banking.public`.
+
+    `auto_validatable` est INFORMATIF : la décision finale (auto-commit vs
+    preview) appartient à la route/au client (F04) — `analyze_import` expose les
+    critères, il ne décide pas. `account_not_linked` est ⊥ aux 5 critères.
+    """
+
+    model_config = ConfigDict(frozen=True, strict=True)
+
+    tx_count: int
+    duplicate_count: int
+    encoding_confidence: EncodingConfidence
+    date_min: dt.date | None  # None si 0 tx
+    date_max: dt.date | None
+    amount_max_cents: int  # max(|amount_cents|), 0 si vide
+    criteria: AutoValidationCriteria
+    account_not_linked: bool  # ⊥ aux 5 critères ; la route → 422 si True
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def auto_validatable(self) -> bool:
+        return self.criteria.all_met
 
 
 def decimal_euros_to_cents(amount: Decimal) -> int:

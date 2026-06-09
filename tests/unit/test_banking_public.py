@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import backend.modules.banking.public as banking_public
 from backend.modules.banking.domain import (
+    AutoValidationCriteria,
     BankingProviderError,
     BankTransaction,
     EncodingDetectionError,
+    ImportPreview,
     IncompatibleAccountError,
     ParsedOFX,
     ProviderUnavailableError,
@@ -31,19 +33,24 @@ from backend.modules.banking.public import (
     IncompatibleAccountError as PublicIncompatibleAccountError,
 )
 from backend.modules.banking.service import external_refs as _external_refs
+from backend.modules.banking.service import import_ofx as _import_ofx
 
 _EXPECTED = {
     "AccountAlreadyLinkedError",
+    "AutoValidationCriteria",
     "BankTransaction",
     "BankingProviderError",
     "EncodingConfidence",
     "EncodingDetectionError",
     "ExternalRefError",
+    "ImportPreview",
     "IncompatibleAccountError",
     "OFXProvider",
     "ParsedOFX",
     "ProviderUnavailableError",
     "UnknownProviderError",
+    "analyze_import",
+    "compute_import_hash",
     "find_internal_account",
     "link",
     "parse_ofx",
@@ -70,6 +77,14 @@ def test_reexport_identities_ofx() -> None:
     assert banking_public.ParsedOFX is ParsedOFX
     assert banking_public.BankingProviderError is BankingProviderError
     assert PublicIncompatibleAccountError is IncompatibleAccountError
+
+
+def test_reexport_identities_import_ofx() -> None:
+    # Same function/object identity, not just importable (review Tests n3).
+    assert banking_public.analyze_import is _import_ofx.analyze_import
+    assert banking_public.compute_import_hash is _import_ofx.compute_import_hash
+    assert banking_public.ImportPreview is ImportPreview
+    assert banking_public.AutoValidationCriteria is AutoValidationCriteria
 
 
 def test_error_family_subclassing_external_refs() -> None:

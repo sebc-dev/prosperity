@@ -95,3 +95,53 @@ class BankAccountExternalRef(Base):
             "internal_account_id",
         ),
     )
+
+
+class ImportedTransaction(Base):
+    """Journal de dedup des lignes importées (E12 / S12.3 P12.3.1).
+
+    Une ligne par transaction bancaire effectivement *commitée* (S12.4.3) :
+    `import_hash` = sha256 composite `(account_id, date, amount_cents,
+    libellé_normalisé)` (FITID JAMAIS utilisé, doctrine F04). L'unicité de
+    `import_hash` porte l'idempotence du commit ; en S12.3 la table est lue
+    seule (`analyze_import` calcule `duplicate_count`), jamais écrite.
+
+    `source` : `'ofx'` en V1, `'enable_banking'` plus tard — text (set ouvert,
+    pas d'ENUM, gabarit `BankAccountExternalRef.provider`). FK → `accounts`
+    déclarée par chaîne (banking au-dessus d'accounts, contrat 1) en
+    `ON DELETE RESTRICT` (F02 : pas de hard-delete de compte).
+
+    ⚠️ Nommage : `account_id` désigne le **compte INTERNE** (même sémantique
+    que `BankAccountExternalRef.internal_account_id`) ; le nom court suit la
+    lettre de l'AC #178 (`imported_transactions.account_id`). Les deux tables
+    sœurs pointent `accounts` — ne pas confondre les deux conventions de nom.
+    """
+
+    __tablename__ = "imported_transactions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "accounts.id",
+            ondelete="RESTRICT",
+            name="fk_imported_transactions_account_id_accounts",
+        ),
+        nullable=False,
+    )
+    import_hash: Mapped[str] = mapped_column(String, nullable=False)
+    imported_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    source: Mapped[str] = mapped_column(String, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("import_hash", name="uq_imported_transactions_import_hash"),
+        Index("ix_imported_transactions_account_id", "account_id"),
+    )

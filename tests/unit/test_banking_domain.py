@@ -9,6 +9,7 @@ and the `BankingProviderError` hierarchy the S12.4 boundary catches in one block
 from __future__ import annotations
 
 import datetime as dt
+import itertools
 from decimal import Decimal
 
 import pytest
@@ -17,9 +18,11 @@ from hypothesis import strategies as st
 from pydantic import ValidationError
 
 from backend.modules.banking.domain import (
+    AutoValidationCriteria,
     BankingProviderError,
     BankTransaction,
     EncodingDetectionError,
+    ImportPreview,
     IncompatibleAccountError,
     ParsedOFX,
     ProviderUnavailableError,
@@ -142,3 +145,49 @@ def test_parsed_ofx_is_frozen() -> None:
 )
 def test_error_family_subclassing(subclass: type[BankingProviderError]) -> None:
     assert issubclass(subclass, BankingProviderError)
+
+
+# ---------------------------------------------------------------------------
+# AutoValidationCriteria.all_met / ImportPreview.auto_validatable (S12.3)
+# ---------------------------------------------------------------------------
+
+_FIELDS = (
+    "no_duplicates",
+    "encoding_high_confidence",
+    "within_date_window",
+    "amounts_within_cap",
+    "volume_under_limit",
+)
+
+
+@pytest.mark.parametrize("combo", list(itertools.product([False, True], repeat=5)))
+def test_all_met_iff_all_five_true(combo: tuple[bool, ...]) -> None:
+    # Central invariant of the story: `all_met` ⟺ the 5 criteria are ALL True.
+    # Exhaustive over the 32 combinations — guards against a criterion dropped
+    # from the `and`.
+    criteria = AutoValidationCriteria(**dict(zip(_FIELDS, combo, strict=True)))
+    assert criteria.all_met is all(combo)
+
+
+def test_auto_validatable_mirrors_all_met_and_is_serialized() -> None:
+    # `auto_validatable` is a computed_field derived from `criteria.all_met` (so
+    # it ends up in the JSON the route returns) and is structurally impossible to
+    # set True while a criterion is False.
+    all_true = AutoValidationCriteria(**dict.fromkeys(_FIELDS, True))
+    preview = ImportPreview(
+        tx_count=1,
+        duplicate_count=0,
+        encoding_confidence="high",
+        date_min=dt.date(2026, 1, 1),
+        date_max=dt.date(2026, 1, 1),
+        amount_max_cents=100,
+        criteria=all_true,
+        account_not_linked=False,
+    )
+    assert preview.auto_validatable is True
+    assert preview.model_dump()["auto_validatable"] is True
+
+    one_false = AutoValidationCriteria(**{**dict.fromkeys(_FIELDS, True), "no_duplicates": False})
+    blocked = preview.model_copy(update={"criteria": one_false})
+    assert blocked.auto_validatable is False
+    assert blocked.model_dump()["auto_validatable"] is False

@@ -612,13 +612,13 @@ type = forbidden
 # modules' internals are enumerated explicitly so banking's own never appear
 # here. auth/accounts are below banking in the layer graph (contract 1), so
 # banking may import their `.public` freely — reaching into their internals
-# stays forbidden. NO `ignore_imports` block yet: S12.1 adds no cross-module
-# import (the `internal_account_id → accounts` link is a DB-level FK declared by
-# string, not a Python import). The second-hop blocks (`auth.public → auth.X`,
-# `accounts.public → accounts.X`) arrive in a later story (S12.4) when banking
-# first imports a `.public` surface — and will enumerate ONLY the arcs actually
-# imported, since `unmatched_ignore_imports_alerting = error` would otherwise
-# break the lint (gabarit `2-debts` S09.1→S09.3).
+# stays forbidden. NO `ignore_imports` block: banking still imports no peer
+# `.public` surface. S12.4 (OFX import routes/commit) does NOT change this — the
+# whole cross-module assembly (`banking.public` + `transactions.public`) lives at
+# the composition root (`backend.transports`, contract 6), OUTSIDE `backend.modules`;
+# banking only gains intra-module write/read primitives (`record_imported`,
+# `known_import_hashes`). A second-hop block here will arrive only when banking
+# itself first consumes a peer `.public` surface (not in S12.4).
 source_modules =
     backend.modules.banking
 forbidden_modules =
@@ -756,3 +756,34 @@ source_modules =
     backend.modules.sync
 forbidden_modules =
     backend.modules.mcp
+
+[importlinter:contract:6]
+name = Composition-root transports is consumer-only
+type = forbidden
+# `backend.transports` is the composition root for cross-module HTTP flows (S12.4
+# OFX import): it sits ABOVE every module and imports their `.public` surfaces
+# freely (like `main.py`), composing flows no single module may own (`commit`
+# reads `banking.public` AND writes `transactions.public`, peers forbidden from
+# importing each other by contract 1). This contract is the mirror of contract 5
+# (`mcp` consumer-only): no `backend.modules.*` and no `backend.shared` may import
+# `backend.transports` — the composition root consumes, it is never consumed.
+# A NEW contract, NOT an `ignore_imports` (the AC "no new exception" stays true).
+# `tests/unit/test_importlinter_coverage.py` asserts every dir under
+# `backend/modules/` (+ `backend.shared`) figures in `source_modules` so the
+# contract cannot silently stale when a future module is added.
+source_modules =
+    backend.modules.auth
+    backend.modules.accounts
+    backend.modules.transactions
+    backend.modules.budget
+    backend.modules.banking
+    backend.modules.reconciliation
+    backend.modules.forecasting
+    backend.modules.debts
+    backend.modules.notifications
+    backend.modules.savings
+    backend.modules.sync
+    backend.modules.mcp
+    backend.shared
+forbidden_modules =
+    backend.transports

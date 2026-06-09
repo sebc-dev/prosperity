@@ -27,6 +27,7 @@ distincte et itère sur N tx — il ne s'auto-borne pas (critère ⑤ est inform
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy import select
@@ -49,6 +50,38 @@ _WINDOW_YEARS = 3  # ③ : ±3 ans
 
 def _bank_label(tx: BankTransaction) -> str:
     return tx.description or tx.payee  # D8 (repli payee si description vide)
+
+
+async def known_import_hashes(session: AsyncSession, hashes: Sequence[str]) -> set[str]:
+    """Sous-ensemble de `hashes` déjà journalisés dans `imported_transactions`.
+
+    SOURCE UNIQUE de la requête de dedup (S12.4 D9) : `analyze_import` (preview)
+    ET le commit (composition root) l'appellent → un seul `SELECT ... IN` partagé.
+    Court-circuite sur `hashes` vide (`IN ()` est invalide en SQL) → `set()`.
+    Read-only ; ne dépend pas de l'accessibilité (INV-S12.3-PREVIEW-ACCESS : la
+    route gate en amont).
+    """
+    if not hashes:  # ⚠️ IN () invalide — court-circuit avant la requête
+        return set()
+    rows = await session.execute(
+        select(ImportedTransaction.import_hash).where(ImportedTransaction.import_hash.in_(hashes))
+    )
+    return set(rows.scalars())
+
+
+async def record_imported(
+    session: AsyncSession, *, account_id: UUID, import_hash: str, source: str = "ofx"
+) -> None:
+    """Journalise une ligne importée dans `imported_transactions` (idempotence).
+
+    Primitive d'écriture triviale propriété de `banking` (le journal lui
+    appartient, comme `link` possède `bank_account_external_refs`) : le composition
+    root S12.4 l'appelle au lieu de toucher `banking.models`. Flush-only — pas de
+    commit (`get_db` possède la frontière, ADR 0015). L'UNIQUE `import_hash` est le
+    backstop d'idempotence (une vraie course → `IntegrityError` → rollback total).
+    """
+    session.add(ImportedTransaction(account_id=account_id, import_hash=import_hash, source=source))
+    await session.flush()  # flush-only (ADR 0015) ; no commit
 
 
 def compute_import_hash(internal_account_id: UUID, tx: BankTransaction) -> str:
@@ -105,18 +138,8 @@ async def analyze_import(
         for tx in txns
         if (internal := ref_to_internal.get(tx.external_ref)) is not None
     ]
-    duplicate_count = 0
-    if hashes:
-        known = set(
-            (
-                await session.execute(
-                    select(ImportedTransaction.import_hash).where(
-                        ImportedTransaction.import_hash.in_(hashes)
-                    )
-                )
-            ).scalars()
-        )
-        duplicate_count = sum(1 for h in hashes if h in known)
+    known = await known_import_hashes(session, hashes)
+    duplicate_count = sum(1 for h in hashes if h in known)
 
     # 3) Agrégats (sur TOUTES les tx du fichier — le non-lien n'affecte que le hashing).
     tx_count = len(txns)

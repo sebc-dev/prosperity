@@ -52,8 +52,10 @@ _EXPECTED = {
     "analyze_import",
     "compute_import_hash",
     "find_internal_account",
+    "known_import_hashes",
     "link",
     "parse_ofx",
+    "record_imported",
 }
 
 
@@ -83,6 +85,8 @@ def test_reexport_identities_import_ofx() -> None:
     # Same function/object identity, not just importable (review Tests n3).
     assert banking_public.analyze_import is _import_ofx.analyze_import
     assert banking_public.compute_import_hash is _import_ofx.compute_import_hash
+    assert banking_public.known_import_hashes is _import_ofx.known_import_hashes
+    assert banking_public.record_imported is _import_ofx.record_imported
     assert banking_public.ImportPreview is ImportPreview
     assert banking_public.AutoValidationCriteria is AutoValidationCriteria
 

@@ -52,6 +52,7 @@ from backend.modules.transactions.transports.http import (
 )
 from backend.shared.db import lifespan as db_lifespan
 from backend.shared.events import subscribe_async
+from backend.transports.imports_http import imports_router
 
 
 def _register_event_subscribers() -> None:
@@ -126,6 +127,7 @@ app.include_router(tx_share_requests_router)
 app.include_router(share_requests_router)
 app.include_router(debts_router)
 app.include_router(settlements_router)
+app.include_router(imports_router)
 
 
 @app.get("/healthz")

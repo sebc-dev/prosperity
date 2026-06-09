@@ -24,13 +24,14 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from backend.modules.accounts.domain import AccountType
 from backend.modules.accounts.models import Account, Household
 from backend.modules.auth.models import User, UserRole
-from backend.modules.banking.models import BankAccountExternalRef
+from backend.modules.banking.models import BankAccountExternalRef, ImportedTransaction
 from backend.modules.banking.service.external_refs import (
     AccountAlreadyLinkedError,
     UnknownProviderError,
     find_internal_account,
     link,
 )
+from backend.modules.banking.service.import_ofx import known_import_hashes
 
 # Every test inserts an `Account`, whose `household_id` FK requires the
 # singleton `household` row to exist (ADR 0010); seed it for the whole module.
@@ -168,6 +169,31 @@ async def test_link_then_find_empty_external_ref(
     account_id = await _make_account(auth_schema, user.id)
     await link(auth_schema, external_ref="", internal_account_id=account_id, provider="ofx")
     assert await find_internal_account(auth_schema, external_ref="", provider="ofx") == account_id
+
+
+async def test_known_import_hashes(
+    auth_schema: AsyncSession,
+    bound_user_factory: Callable[..., Awaitable[User]],
+) -> None:
+    # Empty input short-circuits BEFORE the query (`IN ()` is invalid SQL) → set().
+    assert await known_import_hashes(auth_schema, []) == set()
+
+    user = await bound_user_factory()
+    account_id = await _make_account(auth_schema, user.id)
+    auth_schema.add_all(
+        [
+            ImportedTransaction(account_id=account_id, import_hash="hash-a", source="ofx"),
+            ImportedTransaction(account_id=account_id, import_hash="hash-b", source="ofx"),
+        ]
+    )
+    await auth_schema.flush()
+
+    # All known.
+    assert await known_import_hashes(auth_schema, ["hash-a", "hash-b"]) == {"hash-a", "hash-b"}
+    # All unknown.
+    assert await known_import_hashes(auth_schema, ["nope-1", "nope-2"]) == set()
+    # Mix → only the persisted subset.
+    assert await known_import_hashes(auth_schema, ["hash-a", "nope"]) == {"hash-a"}
 
 
 async def test_link_nonexistent_account_raises_integrity(auth_schema: AsyncSession) -> None:

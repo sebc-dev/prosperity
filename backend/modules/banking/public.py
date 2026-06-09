@@ -31,7 +31,12 @@ from backend.modules.banking.service.external_refs import (
     find_internal_account,
     link,
 )
-from backend.modules.banking.service.import_ofx import analyze_import, compute_import_hash
+from backend.modules.banking.service.import_ofx import (
+    analyze_import,
+    compute_import_hash,
+    known_import_hashes,
+    record_imported,
+)
 
 # ⚠️ INV-S12.3-PREVIEW-ACCESS (D13) : `analyze_import` retourne une `ImportPreview`
 # calculée sur des comptes internes BRUTS (non filtrés par accessibilité). Tout
@@ -56,6 +61,8 @@ __all__ = [
     "analyze_import",
     "compute_import_hash",
     "find_internal_account",
+    "known_import_hashes",
     "link",
     "parse_ofx",
+    "record_imported",
 ]

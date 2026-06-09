@@ -142,6 +142,17 @@ table household
   pk pk_household(id)
   ck ck_household_singleton: (id = '00000000-0000-0000-0000-000000000001'::uuid)
 
+table imported_transactions
+  col account_id: UUID NOT NULL
+  col id: UUID NOT NULL
+  col import_hash: VARCHAR NOT NULL
+  col imported_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col source: VARCHAR NOT NULL
+  pk pk_imported_transactions(id)
+  fk fk_imported_transactions_account_id_accounts: (account_id) -> accounts(id) ON DELETE RESTRICT
+  idx ix_imported_transactions_account_id INDEX: account_id
+  idx uq_imported_transactions_import_hash UNIQUE: import_hash
+
 table invitations
   col accepted_at: TIMESTAMP WITH TIME ZONE NULL
   col email: VARCHAR(254) NOT NULL

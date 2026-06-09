@@ -14,80 +14,48 @@ The load-bearing security assertion (INV-S12.3-PREVIEW-ACCESS): a ref linked to
 Fixtures: `boursorama_export_2026.ofx` is high-confidence + EUR + within-window →
 auto-validatable; `libelles_accentues_windows_1252.ofx` is cp1252-fallback → low
 confidence. "Not linked" is obtained by *not* calling `link` (no dedicated fixture).
+Seeding goes through the shared `seed_personal_account`/`bound_user_factory`
+fixtures and `_imports_helpers` (no hand-rolled ORM inserts, review S12.4).
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-from uuid import UUID, uuid4
+from collections.abc import Awaitable, Callable
+from uuid import UUID
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.config import get_settings
-from backend.modules.accounts.domain import AccountType
-from backend.modules.accounts.models import Account
-from backend.modules.auth.models import User, UserRole
-from backend.modules.auth.service.jwt import issue_access_token
+from backend.modules.auth.models import User
 from backend.modules.banking.service.external_refs import link
 from backend.transports import imports_http
-
-_settings = get_settings()
-_OFX_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "ofx"
-
-# External refs carried by the fixtures (account.number in the OFX).
-_BOURSO_REF = "BOURSO-0000-1111"  # boursorama_export_2026.ofx — high conf, EUR
-_CP1252_REF = "CP1252-4444-5555"  # libelles_accentues_windows_1252.ofx — low conf
+from tests.integration._imports_helpers import (
+    BOURSO_REF,
+    CP1252_REF,
+    bearer,
+    bytes_files,
+    files,
+)
 
 pytestmark = pytest.mark.usefixtures("household_singleton")
 
-
-def _bearer(user_id: UUID) -> dict[str, str]:
-    return {"Authorization": f"Bearer {issue_access_token(user_id, settings=_settings)}"}
-
-
-def _read_ofx(name: str) -> bytes:
-    return (_OFX_DIR / name).read_bytes()
-
-
-def _files(name: str) -> dict[str, tuple[str, bytes, str]]:
-    return {"file": (name, _read_ofx(name), "application/octet-stream")}
-
-
-async def _make_user(session: AsyncSession, *, role: UserRole = UserRole.MEMBER) -> UUID:
-    user = User(
-        email=f"{uuid4().hex}@example.com",
-        password_hash="x" * 60,
-        display_name="importer",
-        role=role,
-    )
-    session.add(user)
-    await session.flush()
-    return user.id
-
-
-async def _make_account(session: AsyncSession, owner_id: UUID) -> UUID:
-    account = Account(name="Courant", type=AccountType.COURANT, currency="EUR", owner_id=owner_id)
-    session.add(account)
-    await session.flush()
-    return account.id
+SeedAccount = Callable[..., Awaitable[tuple[UUID, UUID]]]
+UserMaker = Callable[..., Awaitable[User]]
 
 
 async def test_preview_auto_validatable_200(
-    async_client: AsyncClient, household_singleton: AsyncSession
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    seed_personal_account: SeedAccount,
 ) -> None:
-    user_id = await _make_user(household_singleton)
-    account_id = await _make_account(household_singleton, user_id)
+    user_id, account_id = await seed_personal_account()
     await link(
-        household_singleton,
-        external_ref=_BOURSO_REF,
-        internal_account_id=account_id,
-        provider="ofx",
+        household_singleton, external_ref=BOURSO_REF, internal_account_id=account_id, provider="ofx"
     )
 
     resp = await async_client.post(
-        "/imports/ofx/preview", files=_files("boursorama_export_2026.ofx"), headers=_bearer(user_id)
+        "/imports/ofx/preview", files=files("boursorama_export_2026.ofx"), headers=bearer(user_id)
     )
 
     assert resp.status_code == 200, resp.text
@@ -101,21 +69,19 @@ async def test_preview_auto_validatable_200(
 
 
 async def test_preview_low_encoding_blocks_criterion(
-    async_client: AsyncClient, household_singleton: AsyncSession
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    seed_personal_account: SeedAccount,
 ) -> None:
-    user_id = await _make_user(household_singleton)
-    account_id = await _make_account(household_singleton, user_id)
+    user_id, account_id = await seed_personal_account()
     await link(
-        household_singleton,
-        external_ref=_CP1252_REF,
-        internal_account_id=account_id,
-        provider="ofx",
+        household_singleton, external_ref=CP1252_REF, internal_account_id=account_id, provider="ofx"
     )
 
     resp = await async_client.post(
         "/imports/ofx/preview",
-        files=_files("libelles_accentues_windows_1252.ofx"),
-        headers=_bearer(user_id),
+        files=files("libelles_accentues_windows_1252.ofx"),
+        headers=bearer(user_id),
     )
 
     assert resp.status_code == 200, resp.text
@@ -126,14 +92,13 @@ async def test_preview_low_encoding_blocks_criterion(
 
 
 async def test_preview_account_not_linked_422(
-    async_client: AsyncClient, household_singleton: AsyncSession
+    async_client: AsyncClient, bound_user_factory: UserMaker
 ) -> None:
     # Ref is NEVER linked → 422 typed `account_not_linked`.
-    user_id = await _make_user(household_singleton)
-    await _make_account(household_singleton, user_id)
+    user = await bound_user_factory()
 
     resp = await async_client.post(
-        "/imports/ofx/preview", files=_files("boursorama_export_2026.ofx"), headers=_bearer(user_id)
+        "/imports/ofx/preview", files=files("boursorama_export_2026.ofx"), headers=bearer(user.id)
     )
 
     assert resp.status_code == 422, resp.text
@@ -141,25 +106,26 @@ async def test_preview_account_not_linked_422(
 
 
 async def test_preview_linked_but_inaccessible_is_indistinguishable_422(
-    async_client: AsyncClient, household_singleton: AsyncSession
+    async_client: AsyncClient,
+    household_singleton: AsyncSession,
+    seed_personal_account: SeedAccount,
+    bound_user_factory: UserMaker,
 ) -> None:
     # Ref linked to ANOTHER user's personal account → must be byte-identical to
     # the not-linked case (non-disclosure, INV-S12.3-PREVIEW-ACCESS).
-    other_id = await _make_user(household_singleton)
-    other_account = await _make_account(household_singleton, other_id)
+    _other_id, other_account = await seed_personal_account()
     await link(
         household_singleton,
-        external_ref=_BOURSO_REF,
+        external_ref=BOURSO_REF,
         internal_account_id=other_account,
         provider="ofx",
     )
-    caller_id = await _make_user(household_singleton)
-    await _make_account(household_singleton, caller_id)
+    caller = await bound_user_factory()
 
     resp = await async_client.post(
         "/imports/ofx/preview",
-        files=_files("boursorama_export_2026.ofx"),
-        headers=_bearer(caller_id),
+        files=files("boursorama_export_2026.ofx"),
+        headers=bearer(caller.id),
     )
 
     assert resp.status_code == 422, resp.text
@@ -173,14 +139,14 @@ async def test_preview_linked_but_inaccessible_is_indistinguishable_422(
 
 
 async def test_preview_malformed_ofx_422(
-    async_client: AsyncClient, household_singleton: AsyncSession
+    async_client: AsyncClient, bound_user_factory: UserMaker
 ) -> None:
-    user_id = await _make_user(household_singleton)
+    user = await bound_user_factory()
 
     resp = await async_client.post(
         "/imports/ofx/preview",
-        files={"file": ("garbage.ofx", b"garbage", "application/octet-stream")},
-        headers=_bearer(user_id),
+        files=bytes_files(b"garbage", name="garbage.ofx"),
+        headers=bearer(user.id),
     )
 
     assert resp.status_code == 422, resp.text
@@ -193,7 +159,7 @@ async def test_preview_malformed_ofx_422(
 
 async def test_preview_payload_too_large_413(
     async_client: AsyncClient,
-    household_singleton: AsyncSession,
+    bound_user_factory: UserMaker,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Shrink the cap so a tiny upload trips it: `Content-Length` > cap → 413
@@ -205,10 +171,10 @@ async def test_preview_payload_too_large_413(
         raise AssertionError("parse_ofx must not be reached when the size cap fires")
 
     monkeypatch.setattr(imports_http, "parse_ofx", _fail_parse)
-    user_id = await _make_user(household_singleton)
+    user = await bound_user_factory()
 
     resp = await async_client.post(
-        "/imports/ofx/preview", files=_files("boursorama_export_2026.ofx"), headers=_bearer(user_id)
+        "/imports/ofx/preview", files=files("boursorama_export_2026.ofx"), headers=bearer(user.id)
     )
 
     assert resp.status_code == 413, resp.text
@@ -217,8 +183,5 @@ async def test_preview_payload_too_large_413(
 
 async def test_preview_anonymous_401(async_client: AsyncClient) -> None:
     # No Authorization header → 401 (auth rejects before the route body runs).
-    resp = await async_client.post(
-        "/imports/ofx/preview",
-        files={"file": ("x.ofx", b"x", "application/octet-stream")},
-    )
+    resp = await async_client.post("/imports/ofx/preview", files=bytes_files(b"x", name="x.ofx"))
     assert resp.status_code == 401, resp.text

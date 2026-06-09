@@ -138,7 +138,6 @@ async def analyze_import(
         for tx in txns
         if (internal := ref_to_internal.get(tx.external_ref)) is not None
     ]
-    # known_import_hashes = source UNIQUE du SELECT dedup, partagée avec le commit S12.4.3.
     known = await known_import_hashes(session, hashes)
     duplicate_count = sum(1 for h in hashes if h in known)
 

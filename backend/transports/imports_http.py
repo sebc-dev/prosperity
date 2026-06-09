@@ -39,6 +39,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.accounts.public import (
+    HouseholdNotInitializedError,
     accessible_account_ids,
     account_is_accessible,
     get_household,
@@ -93,6 +94,10 @@ _PAYLOAD_TOO_LARGE = {
 _NOT_FOUND = {
     "code": "account_not_found",
     "message": "Compte introuvable.",
+}
+_HOUSEHOLD_NOT_INITIALIZED = {
+    "code": "household_not_initialized",
+    "message": "Le foyer n'est pas initialisé (`/setup` requis).",
 }
 _UNKNOWN_PROVIDER = {
     "code": "unknown_provider",
@@ -280,7 +285,8 @@ async def commit_import(  # noqa: PLR0913 — FastAPI route deps + form fields a
 
     Orchestration au composition root (D1). Gates : (a) compte cible accessible
     (404, D8a) ; (b) chaque réf du fichier liée à CE compte (422, D8b) ; (c) devise
-    du fichier == devise du foyer (422, D6b). Dedup D9 : `known_import_hashes` +
+    du fichier == devise du foyer (422, D6b ; foyer non initialisé → 409 curaté).
+    Dedup D9 : `known_import_hashes` +
     set `seen` intra-batch. Chaque ligne retenue → `create_draft` + `add_split`
     (jambe `funding`, reste `draft`, D6) + `record_imported`. AUCUN commit (D10) :
     `get_db` commite à la sortie ; une exception → rollback total (atomicité).
@@ -311,7 +317,10 @@ async def commit_import(  # noqa: PLR0913 — FastAPI route deps + form fields a
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_ACCOUNT_NOT_LINKED)
 
     # D6b — gate devise : rejet GLOBAL si une ligne diffère de la devise du foyer.
-    household = await get_household(session)
+    try:
+        household = await get_household(session)
+    except HouseholdNotInitializedError as exc:  # corps curaté (jamais de 500 nu)
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=_HOUSEHOLD_NOT_INITIALIZED) from exc
     if any(tx.currency != household.base_currency for tx in parsed.transactions):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=_CURRENCY_MISMATCH)
 

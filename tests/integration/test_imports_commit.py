@@ -14,12 +14,13 @@ Load-bearing invariants:
 - atomicity: a mid-loop failure rolls back the WHOLE import (`get_db`, D10);
 - the currency gate rejects a foreign-currency file globally (D6b);
 - `user_overrides` is accepted but a no-op (D11).
+
+Plumbing (`bearer`, real/synthetic OFX payloads) lives in `_imports_helpers`.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
@@ -27,22 +28,24 @@ from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from backend.config import get_settings
 from backend.modules.accounts.domain import AccountType
 from backend.modules.accounts.models import Account, Household
 from backend.modules.accounts.service.household import invalidate_household_cache
 from backend.modules.auth.models import User, UserRole
-from backend.modules.auth.service.jwt import issue_access_token
 from backend.modules.banking.models import ImportedTransaction
 from backend.modules.banking.service.external_refs import link
 from backend.modules.budget.models import Category
 from backend.modules.transactions.models import Split, Transaction
 from backend.transports import imports_http
-
-_settings = get_settings()
-_OFX_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "ofx"
-_BOURSO_REF = "BOURSO-0000-1111"  # boursorama_export_2026.ofx — 2 lines, EUR, high conf
-_BOURSO_AMOUNTS = {-2999, 210000}
+from tests.integration._imports_helpers import (
+    BOURSO_AMOUNTS,
+    BOURSO_REF,
+    bearer,
+    bytes_files,
+    files,
+    ofx,
+    stmt,
+)
 
 pytestmark = pytest.mark.usefixtures("_clean_committed_db")
 
@@ -59,56 +62,8 @@ def _reset_household_cache():  # pyright: ignore[reportUnusedFunction]
     invalidate_household_cache()
 
 
-# ---------------------------------------------------------------------------
-# Synthetic OFX generator (foreign currency / multi-account / intra-file dup).
-# Real fixtures cover the happy path; these edge files do not exist on disk.
-# ---------------------------------------------------------------------------
-
-_HEADER = (
-    "OFXHEADER:100\nDATA:OFXSGML\nVERSION:102\nSECURITY:NONE\nENCODING:USASCII\n"
-    "CHARSET:1252\nCOMPRESSION:NONE\nOLDFILEUID:NONE\nNEWFILEUID:NONE\n"
-)
-
-
-def _stmt(acctid: str, currency: str, txns: list[tuple[str, str, str]], *, bankid: str) -> str:
-    body = "".join(
-        f"<STMTTRN>\n<TRNTYPE>DEBIT<DTPOSTED>{date}<TRNAMT>{amount}\n"
-        f"<FITID>{fitid}<NAME>Op<MEMO>Op\n</STMTTRN>\n"
-        for (date, amount, fitid) in txns
-    )
-    return (
-        "<STMTTRNRS>\n<TRNUID>1<STATUS><CODE>0<SEVERITY>INFO</STATUS>\n<STMTRS>\n"
-        f"<CURDEF>{currency}\n"
-        f"<BANKACCTFROM><BANKID>{bankid}<ACCTID>{acctid}<ACCTTYPE>CHECKING</BANKACCTFROM>\n"
-        "<BANKTRANLIST>\n<DTSTART>20260101<DTEND>20260331\n"
-        f"{body}</BANKTRANLIST>\n"
-        "<LEDGERBAL><BALAMT>0.00<DTASOF>20260331</LEDGERBAL>\n</STMTRS></STMTTRNRS>\n"
-    )
-
-
-def _ofx(stmts: list[str]) -> bytes:
-    inner = "".join(stmts)
-    return (
-        _HEADER + "\n<OFX>\n<SIGNONMSGSRSV1><SONRS>\n<STATUS><CODE>0<SEVERITY>INFO</STATUS>\n"
-        "<DTSERVER>20260401120000<LANGUAGE>FRA\n</SONRS></SIGNONMSGSRSV1>\n"
-        f"<BANKMSGSRSV1>{inner}</BANKMSGSRSV1></OFX>\n"
-    ).encode("cp1252")
-
-
-def _bearer(user_id: UUID) -> dict[str, str]:
-    return {"Authorization": f"Bearer {issue_access_token(user_id, settings=_settings)}"}
-
-
-def _real_files(name: str) -> dict[str, tuple[str, bytes, str]]:
-    return {"file": (name, (_OFX_DIR / name).read_bytes(), "application/octet-stream")}
-
-
-def _bytes_files(payload: bytes) -> dict[str, tuple[str, bytes, str]]:
-    return {"file": ("synthetic.ofx", payload, "application/octet-stream")}
-
-
 async def _seed_linked(
-    sm: SessionMaker, *, linked_refs: tuple[str, ...] = (_BOURSO_REF,)
+    sm: SessionMaker, *, linked_refs: tuple[str, ...] = (BOURSO_REF,)
 ) -> tuple[UUID, UUID]:
     """Seed household + owner + a personal account, link `linked_refs` to it, commit.
 
@@ -137,10 +92,10 @@ async def _seed_linked(
 
 async def _count(sm: SessionMaker, model: type, **filters: object) -> int:
     async with sm() as session:
-        stmt = select(func.count()).select_from(model)
+        stmt_ = select(func.count()).select_from(model)
         for col, val in filters.items():
-            stmt = stmt.where(getattr(model, col) == val)
-        return (await session.execute(stmt)).scalar_one()
+            stmt_ = stmt_.where(getattr(model, col) == val)
+        return (await session.execute(stmt_)).scalar_one()
 
 
 # ---------------------------------------------------------------------------
@@ -156,8 +111,8 @@ async def test_commit_creates_one_draft_per_line(
     resp = await committed_client.post(
         "/imports/ofx/commit",
         data={"internal_account_id": str(account_id)},
-        files=_real_files("boursorama_export_2026.ofx"),
-        headers=_bearer(user_id),
+        files=files("boursorama_export_2026.ofx"),
+        headers=bearer(user_id),
     )
 
     assert resp.status_code == 200, resp.text
@@ -177,7 +132,7 @@ async def test_commit_creates_one_draft_per_line(
         assert all(s.category_id is None for s in splits)
         assert all(s.account_id == account_id for s in splits)
         assert all(s.currency == "EUR" for s in splits)
-        assert {s.amount_cents for s in splits} == _BOURSO_AMOUNTS
+        assert {s.amount_cents for s in splits} == BOURSO_AMOUNTS
 
     imported = await _count(committed_sessionmaker, ImportedTransaction, account_id=account_id)
     assert imported == 2
@@ -192,8 +147,8 @@ async def test_commit_never_planned_or_confirmed(
     resp = await committed_client.post(
         "/imports/ofx/commit",
         data={"internal_account_id": str(account_id)},
-        files=_real_files("boursorama_export_2026.ofx"),
-        headers=_bearer(user_id),
+        files=files("boursorama_export_2026.ofx"),
+        headers=bearer(user_id),
     )
     assert resp.status_code == 200, resp.text
 
@@ -208,20 +163,20 @@ async def test_recommit_is_idempotent(
     committed_client: AsyncClient, committed_sessionmaker: SessionMaker
 ) -> None:
     user_id, account_id = await _seed_linked(committed_sessionmaker)
-    body = {
-        "data": {"internal_account_id": str(account_id)},
-        "files": _real_files("boursorama_export_2026.ofx"),
-        "headers": _bearer(user_id),
-    }
 
-    first = await committed_client.post("/imports/ofx/commit", **body)
+    first = await committed_client.post(
+        "/imports/ofx/commit",
+        data={"internal_account_id": str(account_id)},
+        files=files("boursorama_export_2026.ofx"),
+        headers=bearer(user_id),
+    )
     assert first.json() == {"created": 2, "skipped_duplicates": 0}
 
     second = await committed_client.post(
         "/imports/ofx/commit",
         data={"internal_account_id": str(account_id)},
-        files=_real_files("boursorama_export_2026.ofx"),
-        headers=_bearer(user_id),
+        files=files("boursorama_export_2026.ofx"),
+        headers=bearer(user_id),
     )
     assert second.status_code == 200, second.text
     assert second.json() == {"created": 0, "skipped_duplicates": 2}
@@ -238,9 +193,9 @@ async def test_commit_intra_file_duplicate_skipped(
     # `seen` set skips the second WITHIN the same transaction (no IntegrityError).
     ref = "DUP-ACC-1"
     user_id, account_id = await _seed_linked(committed_sessionmaker, linked_refs=(ref,))
-    payload = _ofx(
+    payload = ofx(
         [
-            _stmt(
+            stmt(
                 ref,
                 "EUR",
                 [("20260118", "-10.00", "FIT-A"), ("20260118", "-10.00", "FIT-B")],
@@ -252,8 +207,8 @@ async def test_commit_intra_file_duplicate_skipped(
     resp = await committed_client.post(
         "/imports/ofx/commit",
         data={"internal_account_id": str(account_id)},
-        files=_bytes_files(payload),
-        headers=_bearer(user_id),
+        files=bytes_files(payload),
+        headers=bearer(user_id),
     )
 
     assert resp.status_code == 200, resp.text
@@ -285,8 +240,8 @@ async def test_commit_atomic_rollback_on_midloop_failure(
         await committed_client.post(
             "/imports/ofx/commit",
             data={"internal_account_id": str(account_id)},
-            files=_real_files("boursorama_export_2026.ofx"),
-            headers=_bearer(user_id),
+            files=files("boursorama_export_2026.ofx"),
+            headers=bearer(user_id),
         )
 
     # Atomicity: nothing persisted at all (proves the `get_db` rollback, D10).
@@ -304,15 +259,15 @@ async def test_commit_then_preview_reports_duplicates(
     commit = await committed_client.post(
         "/imports/ofx/commit",
         data={"internal_account_id": str(account_id)},
-        files=_real_files("boursorama_export_2026.ofx"),
-        headers=_bearer(user_id),
+        files=files("boursorama_export_2026.ofx"),
+        headers=bearer(user_id),
     )
     assert commit.json()["created"] == 2
 
     preview = await committed_client.post(
         "/imports/ofx/preview",
-        files=_real_files("boursorama_export_2026.ofx"),
-        headers=_bearer(user_id),
+        files=files("boursorama_export_2026.ofx"),
+        headers=bearer(user_id),
     )
     assert preview.status_code == 200, preview.text
     body = preview.json()
@@ -330,13 +285,13 @@ async def test_commit_foreign_currency_422(
 ) -> None:
     ref = "USD-ACC-1"
     user_id, account_id = await _seed_linked(committed_sessionmaker, linked_refs=(ref,))
-    payload = _ofx([_stmt(ref, "USD", [("20260118", "-75.40", "FIT-1")], bankid="30002")])
+    payload = ofx([stmt(ref, "USD", [("20260118", "-75.40", "FIT-1")], bankid="30002")])
 
     resp = await committed_client.post(
         "/imports/ofx/commit",
         data={"internal_account_id": str(account_id)},
-        files=_bytes_files(payload),
-        headers=_bearer(user_id),
+        files=bytes_files(payload),
+        headers=bearer(user_id),
     )
 
     assert resp.status_code == 422, resp.text
@@ -350,18 +305,18 @@ async def test_commit_multi_account_file_rejected_422(
     # File carries two refs; only ACC-A is linked to the target account → the
     # unlinked ACC-B trips the per-ref gate (D8b). Nothing created.
     user_id, account_id = await _seed_linked(committed_sessionmaker, linked_refs=("ACC-A",))
-    payload = _ofx(
+    payload = ofx(
         [
-            _stmt("ACC-A", "EUR", [("20260118", "-10.00", "A1")], bankid="111"),
-            _stmt("ACC-B", "EUR", [("20260119", "-20.00", "B1")], bankid="222"),
+            stmt("ACC-A", "EUR", [("20260118", "-10.00", "A1")], bankid="111"),
+            stmt("ACC-B", "EUR", [("20260119", "-20.00", "B1")], bankid="222"),
         ]
     )
 
     resp = await committed_client.post(
         "/imports/ofx/commit",
         data={"internal_account_id": str(account_id)},
-        files=_bytes_files(payload),
-        headers=_bearer(user_id),
+        files=bytes_files(payload),
+        headers=bearer(user_id),
     )
 
     assert resp.status_code == 422, resp.text
@@ -377,8 +332,8 @@ async def test_commit_user_overrides_is_noop(
     resp = await committed_client.post(
         "/imports/ofx/commit",
         data={"internal_account_id": str(account_id), "user_overrides": "category=Courses"},
-        files=_real_files("boursorama_export_2026.ofx"),
-        headers=_bearer(user_id),
+        files=files("boursorama_export_2026.ofx"),
+        headers=bearer(user_id),
     )
 
     assert resp.status_code == 200, resp.text
@@ -407,8 +362,8 @@ async def test_commit_inaccessible_account_404(
     resp = await committed_client.post(
         "/imports/ofx/commit",
         data={"internal_account_id": str(other_account)},
-        files=_real_files("boursorama_export_2026.ofx"),
-        headers=_bearer(caller_id),
+        files=files("boursorama_export_2026.ofx"),
+        headers=bearer(caller_id),
     )
 
     assert resp.status_code == 404, resp.text
@@ -425,8 +380,8 @@ async def test_commit_unlinked_ref_422(
     resp = await committed_client.post(
         "/imports/ofx/commit",
         data={"internal_account_id": str(account_id)},
-        files=_real_files("boursorama_export_2026.ofx"),
-        headers=_bearer(user_id),
+        files=files("boursorama_export_2026.ofx"),
+        headers=bearer(user_id),
     )
 
     assert resp.status_code == 422, resp.text
@@ -442,8 +397,8 @@ async def test_commit_malformed_ofx_422(
     resp = await committed_client.post(
         "/imports/ofx/commit",
         data={"internal_account_id": str(account_id)},
-        files=_bytes_files(b"garbage"),
-        headers=_bearer(user_id),
+        files=bytes_files(b"garbage"),
+        headers=bearer(user_id),
     )
 
     assert resp.status_code == 422, resp.text
@@ -459,24 +414,33 @@ async def test_commit_payload_too_large_413(
     committed_sessionmaker: SessionMaker,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Cap tripped → 413 BEFORE the body is read/parsed (D13). Stub `parse_ofx` to
+    # prove the short-circuit on the WRITE route too (parity with `/preview`), and
+    # assert nothing was written.
     monkeypatch.setattr(imports_http, "MAX_REQUEST_BYTES", 4)
+
+    def _fail_parse(*_a: object, **_k: object) -> object:
+        raise AssertionError("parse_ofx must not be reached when the size cap fires")
+
+    monkeypatch.setattr(imports_http, "parse_ofx", _fail_parse)
     user_id, account_id = await _seed_linked(committed_sessionmaker)
 
     resp = await committed_client.post(
         "/imports/ofx/commit",
         data={"internal_account_id": str(account_id)},
-        files=_real_files("boursorama_export_2026.ofx"),
-        headers=_bearer(user_id),
+        files=files("boursorama_export_2026.ofx"),
+        headers=bearer(user_id),
     )
 
     assert resp.status_code == 413, resp.text
     assert resp.json()["detail"]["code"] == "payload_too_large"
+    assert await _count(committed_sessionmaker, Transaction) == 0
 
 
 async def test_commit_anonymous_401(committed_client: AsyncClient) -> None:
     resp = await committed_client.post(
         "/imports/ofx/commit",
         data={"internal_account_id": str(uuid4())},
-        files=_bytes_files(b"x"),
+        files=bytes_files(b"x"),
     )
     assert resp.status_code == 401, resp.text

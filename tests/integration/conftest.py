@@ -82,6 +82,11 @@ _BoundTxFactories = Callable[
     ],
 ]
 
+_BoundAccountFactories = Callable[
+    [],
+    Awaitable[tuple[type[UserFactory], type[AccountFactory], type[AccountMemberFactory]]],
+]
+
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def db_engine(postgres_container: PostgresContainer) -> AsyncIterator[object]:
@@ -272,6 +277,33 @@ async def seed_account(
         def _build(_sync: object) -> tuple[uuid.UUID, uuid.UUID]:
             user = user_factory()
             return account_factory(owner_id=user.id).id, user.id
+
+        return await household_singleton.run_sync(_build)
+
+    return _seed
+
+
+@pytest_asyncio.fixture(loop_scope="session")
+async def seed_personal_account(
+    household_singleton: AsyncSession,
+    bound_account_factories: _BoundAccountFactories,
+) -> Callable[..., Awaitable[tuple[uuid.UUID, uuid.UUID]]]:
+    """Seed a `(user_id, account_id)` owner pair for the OFX-import route tests.
+
+    Replaces the `_make_user`/`_make_account` helpers that were copy-pasted into
+    `test_imports_routes_preview.py` / `_routes_link.py` (review S12.4): one
+    factory-backed body instead of hand-rolled ORM inserts. `role` lets a test
+    build an admin owner; the account is a personal `COURANT` in EUR (factory
+    defaults). Companion of `seed_account` (which returns the reversed tuple and
+    pulls in the transaction-factory bundle).
+    """
+
+    async def _seed(*, role: str = "member") -> tuple[uuid.UUID, uuid.UUID]:
+        user_factory, account_factory, _member = await bound_account_factories()
+
+        def _build(_sync: object) -> tuple[uuid.UUID, uuid.UUID]:
+            user = user_factory(role=role)
+            return user.id, account_factory(owner_id=user.id).id
 
         return await household_singleton.run_sync(_build)
 

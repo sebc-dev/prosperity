@@ -86,4 +86,15 @@ def test_every_module_is_a_contract6_source() -> None:
         "— a future import of backend.transports from them would be invisible. "
         f"Add them: {sorted(missing)}"
     )
-    assert "backend.shared" in sources, "contract:6 must also forbid backend.shared → transports"
+    assert "backend.shared" in sources, (
+        "contract:6 must list backend.shared as a source_module (shared must not "
+        "import backend.transports either)"
+    )
+    # Symmetric guard: no source_modules entry may name a backend.modules.* that
+    # no longer exists on disk (a typo or a deleted module would silently weaken
+    # the contract). `backend.shared` is the one legitimate non-module source.
+    stale = sources - on_disk - {"backend.shared"}
+    assert not stale, (
+        "contract:6 source_modules names backend.modules.* entries with no "
+        f"matching directory under backend/modules/ — remove or fix them: {sorted(stale)}"
+    )

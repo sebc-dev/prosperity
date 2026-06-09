@@ -186,7 +186,7 @@ async def test_volume_limit_boundary(
 ) -> None:
     await _linked_account(auth_schema, bound_user_factory)
 
-    # 49 distinct tx (vary the day so hashes differ) → under limit; 50 → at limit.
+    # ⑤ is strict (`tx_count < 50`): 49 → under limit; 50 → over (False).
     def _many(n: int) -> tuple[BankTransaction, ...]:
         return tuple(
             _txn(date=_REF_DATE - dt.timedelta(days=i), description=f"tx{i}") for i in range(n)
@@ -250,8 +250,42 @@ async def test_duplicate_count_multiple(
     assert preview.tx_count == 3
 
 
+async def test_duplicate_count_counts_intra_file_repeats(
+    auth_schema: AsyncSession,
+    bound_user_factory: Callable[..., Awaitable[User]],
+) -> None:
+    # `duplicate_count` is "how many file lines have a hash already in
+    # imported_transactions" (AC), NOT intra-file dedup: two identical file
+    # lines whose shared hash is in the journal each count → 2, even though a
+    # SINGLE journal row backs them. This pins the behaviour the S12.4.3 commit
+    # relies on (its UNIQUE constraint is what actually dedups intra-file).
+    account_id = await _linked_account(auth_schema, bound_user_factory)
+    tx = _txn(description="Courses")
+    auth_schema.add(
+        ImportedTransaction(
+            account_id=account_id,
+            import_hash=compute_import_hash(account_id, tx),
+            source="ofx",
+        )
+    )
+    await auth_schema.flush()
+
+    # Same tx twice in the file; only ONE journal row exists.
+    preview = await analyze_import(auth_schema, _parsed((tx, tx)), reference_date=_REF_DATE)
+    assert preview.tx_count == 2
+    assert preview.duplicate_count == 2
+    assert preview.criteria.no_duplicates is False
+
+
 # ---------------------------------------------------------------------------
 # Account-not-linked detection
+#
+# ⚠️ INV-S12.3-PREVIEW-ACCESS : `account_not_linked` est ici une valeur BRUTE
+# (calculée sur des `internal_account_id` non filtrés par accessibilité). Ces
+# tests verrouillent le CALCUL, pas un comportement exposable tel quel : la
+# route S12.4 DOIT gater chaque `external_ref` sur `accessible_account_ids(
+# user_id)` avant exposition et rendre « lié-inaccessible » indistinguable de
+# « non-lié ». Ne pas lire « non-lié » comme un verdict final côté API.
 # ---------------------------------------------------------------------------
 
 

@@ -52,8 +52,21 @@ def test_strips_stacked_prefixes() -> None:
     assert normalize_label("PRLV PRLV SEPA EDF") == "edf"
 
 
+def test_strips_repeated_same_prefix() -> None:
+    # The `while changed` loop strips the SAME prefix repeated (not just distinct
+    # stacked ones) — locks the loop, not a single pass.
+    assert normalize_label("VIR VIR EDF") == "edf"
+    assert normalize_label("cb cb truc") == "truc"
+
+
 def test_strips_iso_dates() -> None:
     assert normalize_label("CB 2026-01-15 RESTO") == "resto"
+
+
+def test_strips_iso_date_in_middle() -> None:
+    # The docstring promises ISO dates removed "wherever they are", not just at
+    # the end — a date embedded between tokens collapses out cleanly.
+    assert normalize_label("CB RESTO 2026-01-15 PARIS") == "resto paris"
 
 
 def test_collapses_whitespace() -> None:
@@ -63,6 +76,12 @@ def test_collapses_whitespace() -> None:
 def test_prefix_substring_not_stripped() -> None:
     # Word boundary: "cbtest" is not the "cb " prefix → left untouched.
     assert normalize_label("cbtest") == "cbtest"
+
+
+def test_multiword_prefix_boundary_not_stripped() -> None:
+    # "PRLV SEPAxyz" must not be eaten as the multi-word prefix "prlv sepa":
+    # "prlv" strips (followed by space), then "sepaxyz" is not the "sepa" token.
+    assert normalize_label("PRLV SEPAxyz") == "sepaxyz"
 
 
 def test_normalize_label_empty() -> None:
@@ -79,6 +98,14 @@ def test_strips_control_chars() -> None:
     assert normalize_label("a\x7fb") == "a b"
 
 
+def test_strips_lone_surrogates() -> None:
+    # Lone surrogates (\ud800–\udfff) are NOT covered by `\s`/C0 and would make
+    # `import_hash`'s UTF-8 encode raise — they must be stripped so the output is
+    # always UTF-8 encodable.
+    assert normalize_label("a\udc80b") == "a b"
+    assert normalize_label("a\ud800b") == "a b"
+
+
 # ---------------------------------------------------------------------------
 # normalize_label — property-based (Hypothesis, strategy §4.2)
 # ---------------------------------------------------------------------------
@@ -90,15 +117,18 @@ def test_property_idempotent(x: str) -> None:
     assert normalize_label(once) == once
 
 
-@given(st.text())
+@given(st.text(alphabet=st.characters(codec=None)))
 def test_property_no_control_chars(x: str) -> None:
-    # st.text() generates control chars / surrogates; the output must contain no
-    # C0/DEL (hence never `\x1f`) and no double whitespace — injection-safety of
-    # the hash separator, independent of CPython's `\s` behaviour.
+    # Generate the FULL str space — incl. C0/DEL and lone surrogates (codec=None
+    # disables the default UTF-8 filtering). The output must contain no C0/DEL
+    # (hence never `\x1f`), no lone surrogate, and no double whitespace:
+    # injection-safety of the hash separator AND UTF-8 encodability of the
+    # `import_hash` payload, independent of CPython's `\s` behaviour.
     out = normalize_label(x)
-    assert not re.search(r"[\x00-\x1f\x7f]", out)
+    assert not re.search(r"[\x00-\x1f\x7f\ud800-\udfff]", out)
     assert "  " not in out
     assert out == out.strip()
+    out.encode("utf-8")  # never raises (no lone surrogate survives)
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +152,17 @@ def test_property_deterministic() -> None:
     a = import_hash(_UUID, _DATE, -1234, "carrefour")
     b = import_hash(_UUID, _DATE, -1234, "carrefour")
     assert a == b
+
+
+def test_import_hash_survives_lone_surrogate() -> None:
+    # Defense in depth: even if an undisciplined caller passes a label that still
+    # contains a lone surrogate (normalize_label strips them on the dedup path),
+    # the persisted primitive must NOT raise UnicodeEncodeError — `surrogatepass`
+    # makes it deterministic instead of crashing.
+    h1 = import_hash(_UUID, _DATE, 100, "a\udc80b")
+    h2 = import_hash(_UUID, _DATE, 100, "a\udc80b")
+    assert re.fullmatch(r"[0-9a-f]{64}", h1)
+    assert h1 == h2
 
 
 @given(

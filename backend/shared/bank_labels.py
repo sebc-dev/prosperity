@@ -28,10 +28,14 @@ from uuid import UUID
 # Retirés en TÊTE, en boucle (un libellé peut cumuler "VIR SEPA CB ...").
 _BANK_PREFIXES: tuple[str, ...] = ("prlv sepa", "vir sepa", "prlv", "vir", "paiement", "cb")
 _ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
-# Contrôles C0 + DEL retirés EXPLICITEMENT (D2) : ne pas dépendre du seul fait
-# que `\s` couvre \x1c–\x1f en CPython — garantit que le séparateur \x1f du hash
-# ne peut jamais apparaître dans un libellé normalisé (injection-safety).
-_CTRL = re.compile(r"[\x00-\x1f\x7f]")
+# Contrôles C0 + DEL + surrogates isolés retirés EXPLICITEMENT (D2) : ne pas
+# dépendre du seul fait que `\s` couvre \x1c–\x1f en CPython — garantit que le
+# séparateur \x1f du hash ne peut jamais apparaître dans un libellé normalisé
+# (injection-safety). Les surrogates isolés (\ud800–\udfff) sont aussi retirés :
+# ils ne sont pas couverts par `\s`/C0 et feraient lever `UnicodeEncodeError` à
+# l'encodage UTF-8 du payload (`import_hash`) — la sortie normalisée doit donc
+# toujours être encodable en UTF-8.
+_CTRL = re.compile(r"[\x00-\x1f\x7f\ud800-\udfff]")
 _WS = re.compile(r"\s+")
 
 
@@ -39,12 +43,13 @@ def normalize_label(raw: str) -> str:
     """Normalisation canonique d'un libellé bancaire (cf. MatchScorer).
 
     strip + lowercase + retrait dates ISO + suppression de tous les contrôles
-    C0/DEL + retrait répété des préfixes bancaires en tête (plus longs d'abord)
-    + collapse du whitespace. Idempotente. `"" → ""`, `"   " → ""`.
+    C0/DEL + surrogates isolés + retrait répété des préfixes bancaires en tête
+    (plus longs d'abord) + collapse du whitespace. La sortie est toujours
+    encodable en UTF-8. Idempotente. `"" → ""`, `"   " → ""`.
     """
     s = raw.strip().lower()
     s = _ISO_DATE.sub(" ", s)  # dates ISO retirées (où qu'elles soient)
-    s = _CTRL.sub(" ", s)  # contrôles C0/DEL → espace (anti-\x1f)
+    s = _CTRL.sub(" ", s)  # contrôles C0/DEL + surrogates → espace (anti-\x1f / UTF-8 safe)
     changed = True
     while changed:  # retrait répété des préfixes en tête
         changed = False
@@ -63,6 +68,12 @@ def import_hash(account_id: UUID, date: dt.date, amount_cents: int, normalized_l
     ⚠️ `normalized_label` DOIT être une sortie de `normalize_label` : la fonction
     ne re-normalise pas (l'appelant le fait une fois). Format PERSISTÉ → verrouillé
     par `test_known_vector`. C'est un hash de dedup métier, pas une primitive crypto.
+
+    Défense en profondeur : l'encodage utilise `surrogatepass` pour qu'un surrogate
+    isolé (qu'un appelant indiscipliné pourrait laisser passer) ne fasse jamais
+    lever `UnicodeEncodeError` sur cette primitive persistée. N'affecte aucun
+    vecteur sans surrogate (le format historique est inchangé) ; `normalize_label`
+    retire déjà ces surrogates en amont du chemin de dedup.
     """
     payload = "\x1f".join((str(account_id), date.isoformat(), str(amount_cents), normalized_label))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return hashlib.sha256(payload.encode("utf-8", "surrogatepass")).hexdigest()

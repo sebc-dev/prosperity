@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
 
+from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -25,7 +26,7 @@ from backend.modules.accounts.domain import AccountType
 from backend.modules.accounts.models import Account, Household
 from backend.modules.auth.models import User, UserRole
 from backend.modules.auth.service.jwt import issue_access_token
-from backend.modules.banking.service.external_refs import link
+from backend.modules.banking.public import link
 
 _settings = get_settings()
 _OFX_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "ofx"
@@ -148,3 +149,21 @@ async def count_rows(sm: SessionMaker, model: type, **filters: object) -> int:
         for col, val in filters.items():
             stmt_ = stmt_.where(getattr(model, col) == val)
         return (await session.execute(stmt_)).scalar_one()
+
+
+async def commit_fixture(
+    client: AsyncClient, *, account_id: UUID, user_id: UUID, name: str
+) -> dict[str, int]:
+    """POST a real fixture to `/imports/ofx/commit`, assert 200, return the JSON body.
+
+    Shared by the commit/idempotence/dedup tests that all run the same
+    upload→assert-200→read-`{created, skipped_duplicates}` shape.
+    """
+    resp = await client.post(
+        "/imports/ofx/commit",
+        data={"internal_account_id": str(account_id)},
+        files=files(name),
+        headers=bearer(user_id),
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()

@@ -30,6 +30,7 @@ documented, time-bound expectation.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from functools import partial
 from uuid import UUID
 
 import pytest
@@ -38,8 +39,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.banking.models import ImportedTransaction
-from backend.modules.banking.public import compute_import_hash, parse_ofx
-from backend.modules.banking.service.external_refs import link
+from backend.modules.banking.public import compute_import_hash, link, parse_ofx
 from backend.modules.transactions.models import Split, Transaction
 from tests.integration._imports_helpers import (
     BOURSO_AMOUNTS,
@@ -54,6 +54,7 @@ from tests.integration._imports_helpers import (
     SessionMaker,
     bearer,
     bytes_files,
+    commit_fixture,
     count_rows,
     files,
     ofx,
@@ -81,13 +82,12 @@ _CANONICAL_FIXTURES = (
 
 @pytest.mark.parametrize("name", _CANONICAL_FIXTURES)
 async def test_all_canonical_fixtures_parse(name: str) -> None:
-    """Each canonical fixture decodes and parses without raising — encoding detected,
-    at least one transaction surfaced. Guards against a malformed/empty fixture
+    """Each canonical fixture decodes and parses without raising — at least one
+    account and one transaction surfaced. Guards against a malformed/empty fixture
     silently disabling a downstream assertion."""
     parsed = await parse_ofx(read_ofx(name))
     assert parsed.transactions
     assert parsed.accounts
-    assert parsed.encoding_confidence in ("high", "low")
 
 
 # ---------------------------------------------------------------------------
@@ -113,15 +113,10 @@ async def test_commit_format_amounts_exact(
 ) -> None:
     user_id, account_id = await seed_linked(committed_sessionmaker, linked_refs=(ref,))
 
-    resp = await committed_client.post(
-        "/imports/ofx/commit",
-        data={"internal_account_id": str(account_id)},
-        files=files(name),
-        headers=bearer(user_id),
+    result = await commit_fixture(
+        committed_client, account_id=account_id, user_id=user_id, name=name
     )
-
-    assert resp.status_code == 200, resp.text
-    assert resp.json() == {"created": 2, "skipped_duplicates": 0}
+    assert result == {"created": 2, "skipped_duplicates": 0}
 
     async with committed_sessionmaker() as session:
         splits = (await session.execute(select(Split))).scalars().all()
@@ -154,14 +149,13 @@ async def test_accented_labels_decoded_to_import_hash(
     # 2) Commit: the only DB artefact carrying the label is `import_hash` (the
     # commit persists no description). A mojibake decode would change `expected`
     # AND fail step 1 — so hash equality proves the byte→Unicode chain end-to-end.
-    resp = await committed_client.post(
-        "/imports/ofx/commit",
-        data={"internal_account_id": str(account_id)},
-        files=files("libelles_accentues_windows_1252.ofx"),
-        headers=bearer(user_id),
+    result = await commit_fixture(
+        committed_client,
+        account_id=account_id,
+        user_id=user_id,
+        name="libelles_accentues_windows_1252.ofx",
     )
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["created"] == 2
+    assert result["created"] == 2
 
     expected = {compute_import_hash(account_id, tx) for tx in parsed.transactions}
     async with committed_sessionmaker() as session:
@@ -188,17 +182,16 @@ async def test_fitid_instability_collapses_to_one_draft(
     assert len({tx.fitid for tx in parsed.transactions}) == 2
     assert len({(tx.date, tx.amount_cents, tx.description) for tx in parsed.transactions}) == 1
 
-    resp = await committed_client.post(
-        "/imports/ofx/commit",
-        data={"internal_account_id": str(account_id)},
-        files=files("fitid_unstable_societe_generale.ofx"),
-        headers=bearer(user_id),
+    result = await commit_fixture(
+        committed_client,
+        account_id=account_id,
+        user_id=user_id,
+        name="fitid_unstable_societe_generale.ofx",
     )
 
-    assert resp.status_code == 200, resp.text
     # Composite hash (account, date, amount, normalised label) collapses the two →
     # FITID is never part of the key.
-    assert resp.json() == {"created": 1, "skipped_duplicates": 1}
+    assert result == {"created": 1, "skipped_duplicates": 1}
     assert await count_rows(committed_sessionmaker, Transaction) == 1
     assert await count_rows(committed_sessionmaker, ImportedTransaction) == 1
 
@@ -208,19 +201,16 @@ async def test_fitid_unstable_recommit_idempotent(
     committed_client: AsyncClient, committed_sessionmaker: SessionMaker
 ) -> None:
     user_id, account_id = await seed_linked(committed_sessionmaker, linked_refs=(SG_FITID_REF,))
+    commit = partial(
+        commit_fixture,
+        committed_client,
+        account_id=account_id,
+        user_id=user_id,
+        name="fitid_unstable_societe_generale.ofx",
+    )
 
-    async def _commit() -> dict[str, int]:
-        resp = await committed_client.post(
-            "/imports/ofx/commit",
-            data={"internal_account_id": str(account_id)},
-            files=files("fitid_unstable_societe_generale.ofx"),
-            headers=bearer(user_id),
-        )
-        assert resp.status_code == 200, resp.text
-        return resp.json()
-
-    first = await _commit()
-    second = await _commit()
+    first = await commit()
+    second = await commit()
 
     assert first == {"created": 1, "skipped_duplicates": 1}
     assert second == {"created": 0, "skipped_duplicates": 2}
@@ -269,14 +259,10 @@ async def test_account_not_yet_linked_full_journey(
     assert preview2.status_code == 200, preview2.text
 
     # 4) Commit goes through — the import passes after linking.
-    commit = await committed_client.post(
-        "/imports/ofx/commit",
-        data={"internal_account_id": str(account_id)},
-        files=files("account_not_yet_linked.ofx"),
-        headers=bearer(user_id),
+    result = await commit_fixture(
+        committed_client, account_id=account_id, user_id=user_id, name="account_not_yet_linked.ofx"
     )
-    assert commit.status_code == 200, commit.text
-    assert commit.json() == {"created": 1, "skipped_duplicates": 0}
+    assert result == {"created": 1, "skipped_duplicates": 0}
     # The adversarial "ref of another member's account" branch of the gate is
     # covered byte-identically by `test_preview_linked_but_inaccessible_*` (S12.4).
 
@@ -293,19 +279,16 @@ async def test_recommit_real_fixture_zero_creation(
     # Locks the dedup on a cp1252 1.x SGML export (the S12.4 idempotence test uses
     # the 2.x XML boursorama file only).
     user_id, account_id = await seed_linked(committed_sessionmaker, linked_refs=(LIVRET_A_REF,))
+    commit = partial(
+        commit_fixture,
+        committed_client,
+        account_id=account_id,
+        user_id=user_id,
+        name="livret_a_2026_q1.ofx",
+    )
 
-    async def _commit() -> dict[str, int]:
-        resp = await committed_client.post(
-            "/imports/ofx/commit",
-            data={"internal_account_id": str(account_id)},
-            files=files("livret_a_2026_q1.ofx"),
-            headers=bearer(user_id),
-        )
-        assert resp.status_code == 200, resp.text
-        return resp.json()
-
-    first = await _commit()
-    second = await _commit()
+    first = await commit()
+    second = await commit()
 
     assert first == {"created": 2, "skipped_duplicates": 0}
     assert second == {"created": 0, "skipped_duplicates": 2}

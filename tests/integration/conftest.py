@@ -108,7 +108,19 @@ def _reset_household_cache() -> Iterator[None]:  # pyright: ignore[reportUnusedF
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")
 async def db_engine(postgres_container: PostgresContainer) -> AsyncIterator[object]:
-    engine = create_async_engine(postgres_container.get_connection_url(), future=True)
+    # `statement_cache_size=0` disables asyncpg's server-side prepared-statement
+    # cache. This session-scoped pool shares one database with the module-scoped
+    # `committed_engine`, whose teardown runs `Base.metadata.drop_all` and a later
+    # module recreates the schema — the enum/composite types come back with new
+    # OIDs. A pooled connection here would otherwise replay a cached plan pinned to
+    # a dropped OID and raise `InternalServerError: cache lookup failed for type …`.
+    # Re-preparing every statement is the price; correctness across the cross-engine
+    # DDL churn is the gain (tests only — production has a single engine, no churn).
+    engine = create_async_engine(
+        postgres_container.get_connection_url(),
+        future=True,
+        connect_args={"statement_cache_size": 0},
+    )
     try:
         yield engine
     finally:

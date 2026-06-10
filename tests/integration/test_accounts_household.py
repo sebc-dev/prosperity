@@ -9,7 +9,6 @@ the explicit `invalidate_household_cache` knob used by S03.2 after
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from datetime import UTC, datetime
 
 import pytest
@@ -18,20 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.modules.accounts.models import Household
 from backend.modules.accounts.public import HouseholdNotInitializedError, get_household
 from backend.modules.accounts.service.household import invalidate_household_cache
-
-
-@pytest.fixture(autouse=True)
-def _reset_household_cache() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
-    """Each test starts and ends with a cold cache.
-
-    The cache lives in a module-level variable, so it survives the
-    per-test transactional rollback that resets the DB. Without this
-    fixture, a test that primes the cache would leak the cached
-    `Household` into the next test that expects a cache miss.
-    """
-    invalidate_household_cache()
-    yield
-    invalidate_household_cache()
 
 
 async def test_raises_when_row_absent(auth_schema: AsyncSession) -> None:

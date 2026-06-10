@@ -26,7 +26,7 @@ test would leak into the next.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -52,19 +52,6 @@ from backend.modules.accounts.service.household import (
 from backend.modules.auth.models import User, UserRole
 
 UserMaker = Callable[..., Awaitable[User]]
-
-
-@pytest.fixture(autouse=True)
-def _reset_household_cache() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
-    """Cold household cache around every test (process-local, survives rollback).
-
-    Non-negotiable and file-wide (the `committed_engine` tests share the
-    module-level cache with the rollback-isolated ones): a household primed by
-    one test must not leak into the next.
-    """
-    invalidate_household_cache()
-    yield
-    invalidate_household_cache()
 
 
 # ---------------------------------------------------------------------------

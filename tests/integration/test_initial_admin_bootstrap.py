@@ -15,12 +15,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-import pytest_asyncio
 from pwdlib import PasswordHash
 from pydantic import SecretStr
 from sqlalchemy import func, select
@@ -29,7 +27,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.config import Settings
 from backend.modules.accounts.models import HOUSEHOLD_SINGLETON_UUID, Household
-from backend.modules.accounts.service import household as household_service
 from backend.modules.accounts.service import setup as setup_service
 from backend.modules.accounts.service.household import (
     get_household_cache_for_testing,
@@ -68,14 +65,6 @@ def _build_settings(
         initial_admin_display_name=display_name,
         initial_household_name=household_name,
     )
-
-
-@pytest_asyncio.fixture(autouse=True)
-async def _reset_household_cache() -> AsyncIterator[None]:  # pyright: ignore[reportUnusedFunction]
-    """Prevent module-state bleed across tests (cache is process-local)."""
-    household_service.invalidate_household_cache()
-    yield
-    household_service.invalidate_household_cache()
 
 
 @pytest.fixture(autouse=True)

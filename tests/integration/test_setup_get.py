@@ -7,24 +7,13 @@ otherwise.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from datetime import UTC, datetime
 
-import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.accounts.models import Household
-from backend.modules.accounts.service.household import invalidate_household_cache
 from backend.modules.auth.models import User, UserRole
-
-
-@pytest.fixture(autouse=True)
-def _reset_household_cache() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
-    """Per-test cache reset — same rationale as `test_accounts_household`."""
-    invalidate_household_cache()
-    yield
-    invalidate_household_cache()
 
 
 async def test_get_setup_returns_200_when_db_empty(

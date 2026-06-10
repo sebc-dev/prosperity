@@ -27,7 +27,6 @@ assertions.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
 from unittest.mock import patch
 
 import pytest
@@ -37,7 +36,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.config import get_settings
 from backend.modules.accounts.models import Household
-from backend.modules.accounts.service import household as household_service
 from backend.modules.accounts.service import setup as setup_service
 from backend.modules.auth.models import User
 from backend.modules.auth.service.jwt import verify_access_token
@@ -46,13 +44,6 @@ from backend.modules.auth.service.jwt import verify_access_token
 # module-scoped `committed_engine`. Without this the second test
 # would see leftover rows from the first.
 pytestmark = [pytest.mark.usefixtures("_clean_committed_db")]
-
-
-@pytest.fixture(autouse=True)
-async def _reset_household_cache() -> AsyncIterator[None]:  # pyright: ignore[reportUnusedFunction]
-    household_service.invalidate_household_cache()
-    yield
-    household_service.invalidate_household_cache()
 
 
 def _setup_payload(**overrides: object) -> dict[str, object]:

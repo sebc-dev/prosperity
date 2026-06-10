@@ -21,22 +21,12 @@ exception and converts it to 500. We pin both shapes:
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from unittest.mock import patch
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from backend.modules.accounts.service.household import invalidate_household_cache
-
-
-@pytest.fixture(autouse=True)
-def _reset_household_cache() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
-    invalidate_household_cache()
-    yield
-    invalidate_household_cache()
 
 
 def _setup_payload(**overrides: object) -> dict[str, object]:

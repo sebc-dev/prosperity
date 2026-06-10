@@ -15,7 +15,7 @@ shared across the suite.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 
 import pytest
 import pytest_asyncio
@@ -28,7 +28,6 @@ from testcontainers.postgres import PostgresContainer
 
 from backend.config import get_settings
 from backend.main import lifespan
-from backend.modules.accounts.service import household as household_service
 from backend.modules.accounts.transports.http import router as accounts_router
 from backend.modules.auth.models import User
 from backend.modules.auth.transports.http import router as auth_router
@@ -42,13 +41,6 @@ def _build_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(accounts_router)
     return app
-
-
-@pytest.fixture(autouse=True)
-def _reset_household_cache() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
-    household_service.invalidate_household_cache()
-    yield
-    household_service.invalidate_household_cache()
 
 
 @pytest_asyncio.fixture(loop_scope="session")

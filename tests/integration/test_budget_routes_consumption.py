@@ -12,12 +12,11 @@ default" path which asserts only a coherent 200, never an exact value.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-import pytest
 import pytest_asyncio
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,7 +24,6 @@ from sqlalchemy.orm import Session
 
 from backend.config import get_settings
 from backend.modules.accounts.models import Household
-from backend.modules.accounts.service.household import invalidate_household_cache
 from backend.modules.auth.service.jwt import issue_access_token
 from backend.modules.budget.models import Budget, BudgetContributor, Category
 from backend.modules.transactions.models import Split, Transaction
@@ -39,13 +37,6 @@ _PERIOD_START = date(2026, 6, 1)
 _AS_OF = "2026-06-15"
 _IN_WINDOW = date(2026, 6, 10)
 _NOT_FOUND_DETAIL = "Budget not found."
-
-
-@pytest.fixture(autouse=True)
-def _reset_household_cache() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
-    invalidate_household_cache()
-    yield
-    invalidate_household_cache()
 
 
 @pytest_asyncio.fixture(loop_scope="session")

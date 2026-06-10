@@ -19,33 +19,23 @@ one test must not leak into the next (gabarit `test_accounts_service.py`).
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-import pytest
 from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import get_settings
 from backend.modules.accounts.models import Account, AccountMember, Household
-from backend.modules.accounts.service.household import invalidate_household_cache
 from backend.modules.auth.models import User
 from backend.modules.auth.service.jwt import issue_access_token
 
 _settings = get_settings()
 
 UserMaker = Callable[..., Awaitable[User]]
-
-
-@pytest.fixture(autouse=True)
-def _reset_household_cache() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
-    """Cold household cache around every test (process-local, survives rollback)."""
-    invalidate_household_cache()
-    yield
-    invalidate_household_cache()
 
 
 def _bearer(user_id: UUID) -> dict[str, str]:

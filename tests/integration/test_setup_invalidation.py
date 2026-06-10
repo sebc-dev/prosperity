@@ -22,7 +22,6 @@ Uses `committed_client` / `committed_sessionmaker` because the
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 import pytest
@@ -31,7 +30,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from backend.modules.accounts.models import Household
 from backend.modules.accounts.public import get_household
-from backend.modules.accounts.service import household as household_service
 from backend.modules.accounts.service.household import (
     get_household_cache_for_testing,
     set_household_cache_for_testing,
@@ -43,13 +41,6 @@ from backend.modules.auth.models import User, UserRole
 # (cf. tests/integration/conftest.py); without it the committed-engine
 # state would leak between tests.
 pytestmark = [pytest.mark.usefixtures("_clean_committed_db")]
-
-
-@pytest.fixture(autouse=True)
-async def _reset_household_cache() -> AsyncIterator[None]:  # pyright: ignore[reportUnusedFunction]
-    household_service.invalidate_household_cache()
-    yield
-    household_service.invalidate_household_cache()
 
 
 def _setup_payload(**overrides: object) -> dict[str, object]:

@@ -28,9 +28,10 @@ Exposes (local to this tier):
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from typing import cast
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import (
@@ -58,6 +59,7 @@ from backend.main import app
 # Importing `Household` also registers every accounts table on `Base.metadata`
 # (the side-effect `auth_schema`'s `create_all` relies on).
 from backend.modules.accounts.models import Household
+from backend.modules.accounts.service.household import invalidate_household_cache
 from backend.modules.auth.models import User
 from backend.modules.budget.models import Category
 
@@ -86,6 +88,22 @@ _BoundAccountFactories = Callable[
     [],
     Awaitable[tuple[type[UserFactory], type[AccountFactory], type[AccountMemberFactory]]],
 ]
+
+
+@pytest.fixture(autouse=True)
+def _reset_household_cache() -> Iterator[None]:  # pyright: ignore[reportUnusedFunction]
+    """Reset the process-local `get_household` singleton cache around every test.
+
+    `get_household` (accounts) memoises the singleton row process-wide; the OFX
+    commit currency gate reads it. Without a reset, a test could read a household
+    seeded — and rolled back — by a previous test (stale-cache false positive on
+    `household_not_initialized` / `currency_mismatch`). Hoisted here from
+    `test_imports_commit.py` (S12.5) so the e2e tier is protected too. Idempotent
+    and cheap, so applying it tier-wide is harmless.
+    """
+    invalidate_household_cache()
+    yield
+    invalidate_household_cache()
 
 
 @pytest_asyncio.fixture(scope="session", loop_scope="session")

@@ -76,3 +76,40 @@ jobs:
     timeout-minutes: 2
     steps:
       - run: echo "placeholder — Enable Banking niveau C live calls (V1, stratégie de tests §4.7)"
+
+  # Boots the dev compose stack end-to-end and asserts the three runtime
+  # acceptance criteria of S13.1 (boot without error, active replication slot,
+  # PowerSync "connected") — the riskiest part of E13. Re-runnable via
+  # workflow_dispatch. Local dev uses `podman compose`; CI uses `docker compose`
+  # on the SAME compose.dev.yml.
+  powersync-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen
+      # Dev-only defaults (passwords match compose/initdb); fine for CI.
+      - name: Materialise .env
+        run: cp .env.example .env
+      - name: Start Postgres (source + storage DB + roles + empty publication)
+        run: docker compose -f compose.dev.yml up -d --wait postgres
+      - name: Apply migrations (creates the app tables)
+        env:
+          DATABASE_URL: postgresql+asyncpg://prosperity:prosperity@localhost:5432/prosperity
+        run: uv run alembic upgrade head
+      - name: Populate the powersync publication
+        run: |
+          docker compose -f compose.dev.yml exec -T postgres \
+            psql -U prosperity -d prosperity -v ON_ERROR_STOP=1 \
+            < compose/initdb/10_powersync_publication.sql
+      - name: Start PowerSync Service
+        run: docker compose -f compose.dev.yml up -d --wait powersync
+      - name: Smoke
+        run: bash scripts/smoke_powersync.sh
+      - name: Dump logs on completion
+        if: always()
+        run: docker compose -f compose.dev.yml logs

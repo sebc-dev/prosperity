@@ -30,6 +30,13 @@ Livrable agrégé : un client PowerSync peut s'authentifier, recevoir les rows v
 | **P13.1.2** | `powersync/config.yaml` (côté PowerSync Service) : connection Postgres, publication PostgreSQL pour les tables à sync. Tests : démarrer le compose, vérifier que PowerSync est connecté à Postgres et publie un état | ~100 |
 | **P13.1.3** | Runbook ops `runbooks/powersync_setup.md` : prod = Quadlet unit dédié (qui sera fini en E16), dev = compose. Variables d'env critiques | ~80 |
 
+> **Deltas d'implémentation (S13.1, cf. issue #186)** — écarts assumés vs le découpage initial, sans contradiction d'ADR :
+> - **Bucket storage ajouté.** PowerSync exige un bucket storage **séparé de la source**. Choix : base Postgres dédiée `powersync_storage` (rôle `ps_storage`) dans la même instance dev — pas de MongoDB (une seule famille de moteur, aligné Restic→B2 d'E16). Prod (E16) peut séparer les instances.
+> - **`client_auth` obligatoire au boot.** Le service ne démarre pas sans. Bloc dev : `audience: [prosperity-api]` (= `jwt_audience`, ADR 0016) + `allow_local_jwks: true`. JWKS réel + `iss` (`prosperity-auth`) câblés en **S13.8/E14**.
+> - **Tables debt-projection différées à S13.7.** `debts`/`share_requests`/`settlements`/`settlement_lines` portent `account_id`/`source_transaction_id` (masquage **conditionnel** per-destinataire) et `materialization_trace` (jamais synchronisé). Une publication colonne globale ne convient pas (le propriétaire doit les recevoir). S13.1 prouve la connectivité avec un set sûr **sans colonne sensible** : `accounts`, `account_members`, `transactions`, `splits`, `categories`, `budgets`, `budget_contributors`.
+> - **Ordre de setup.** La `PUBLICATION` (frontière de sécurité, jamais `FOR ALL TABLES`) est posée **hors Alembic** et **après** `alembic upgrade head` (elle référence les tables applicatives). Le script `compose/initdb/10_powersync_publication.sql` est idempotent + additif + à garde d'existence ; le runbook documente la séquence.
+> - **Garde-fou prod `PS_*`.** Les credentials PowerSync vivent hors Pydantic → non couverts par `_forbid_dev_defaults_in_prod`. Asymétrie documentée dans le runbook ; équivalent prod à ajouter en **E16**.
+
 ---
 
 ### S13.2 — Scaffolding du module `sync`

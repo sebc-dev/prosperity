@@ -1,0 +1,97 @@
+# compose.dev.yml — DEV ONLY. Prod = Quadlet + Caddy + Cloudflare Tunnel (E16).
+# See runbooks/powersync_setup.md for the full setup + troubleshooting guide.
+#
+# Brings up the two halves of the sync infra locally:
+#   - postgres : the application source DB (wal_level=logical) AND a dedicated
+#                `powersync_storage` database for PowerSync bucket storage
+#                (created by compose/initdb, see 05_powersync_storage_db.sql).
+#   - powersync: PowerSync Service Open Edition (download flow only — client
+#                WRITES go to FastAPI POST /sync/upload, NOT through this
+#                service; cf. ADR 0014 and the README "PowerSync (dev)" box).
+#
+# Engine-agnostic: `podman compose -f compose.dev.yml up` (dev) and
+# `docker compose -f compose.dev.yml up` (CI nightly) both work.
+#
+# First-boot ordering note: the app tables are created by `alembic upgrade head`,
+# NOT by this compose. compose/initdb runs on a fresh volume BEFORE migrations,
+# so it only provisions roles + the storage DB + an (initially empty)
+# `powersync` publication. After `alembic upgrade head`, re-run
+# compose/initdb/10_powersync_publication.sql to add the tables (the script is
+# idempotent and table-existence-guarded). The PowerSync replication worker
+# retries until the publication is populated. See the runbook for the exact
+# sequence.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    # wal_level=logical is a *startup* parameter: setting it via `command:` makes
+    # it effective on the very first boot, avoiding the classic footgun where an
+    # `ALTER SYSTEM` change is ignored until a restart (cf. E13 notes / runbook).
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+      - -c
+      # Dev laptops sleep; an inactive replication slot would otherwise retain
+      # WAL forever and fill the disk. 0 = no timeout is fine for dev (prod
+      # tunes this — see runbook).
+      - wal_sender_timeout=0
+    environment:
+      POSTGRES_USER: prosperity
+      POSTGRES_PASSWORD: prosperity
+      POSTGRES_DB: prosperity
+    volumes:
+      # Idempotent SQL run once on a fresh volume: replication role + storage
+      # role/DB + (empty) publication. See compose/initdb/*.sql.
+      - ./compose/initdb:/docker-entrypoint-initdb.d:ro
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prosperity -d prosperity"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  powersync:
+    # Pinned (never :latest) for reproducibility. Bump deliberately; a manifest
+    # test asserts the absence of :latest.
+    image: journeyapps/powersync-service:${PS_IMAGE_TAG}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Unified worker = API server + replication worker in one container (dev).
+    command: ["start", "-r", "unified"]
+    environment:
+      # Path INSIDE the container to the mounted config (see volume below).
+      POWERSYNC_CONFIG_PATH: /config/config.yaml
+      # ~80% of available memory; tune for your machine.
+      NODE_OPTIONS: --max-old-space-size=1000
+      # Only PS_* env vars are substitutable via the config's `!env` tags.
+      PS_PORT: ${PS_PORT}
+      PS_SOURCE_URI: ${PS_SOURCE_URI}     # powersync@postgres/prosperity (source)
+      PS_STORAGE_URI: ${PS_STORAGE_URI}   # ps_storage@postgres/powersync_storage
+      PS_JWKS_URI: ${PS_JWKS_URI}         # dev placeholder — real JWKS = S13.8/E14
+      PS_ADMIN_TOKEN: ${PS_ADMIN_TOKEN}   # local admin API token (dev only)
+    volumes:
+      # config.yaml + sync_rules.yaml, read-only and versioned (diff-reviewable).
+      - ./powersync:/config:ro
+    ports:
+      - "${PS_PORT}:${PS_PORT}"
+    healthcheck:
+      # The image ships Node (not necessarily curl), so probe via `node -e`.
+      test:
+        - "CMD"
+        - "node"
+        - "-e"
+        - "fetch('http://localhost:${PS_PORT}/probes/liveness').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pg_data:

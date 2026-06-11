@@ -14,7 +14,7 @@ encore tissable. Ici on prouve le ROUTAGE de chaque op.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable
 
 import pytest
 from pydantic import ValidationError
@@ -24,26 +24,14 @@ from sqlalchemy.orm import Session
 
 from backend.modules.auth.models import User
 from backend.modules.sync.models import SyncRequestLog
-from backend.modules.sync.public import BatchUpload, Mutation, WriteResult
+from backend.modules.sync.public import BatchUpload, Mutation
 from backend.modules.sync.service.dispatcher import process_batch
 from backend.modules.transactions.domain import TransactionError, TransactionState
 from backend.modules.transactions.models import Split, Transaction
+from tests.integration.sync._sync_helpers import mut as _mut
+from tests.integration.sync._sync_helpers import run_one as _run
 
 _TxFactories = Callable[[], Awaitable[tuple[type, type, type, type]]]
-
-
-def _mut(table: str, op: str, payload: Mapping[str, object]) -> Mutation:
-    return Mutation(
-        client_request_id=uuid.uuid4(),
-        table=table,
-        op=op,  # type: ignore[arg-type]
-        payload=dict(payload),
-    )
-
-
-async def _run(session: AsyncSession, user: User, mutation: Mutation) -> WriteResult:
-    [result] = await process_batch(session, user, BatchUpload(mutations=[mutation]))
-    return result
 
 
 # ── insert → create_draft ─────────────────────────────────────────────────────

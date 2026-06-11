@@ -156,8 +156,15 @@ async def seed(  # noqa: PLR0913 — keyword-only scenario knobs
     return await session.run_sync(_do)
 
 
-async def debt_count(session: AsyncSession, *, tx_id: uuid.UUID) -> int:
+async def debt_count(session: AsyncSession, *, tx_id: uuid.UUID, origin: str | None = None) -> int:
+    """Count materialised `Debt` rows for a transaction, optionally filtered by `origin`.
+
+    The aggregate `count()` is always served by a DB round-trip (never the identity
+    map) after autoflush — a faithful read-after-write oracle in-transaction.
+    """
     stmt = select(func.count()).select_from(Debt).where(Debt.source_transaction_id == tx_id)
+    if origin is not None:
+        stmt = stmt.where(Debt.origin == origin)
     return int((await session.execute(stmt)).scalar_one())
 
 

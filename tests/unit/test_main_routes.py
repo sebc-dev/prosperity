@@ -13,9 +13,19 @@ before any HTTP request is dispatched.
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
 
+from collections.abc import Callable
+
+import pytest
+
 from backend.main import _register_event_subscribers, app
+from backend.modules.budget.public import (
+    BudgetCreatedEvent,
+    BudgetUpdatedEvent,
+    on_transaction_confirmed,
+)
 from backend.modules.debts.public import (
     materialize_overflow,
+    recompute_overflow_on_budget_event,
     rematerialize_overflow_on_edit,
     remove_overflow_on_void,
 )
@@ -25,6 +35,20 @@ from backend.modules.transactions.public import (
     TransactionVoidedEvent,
 )
 from backend.shared import events as bus
+
+# Every (event_type, handler) pair `_register_event_subscribers` MUST wire — the
+# overflow F10 materialiser (S11.3, three tx events) AND the budget reclassement
+# (S11.4, two budget events) AND the budget threshold alert (`on_transaction_confirmed`).
+# Asserting all SIX closes the residual false-green where `main.py` dropped only the
+# budget wiring while the overflow integration tier (own autouse fixture) stayed green.
+_WIRED_SUBSCRIBERS: list[tuple[type, Callable[..., object]]] = [
+    (TransactionConfirmedEvent, on_transaction_confirmed),
+    (TransactionConfirmedEvent, materialize_overflow),
+    (TransactionVoidedEvent, remove_overflow_on_void),
+    (TransactionEditableFieldsChangedEvent, rematerialize_overflow_on_edit),
+    (BudgetCreatedEvent, recompute_overflow_on_budget_event),
+    (BudgetUpdatedEvent, recompute_overflow_on_budget_event),
+]
 
 
 def _paths() -> set[str]:
@@ -42,21 +66,34 @@ def test_healthz_route_still_registered() -> None:
     assert "/healthz" in _paths()
 
 
-def test_overflow_handlers_wired_at_composition_root() -> None:
-    # The three S11.3 overflow handlers must be subscribed by `main.py`'s
-    # `_register_event_subscribers` (composition root, ADR 0005 — `debts` cannot
-    # know its own subscriptions). The integration tier re-wires the bus via its own
+@pytest.mark.parametrize(("event_type", "handler"), _WIRED_SUBSCRIBERS)
+def test_overflow_handlers_wired_at_composition_root(
+    event_type: type, handler: Callable[..., object]
+) -> None:
+    # Every subscriber wired by `main.py`'s `_register_event_subscribers` must land on
+    # its event type (composition root, ADR 0005 — `debts`/`budget` cannot know their own
+    # cross-module subscriptions). The integration tier re-wires the bus via its own
     # autouse fixture, so without THIS test, dropping a `subscribe_async` line from
-    # `main.py` would pass every overflow integration test. Drive the real wiring
-    # function and assert each handler lands on the right event type.
+    # `main.py` would pass every overflow/budget integration test. S13.5 extends the
+    # lock from the three overflow handlers to all six wired pairs (incl. the budget
+    # reclassement + threshold alert), closing the residual false-green on the budget wiring.
     bus.clear_subscribers()
     try:
         _register_event_subscribers()
-        assert materialize_overflow in bus._async_subscribers[TransactionConfirmedEvent]
-        assert remove_overflow_on_void in bus._async_subscribers[TransactionVoidedEvent]
-        assert (
-            rematerialize_overflow_on_edit
-            in bus._async_subscribers[TransactionEditableFieldsChangedEvent]
-        )
+        assert handler in bus._async_subscribers[event_type]
+    finally:
+        bus.clear_subscribers()  # global registry — never leak into sibling tests
+
+
+def test_no_unexpected_subscribers_wired_at_composition_root() -> None:
+    # Parity (not just inclusion): the inclusion test above catches a DROPPED
+    # `subscribe_async`, but not an ADDED one. Asserting the exact cardinal pins the
+    # wiring to EXACTLY the six pairs in `_WIRED_SUBSCRIBERS` — a new subscription must
+    # be registered here consciously (and re-reviewed) rather than slip in silently.
+    bus.clear_subscribers()
+    try:
+        _register_event_subscribers()
+        total = sum(len(handlers) for handlers in bus._async_subscribers.values())
+        assert total == len(_WIRED_SUBSCRIBERS)
     finally:
         bus.clear_subscribers()  # global registry — never leak into sibling tests

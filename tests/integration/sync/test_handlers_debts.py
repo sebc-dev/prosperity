@@ -21,20 +21,11 @@ from sqlalchemy.orm import Session
 from backend.modules.auth.models import User
 from backend.modules.debts.models import Debt, ShareRequest
 from backend.modules.debts.public import ShareRequestNotFoundError, compute_remaining
-from backend.modules.sync.public import BatchUpload, Mutation, WriteResult
-from backend.modules.sync.service.dispatcher import process_batch
 from tests.integration._debts_helpers import Scenario, debt_count, seed, share_request_count
+from tests.integration.sync._sync_helpers import mut as _mut
+from tests.integration.sync._sync_helpers import run_one as _run
 
 _TxFactories = Callable[[], Awaitable[tuple[type, type, type, type]]]
-
-
-def _mut(table: str, op: str, payload: Mapping[str, object]) -> Mutation:
-    return Mutation(client_request_id=uuid.uuid4(), table=table, op=op, payload=dict(payload))  # type: ignore[arg-type]
-
-
-async def _run(session: AsyncSession, user: User, mutation: Mutation) -> WriteResult:
-    [result] = await process_batch(session, user, BatchUpload(mutations=[mutation]))
-    return result
 
 
 async def _seed_expense(session: AsyncSession, factories: _TxFactories) -> tuple[User, Scenario]:

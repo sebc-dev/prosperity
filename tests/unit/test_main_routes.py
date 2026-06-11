@@ -83,3 +83,17 @@ def test_overflow_handlers_wired_at_composition_root(
         assert handler in bus._async_subscribers[event_type]
     finally:
         bus.clear_subscribers()  # global registry — never leak into sibling tests
+
+
+def test_no_unexpected_subscribers_wired_at_composition_root() -> None:
+    # Parity (not just inclusion): the inclusion test above catches a DROPPED
+    # `subscribe_async`, but not an ADDED one. Asserting the exact cardinal pins the
+    # wiring to EXACTLY the six pairs in `_WIRED_SUBSCRIBERS` — a new subscription must
+    # be registered here consciously (and re-reviewed) rather than slip in silently.
+    bus.clear_subscribers()
+    try:
+        _register_event_subscribers()
+        total = sum(len(handlers) for handlers in bus._async_subscribers.values())
+        assert total == len(_WIRED_SUBSCRIBERS)
+    finally:
+        bus.clear_subscribers()  # global registry — never leak into sibling tests

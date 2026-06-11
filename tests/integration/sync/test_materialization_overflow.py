@@ -23,26 +23,28 @@ Bob doit 25€ à Alice (payeur = `tx.created_by`, ne se doit jamais rien à lui
 L'authz cross-account/foyer du chemin sync est verrouillée à l'ÉTAPE 1 du dispatcher
 (`PERMISSION_CHECKS`) et testée par `test_sync_dispatcher_auth.py` — ici l'acteur
 (Alice, membre actif) est supposé autorisé.
+
+HORS-SCOPE (couvert ailleurs, pas re-testé via le chemin sync) : l'arithmétique fine
+de l'overflow (idempotence du double confirm, conservation multi-tx, fenêtre budgétaire
+ordonnée) vit dans `test_overflow_materializer.py` (E11) ; le chemin sync ne change pas
+l'arithmétique, il prouve seulement que `confirm`/`void` la DÉCLENCHENT in-transaction.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import uuid
-from collections.abc import Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import Session
 
 from backend.modules.accounts.models import AccountMember, Household
 from backend.modules.auth.models import User
 from backend.modules.budget.models import Budget, BudgetContributor
-from backend.modules.debts.models import Debt
-from backend.modules.sync.public import BatchUpload, Mutation, WriteResult
+from backend.modules.sync.public import BatchUpload
 from backend.modules.sync.service.dispatcher import process_batch
 from tests.factories.sqlalchemy import (
     AccountFactory,
@@ -51,8 +53,11 @@ from tests.factories.sqlalchemy import (
     TransactionFactory,
     UserFactory,
 )
+from tests.integration._overflow_helpers import overflow_by_debtor as _overflow_by_debtor
+from tests.integration._overflow_helpers import overflow_debts as _overflow_debts
+from tests.integration.sync._sync_helpers import mut as _mut
+from tests.integration.sync._sync_helpers import run_one as _run
 
-_OVERFLOW = "shared_account_overflow"
 _PERIOD_START = dt.date(2026, 6, 1)
 _TX_DATE = dt.date(2026, 6, 15)  # inside the monthly budget window [01, next-01)
 
@@ -64,15 +69,6 @@ class _Seeded:
     account_id: uuid.UUID
     category_id: uuid.UUID
     tx_id: uuid.UUID
-
-
-def _mut(table: str, op: str, payload: Mapping[str, object]) -> Mutation:
-    return Mutation(client_request_id=uuid.uuid4(), table=table, op=op, payload=dict(payload))  # type: ignore[arg-type]
-
-
-async def _run(session: AsyncSession, user: User, mutation: Mutation) -> WriteResult:
-    [result] = await process_batch(session, user, BatchUpload(mutations=[mutation]))
-    return result
 
 
 def _seed_overflow_scenario(
@@ -151,19 +147,6 @@ async def _get_user(session: AsyncSession, user_id: uuid.UUID) -> User:
     return user
 
 
-async def _overflow_debts(session: AsyncSession, tx_id: uuid.UUID) -> list[Debt]:
-    rows = await session.execute(
-        select(Debt)
-        .where(Debt.source_transaction_id == tx_id, Debt.origin == _OVERFLOW)
-        .order_by(Debt.from_user_id)
-    )
-    return list(rows.scalars().all())
-
-
-async def _overflow_by_debtor(session: AsyncSession, tx_id: uuid.UUID) -> dict[uuid.UUID, int]:
-    return {d.from_user_id: d.amount_cents for d in await _overflow_debts(session, tx_id)}
-
-
 # ── confirm via sync → overflow matérialisé (read-after-write in-transaction) ──
 async def test_confirm_via_sync_materializes_overflow(household_singleton: AsyncSession) -> None:
     """`transactions/update {state:"confirmed"}` via `process_batch` → la `Debt` overflow
@@ -183,11 +166,11 @@ async def test_confirm_via_sync_materializes_overflow(household_singleton: Async
     )
 
     assert result.success is True
-    assert await _overflow_by_debtor(household_singleton, seeded.tx_id) == {seeded.bob_id: 2500}
-    assert all(
-        d.to_user_id == seeded.alice_id
-        for d in await _overflow_debts(household_singleton, seeded.tx_id)
-    )
+    debts = await _overflow_debts(household_singleton, seeded.tx_id)
+    assert {d.from_user_id: d.amount_cents for d in debts} == {seeded.bob_id: 2500}
+    # `debts` non vide (garanti par l'égalité ci-dessus) → l'`all` ne peut pas être
+    # vacuously true ; le créancier est toujours le payeur (Alice), jamais lui-même.
+    assert debts and all(d.to_user_id == seeded.alice_id for d in debts)
 
     await household_singleton.flush()
     household_singleton.expire_all()

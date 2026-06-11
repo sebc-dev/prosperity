@@ -63,12 +63,14 @@ from backend.modules.transactions.service.lifecycle import (
 from backend.shared.events import clear_subscribers, subscribe_async
 from backend.shared.models import Base
 from backend.shared.money import Money
+from tests.integration._overflow_helpers import OVERFLOW_ORIGIN as _OVERFLOW
+from tests.integration._overflow_helpers import overflow_by_debtor as _overflow_by_debtor
+from tests.integration._overflow_helpers import overflow_debts as _overflow_debts
 
 FactoryBundle = Callable[
     [], Awaitable[tuple[type, type, type]]
 ]  # (UserFactory, AccountFactory, AccountMemberFactory)
 
-_OVERFLOW = "shared_account_overflow"
 _TODAY = dt.date(2026, 6, 15)
 _PERIOD_START = dt.date(2026, 6, 1)
 
@@ -262,19 +264,6 @@ async def _seed(  # noqa: PLR0913 — keyword-only scenario knobs
         return Scenario(payer, members, account.id, cat.id, budget_id, tx_id)
 
     return await session.run_sync(_do)
-
-
-async def _overflow_debts(session: AsyncSession, tx_id: UUID) -> list[Debt]:
-    rows = await session.execute(
-        select(Debt)
-        .where(Debt.source_transaction_id == tx_id, Debt.origin == _OVERFLOW)
-        .order_by(Debt.from_user_id)
-    )
-    return list(rows.scalars().all())
-
-
-async def _overflow_by_debtor(session: AsyncSession, tx_id: UUID) -> dict[UUID, int]:
-    return {d.from_user_id: d.amount_cents for d in await _overflow_debts(session, tx_id)}
 
 
 # ---------------------------------------------------------------------------

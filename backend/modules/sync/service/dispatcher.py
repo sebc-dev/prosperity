@@ -27,8 +27,14 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.modules.accounts.public import accessible_account_ids
-from backend.modules.auth.public import User
+from backend.modules.accounts.public import accessible_account_ids, account_is_accessible
+from backend.modules.auth.public import User, user_is_active_member
+from backend.modules.sync.handlers import accounts as h_acc
+from backend.modules.sync.handlers import budget as h_budget
+from backend.modules.sync.handlers import reconciliations as h_rec
+from backend.modules.sync.handlers import settlements as h_settle
+from backend.modules.sync.handlers import share_requests as h_sr
+from backend.modules.sync.handlers import transactions as h_tx
 from backend.modules.sync.schemas import (
     BatchUpload,
     Mutation,
@@ -37,6 +43,7 @@ from backend.modules.sync.schemas import (
     WriteResult,
 )
 from backend.modules.sync.service.idempotency import already_processed
+from backend.modules.transactions.public import get_transaction
 
 
 class Handler(Protocol):
@@ -59,12 +66,39 @@ class IdempotencyCheck(Protocol):
     ) -> bool: ...
 
 
-# Registre CENTRAL de routage : `table -> Handler`. VIDE en S13.3 — la machine
-# existe, les vrais handlers sont enregistrés en S13.4. Clé absente ⇒
-# `unknown_table` (la suite du batch continue). Les tests INJECTENT un registre
-# mocké via le paramètre `handlers` de `process_batch` (couture explicite ≻
-# monkeypatch) pour prouver le routage sans dépendre des handlers réels.
-HANDLERS: dict[str, Handler] = {}  # peuplé en S13.4
+# Registre CENTRAL de routage : `table -> Handler`. PEUPLÉ en S13.4 (la machine
+# vient de S13.3). Clé absente ⇒ `unknown_table` (la suite du batch continue). Les
+# tests de ROUTAGE unitaires INJECTENT un registre mocké via le paramètre `handlers`
+# de `process_batch` (couture explicite ≻ monkeypatch) ; l'intégration garde le défaut
+# réel. `splits` partage le handler de `transactions` (le split est interne à
+# l'aggregate, D-C) ; `categories`/`budgets` partagent le module `budget` (delta D5).
+HANDLERS: dict[str, Handler] = {
+    "transactions": h_tx.handle_transaction,
+    "splits": h_tx.handle_split,
+    "accounts": h_acc.handle_account,
+    "categories": h_budget.handle_category,
+    "budgets": h_budget.handle_budget,
+    "settlements": h_settle.handle_settlement,
+    "share_requests": h_sr.handle_share_request,
+    "reconciliations": h_rec.handle_reconciliation,
+}
+
+# Source de vérité DÉCLARATIVE des ops gérées par chaque handler — rend le verrou de
+# parité (`tests/unit/test_sync_registry_parity.py`) décidable dans LES DEUX SENS
+# (toute op gérée a une politique d'auth ; tout check porte sur une op gérée). Le
+# handler dispatche sur `mutation.op` ; `SUPPORTED_OPS[table]` déclare l'ensemble
+# couvert. `reconciliations` est le placeholder V1 (D-H) : check « membre » qui passe,
+# puis `not_implemented_yet`.
+SUPPORTED_OPS: dict[str, frozenset[MutationOp]] = {
+    "transactions": frozenset({"insert", "update", "delete"}),
+    "splits": frozenset({"insert", "delete"}),
+    "accounts": frozenset({"insert", "update", "delete"}),
+    "categories": frozenset({"insert", "update", "delete"}),
+    "budgets": frozenset({"insert", "update", "delete"}),
+    "settlements": frozenset({"insert"}),
+    "share_requests": frozenset({"insert", "delete"}),
+    "reconciliations": frozenset({"insert", "update", "delete"}),
+}
 
 
 # ── Étape 1 : auth / RBAC (P13.3.2) ──────────────────────────────────────────
@@ -144,12 +178,121 @@ async def _check_create_transaction(session: AsyncSession, user: User, mutation:
     return all(account_id in accessible for account_id in account_ids)
 
 
-# Registre CENTRAL des checks d'auth (étape 1). S13.4 ÉTEND : update/delete (compte
-# du row via `transactions.public.get_transaction`) + autres tables (`accounts`,
-# `budget`, `settlements`, …) et — si décomposition wire plate — un check par
-# `(transaction_splits, insert)`, garanti exhaustif par le test de parité S13.4.
+async def _check_mutate_transaction(session: AsyncSession, user: User, mutation: Mutation) -> bool:
+    """Étape 1 pour `update`/`delete` sur `transactions` : le compte du row doit être
+    accessible. Fail-closed via `_payload_uuid(p.get("id"))` — JAMAIS `p["id"]` (un
+    `KeyError`/`ValueError` qui remonterait casserait le batch, discipline S13.3)."""
+    tx_id = _payload_uuid(mutation.payload.get("id"))
+    if tx_id is None:
+        return False
+    txn = await get_transaction(session, tx_id=tx_id)
+    return txn is not None and await account_is_accessible(
+        session, account_id=txn.account_id, user_id=user.id
+    )
+
+
+async def _check_mutate_split(session: AsyncSession, user: User, mutation: Mutation) -> bool:
+    """Étape 1 pour `insert`/`delete` sur `splits` (D-D, D-F). Le compte parent (via
+    `payload["transaction_id"]`) doit être accessible ; pour un `insert`, le compte de
+    la JAMBE (`payload["account_id"]`, qui peut viser un autre compte sur un transfert)
+    doit l'être aussi — c'est ici que migre la garantie « pas de jambe glissée vers un
+    compte d'autrui » sous la décomposition plate (D-N). Tout fail-closed."""
+    payload = mutation.payload
+    tx_id = _payload_uuid(payload.get("transaction_id"))
+    if tx_id is None:
+        return False
+    txn = await get_transaction(session, tx_id=tx_id)
+    if txn is None or not await account_is_accessible(
+        session, account_id=txn.account_id, user_id=user.id
+    ):
+        return False
+    if "account_id" in payload:  # insert : la jambe peut viser un autre compte
+        leg = _payload_uuid(payload.get("account_id"))
+        return leg is not None and await account_is_accessible(
+            session, account_id=leg, user_id=user.id
+        )
+    return True
+
+
+def _member_user_ids(payload: dict[str, object]) -> list[UUID] | None:
+    """Les `user_id` des membres d'un `accounts/insert` commun, best-effort fail-closed
+    (`None` si `members` absent/vide/malformé). Sert le contrôle d'appartenance D-M."""
+    members = payload.get("members")
+    if not isinstance(members, list) or not members:
+        return None
+    ids: list[UUID] = []
+    for member in cast("list[object]", members):
+        if not isinstance(member, dict):
+            return None
+        uid = _payload_uuid(cast("dict[str, object]", member).get("user_id"))
+        if uid is None:
+            return None
+        ids.append(uid)
+    return ids
+
+
+async def _check_create_account(session: AsyncSession, user: User, mutation: Mutation) -> bool:
+    """Étape 1 pour `accounts/insert`. Commun (présence de `members`, D-M) : le caller
+    DOIT figurer parmi les membres ET chaque membre doit être un membre actif du foyer
+    — sinon un membre créerait un compte commun entre tiers, sans lui, avec des ratios
+    arbitraires (`create_shared` ne valide QUE la forme / Σ, pas l'appartenance).
+    Personnel : `user_is_active_member(user.id)` (owner forcé `user.id` par le handler)."""
+    payload = mutation.payload
+    if "members" in payload:  # compte commun (D-M)
+        member_ids = _member_user_ids(payload)
+        if member_ids is None or user.id not in member_ids:
+            return False  # fail-closed / caller exclu
+        for uid in member_ids:
+            if not await user_is_active_member(session, user_id=uid):
+                return False
+        return True
+    return await user_is_active_member(session, user_id=user.id)
+
+
+async def _check_mutate_account(session: AsyncSession, user: User, mutation: Mutation) -> bool:
+    """Étape 1 pour `accounts/update`/`delete` (rename/archive) : compte accessible."""
+    account_id = _payload_uuid(mutation.payload.get("id"))
+    return account_id is not None and await account_is_accessible(
+        session, account_id=account_id, user_id=user.id
+    )
+
+
+async def _check_active_member(session: AsyncSession, user: User, mutation: Mutation) -> bool:
+    """Gate « membre actif du foyer » (D-F) : suffisant quand le SERVICE porte une auth
+    fine 404-first (budgets via `get_visible_budget`, settlements/share_requests
+    404-first, `by_user_id` forcé) ou est household-global (catégories, singleton V1).
+
+    ⚠️ Dépendance singleton mono-foyer V1 pour `categories` (le service ne prend ni
+    `user_id` ni filtre foyer) : un futur multi-foyer devra scoper par `household_id`."""
+    return await user_is_active_member(session, user_id=user.id)
+
+
+# Registre CENTRAL des checks d'auth (étape 1) — ÉTENDU en S13.4. Source unique
+# auditable (ADR 0014). `_check_create_transaction` (S13.3) reste branché sur
+# `("transactions","insert")` (D-N). Les ops d'une table connue SANS entrée ici sont
+# fail-closed (`auth_denied`) → leur handler n'est jamais atteint (D-G). Le verrou de
+# parité (`SUPPORTED_OPS`) garantit l'exhaustivité dans les deux sens.
 PERMISSION_CHECKS: dict[tuple[str, MutationOp], PermissionCheck] = {
     ("transactions", "insert"): _check_create_transaction,
+    ("transactions", "update"): _check_mutate_transaction,
+    ("transactions", "delete"): _check_mutate_transaction,
+    ("splits", "insert"): _check_mutate_split,
+    ("splits", "delete"): _check_mutate_split,
+    ("accounts", "insert"): _check_create_account,
+    ("accounts", "update"): _check_mutate_account,
+    ("accounts", "delete"): _check_mutate_account,
+    ("categories", "insert"): _check_active_member,
+    ("categories", "update"): _check_active_member,
+    ("categories", "delete"): _check_active_member,
+    ("budgets", "insert"): _check_active_member,
+    ("budgets", "update"): _check_active_member,
+    ("budgets", "delete"): _check_active_member,
+    ("settlements", "insert"): _check_active_member,
+    ("share_requests", "insert"): _check_active_member,
+    ("share_requests", "delete"): _check_active_member,
+    ("reconciliations", "insert"): _check_active_member,
+    ("reconciliations", "update"): _check_active_member,
+    ("reconciliations", "delete"): _check_active_member,
 }
 
 

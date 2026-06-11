@@ -118,13 +118,12 @@ async def test_routes_known_table_to_handler() -> None:
     assert results == [ack]
 
 
-async def test_default_handlers_registry_is_empty() -> None:
-    """SANS injection, le registre central `HANDLERS` est VIDE en S13.3 : toute
-    mutation tombe en `unknown_table` (les vrais handlers sont S13.4). Verrouille
-    le comportement PAR DÉFAUT (registre vide ⇒ rien n'est routable) — le routage
-    court-circuite avant l'auth/idempotence, donc l'appel reste DB-free malgré les
-    défauts réels `permission_checks`/`is_processed`."""
-    m = _mutation("transactions")
+async def test_default_registry_rejects_unmapped_table() -> None:
+    """SANS injection, une table HORS du registre central `HANDLERS` (peuplé en S13.4
+    avec les vraies tables sync) tombe en `unknown_table`. Le routage court-circuite
+    AVANT l'auth/idempotence, donc l'appel reste DB-free malgré les défauts réels
+    `permission_checks`/`is_processed` (table inconnue ⇒ jamais de hit DB)."""
+    m = _mutation("definitely_not_a_sync_table")
 
     [result] = await process_batch(sentinel.session, _user(), BatchUpload(mutations=[m]))
 

@@ -15,8 +15,8 @@ from hypothesis import given
 from pydantic import ValidationError
 
 from backend.modules.sync.schemas import (
-    _MAX_MUTATIONS,
-    _MAX_TABLE_NAME,
+    _MAX_MUTATIONS,  # pyright: ignore[reportPrivateUsage]  # borne anti-DoS épinglée par le test
+    _MAX_TABLE_NAME,  # pyright: ignore[reportPrivateUsage]
     BatchUpload,
     Mutation,
     WriteError,

@@ -65,7 +65,7 @@ from backend.modules.debts.domain import (
     ShareRequestData,
 )
 from backend.modules.sync.schemas import (
-    _MAX_TABLE_NAME,
+    _MAX_TABLE_NAME,  # pyright: ignore[reportPrivateUsage]  # borne wire = source unique
     BatchUpload,
     Mutation,
 )

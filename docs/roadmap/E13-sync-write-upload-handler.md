@@ -44,7 +44,7 @@ Livrable agrégé : un client PowerSync peut s'authentifier, recevoir les rows v
 | Phase | Description | Diff |
 |---|---|---|
 | **P13.2.1** | `modules/sync/__init__.py`, `public.py`, `domain.py` (vide pour l'instant), `service/` (vide), `handlers/` (sous-dossier pour les sous-handlers par table) | ~60 |
-| **P13.2.2** | Table `sync_request_log` : `client_request_id` UUID PK, `user_id`, `table_name`, `processed_at`. Server-only. Migration `0019_sync_request_log.py` (down revision `0018` — dernière migration mergée). Retention 30j (purge nightly via APScheduler job mineur) | ~120 |
+| **P13.2.2** | Table `sync_request_log` : PK composite `(user_id, client_request_id)` (idempotence scopée user, ferme l'oracle cross-user — review Sécu F1), `table_name`, `processed_at`. Server-only. Migration `0019_sync_request_log.py` (down revision `0018` — dernière migration mergée). Retention 30j : **purge nightly idempotente déclenchée par le cron CI** (`nightly.yml`, entrypoint `backend.scripts.purge_sync_request_log`) — **PAS** d'APScheduler runtime ici (**D2** : APScheduler reporté à l'épic récurrences, ADR 0007 / F06) | ~120 |
 | **P13.2.3** | Schemas Pydantic pour le format batch PowerSync : `BatchUpload(mutations=list[Mutation])`, `Mutation(client_request_id, table, op='insert|update|delete', payload)`, `WriteResult(client_request_id, success, error?)`. Tests | ~150 |
 
 ---
@@ -139,7 +139,7 @@ Livrable agrégé : un client PowerSync peut s'authentifier, recevoir les rows v
 
 - [ ] PowerSync Service tourne en dev compose, connecté à Postgres
 - [ ] `POST /sync/upload` traite un batch de N mutations avec ordering préservé
-- [ ] `client_request_id` UUID v7 → idempotence stricte (replay = no-op)
+- [ ] `client_request_id` (UUID v7 recommandé côté client ; le serveur accepte **tout UUID bien formé** — **D7**) → idempotence stricte **scopée user** (replay = no-op)
 - [ ] Matérialisation synchrone des dettes après write transaction (visible post-commit)
 - [ ] Erreurs typées : `validation_error`, `immutable_field_violation`, `auth_denied`, `unknown_table`, etc.
 - [ ] Sync rules : un user ne reçoit jamais les comptes personnels d'un autre user (testé)

@@ -30,7 +30,7 @@ pytestmark = [pytest.mark.usefixtures("_clean_committed_db")]
 
 
 @pytest_asyncio.fixture(loop_scope="session")
-async def _seeded_user(
+async def _seeded_user(  # pyright: ignore[reportUnusedFunction]  # consumed by name as a fixture
     committed_sessionmaker: async_sessionmaker[AsyncSession],
 ) -> uuid.UUID:
     """A committed `User` to satisfy `sync_request_log.user_id` FK RESTRICT."""

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import backend.modules.accounts.public as accounts_public
+from backend.modules.accounts import domain as _domain
 from backend.modules.accounts import events as _events
 from backend.modules.accounts.models import HOUSEHOLD_SINGLETON_UUID
 from backend.modules.accounts.public import (
@@ -102,6 +103,15 @@ def test_public_names_are_identical_objects_to_internals() -> None:
     assert accounts_public.AccountMemberAdded is _events.AccountMemberAdded
     assert accounts_public.AccountMemberRemoved is _events.AccountMemberRemoved
     assert accounts_public.ShareRatioUpdated is _events.ShareRatioUpdated
+    # The S13.4 write surface consumed by the sync handlers re-exports the real
+    # service symbols (the most sensitive surface: it drives DB writes — no stub).
+    assert accounts_public.create_personal is _accounts_service.create_personal
+    assert accounts_public.create_shared is _accounts_service.create_shared
+    assert accounts_public.rename is _accounts_service.rename
+    assert accounts_public.archive is _accounts_service.archive
+    # The S13.4 param-types re-export the real `accounts.domain` symbols.
+    assert accounts_public.AccountType is _domain.AccountType
+    assert accounts_public.MemberShare is _domain.MemberShare
 
 
 def test_exception_is_a_plain_exception_subclass() -> None:

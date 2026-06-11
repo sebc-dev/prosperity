@@ -220,6 +220,34 @@ async def test_delete_archives(
     assert acc.archived_at is not None
 
 
+async def test_second_delete_denied_and_row_preserved(
+    household_singleton: AsyncSession, bound_account_factories: _AccountFactories
+) -> None:
+    """Un 2ᵉ `delete` d'un compte DÉJÀ archivé est intercepté à l'étape 1
+    (`_check_mutate_account` : `account_is_accessible` exclut les lignes archivées →
+    `auth_denied`), le handler n'est jamais atteint. Oracle = `archived_at` INCHANGÉ
+    (la ligne est préservée, jamais re-touchée ni hard-deletée — D7/C-SEC-4)."""
+    user_f, account_f, _ = await bound_account_factories()
+
+    def _seed(_s: Session) -> tuple[User, uuid.UUID]:
+        owner = user_f(email="dd@ex.com")
+        return owner, account_f(owner_id=owner.id).id
+
+    owner, account_id = await household_singleton.run_sync(_seed)
+    await _run(household_singleton, owner, _mut("delete", {"id": str(account_id)}))
+    acc = await household_singleton.get(Account, account_id)
+    assert acc is not None and acc.archived_at is not None
+    first_archived_at = acc.archived_at
+
+    result = await _run(household_singleton, owner, _mut("delete", {"id": str(account_id)}))
+
+    assert result.success is False
+    assert result.error is not None
+    assert result.error.code == "auth_denied"  # archivé ⇒ inaccessible (étape 1)
+    await household_singleton.refresh(acc)
+    assert acc.archived_at == first_archived_at  # ligne préservée, INCHANGÉE
+
+
 async def test_update_inaccessible_account_denied(
     household_singleton: AsyncSession, bound_account_factories: _AccountFactories
 ) -> None:
@@ -256,3 +284,15 @@ def test_member_share_ratio_is_decimal() -> None:
     )
     shares = payload.to_member_shares()
     assert {s.ratio for s in shares} == {Decimal("0.25"), Decimal("0.75")}
+
+
+def test_shared_members_over_max_rejected() -> None:
+    """Borne anti-DoS (D-L, C-SEC-2) : > `_MAX_SHARED_MEMBERS` membres → `ValidationError`.
+    Testé en direct sur le schéma : via `process_batch`, l'étape 1 (`_check_create_account`)
+    intercepterait d'abord des membres non actifs — la borne de cardinalité est une garde
+    de la frontière Pydantic, indépendante de l'auth."""
+    members = [{"user_id": str(uuid.uuid4()), "ratio": "0.04"} for _ in range(21)]
+    with pytest.raises(ValidationError):
+        AccountInsertSharedPayload.model_validate(
+            {"name": "C", "type": "courant", "currency": "EUR", "members": members}
+        )

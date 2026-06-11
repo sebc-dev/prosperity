@@ -22,15 +22,25 @@ from decimal import Decimal
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from backend.modules.accounts.public import AccountType, MemberShare
 from backend.modules.budget.public import PeriodKind, Scope
 from backend.modules.debts.public import SettlementLineInput, SettlementType
 from backend.shared.currency import Currency
+from backend.shared.text import clean_imposed_text, clean_optional_imposed_text
 
 # Bornes alignées sur les schémas REST des modules métier (source unique de
-# vérité côté boundary) — un payload sync n'a pas de raison d'être plus permissif.
+# vérité côté boundary) : longueurs/cardinalités ET validateurs de valeur/format
+# (plage `ratio`, montants positifs, whitelist anti-injection des textes imposés)
+# — un payload sync n'a pas de raison d'être plus permissif que HTTP.
 _NAME_MIN, _NAME_MAX = 1, 120
 _ICON_MAX = 64
 _COLOR_PATTERN = r"^#[0-9A-Fa-f]{6}$"
@@ -42,6 +52,8 @@ _MAX_TAGS = 32
 _MAX_SHARED_MEMBERS = 20  # gabarit `accounts.schemas` (Σ == 1 reste règle service)
 _MAX_CONTRIBUTORS = 50
 _MAX_SETTLEMENT_LINES = 100
+# Quote-part : miroir de la colonne `Numeric(5, 4)` (gabarit `accounts.schemas`).
+_RATIO_MAX_DIGITS, _RATIO_DECIMALS = 5, 4
 
 _Name = Annotated[str, StringConstraints(min_length=_NAME_MIN, max_length=_NAME_MAX)]
 _Tag = Annotated[str, StringConstraints(max_length=_TAG_MAX_LEN)]
@@ -125,11 +137,16 @@ class AccountInsertPersonalPayload(BaseModel):
 
 
 class MemberSharePayload(BaseModel):
-    """Une quote-part de compte commun (wire). Mappée 1:1 sur `accounts.MemberShare`."""
+    """Une quote-part de compte commun (wire). Mappée 1:1 sur `accounts.MemberShare`.
+
+    `ratio` borné `0 < r < 1` + précision `Numeric(5, 4)` (gabarit
+    `accounts.schemas.AccountMemberInput`) : la borne par-élément + précision est
+    le boundary (Σ == 1 reste règle service) ; sans elle, un `Decimal` à précision
+    excessive lèverait tard en DB plutôt qu'un rejet propre."""
 
     model_config = ConfigDict(extra="forbid")
     user_id: UUID
-    ratio: Decimal
+    ratio: Decimal = Field(gt=0, lt=1, max_digits=_RATIO_MAX_DIGITS, decimal_places=_RATIO_DECIMALS)
 
 
 class AccountInsertSharedPayload(BaseModel):
@@ -250,11 +267,17 @@ class SettlementLinePayload(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
     debt_id: UUID
-    amount_cents: int
+    amount_cents: int = Field(gt=0)  # le sens est porté par l'orientation de la Debt
 
 
 class SettlementInsertPayload(BaseModel):
-    """`settlements/insert` → `create_settlement`. `by_user_id` forcé (absent)."""
+    """`settlements/insert` → `create_settlement`. `by_user_id` forcé (absent).
+
+    ⚠️ `note` est du texte libre IMPOSÉ à l'autre partie : trim + rejet des
+    caractères de contrôle via la whitelist partagée (`shared.text`, gabarit
+    `debts.schemas.SettlementCreate._clean_note`) — single-line, anti-injection
+    (stored-XSS en WebView, review #22). La frontière sync ne doit PAS être plus
+    laxiste que HTTP."""
 
     model_config = ConfigDict(extra="forbid")
     settlement_type: SettlementType
@@ -262,6 +285,11 @@ class SettlementInsertPayload(BaseModel):
     settled_at: _date
     note: str | None = Field(default=None, max_length=_NOTE_MAX)
     lines: list[SettlementLinePayload] = Field(min_length=1, max_length=_MAX_SETTLEMENT_LINES)
+
+    @field_validator("note")
+    @classmethod
+    def _clean_note(cls, v: str | None) -> str | None:
+        return clean_optional_imposed_text(v, field="note")
 
     def to_line_inputs(self) -> list[SettlementLineInput]:
         return [
@@ -273,13 +301,23 @@ class SettlementInsertPayload(BaseModel):
 # ── share_requests (debts) ────────────────────────────────────────────────────
 class ShareRequestInsertPayload(BaseModel):
     """`share_requests/insert` → `create_share_request`. `by_user_id` forcé (absent) ;
-    `requested_from` est une CIBLE légitime au payload (validée « membre actif » par le service)."""
+    `requested_from` est une CIBLE légitime au payload (validée « membre actif » par le service).
+
+    `ratio` borné `0 < r ≤ 1` + précision `Numeric(5, 4)` (gabarit
+    `debts.schemas.ShareRequestCreate` ; `RatioOutOfBoundsError` reste le fail-safe
+    domaine). `short_label` est du texte libre IMPOSÉ au débiteur : trim + whitelist
+    anti-contrôle (`shared.text`, single-line, anti-injection / stored-XSS, #22/#144)."""
 
     model_config = ConfigDict(extra="forbid")
     transaction_id: UUID
     requested_from: UUID
-    ratio: Decimal
+    ratio: Decimal = Field(gt=0, le=1, max_digits=_RATIO_MAX_DIGITS, decimal_places=_RATIO_DECIMALS)
     short_label: str = Field(min_length=1, max_length=_LABEL_MAX)
+
+    @field_validator("short_label")
+    @classmethod
+    def _clean_short_label(cls, v: str) -> str:
+        return clean_imposed_text(v, field="short_label")
 
 
 class ShareRequestDeletePayload(BaseModel):

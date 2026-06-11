@@ -11,6 +11,7 @@ from dataclasses import is_dataclass
 from uuid import uuid4
 
 import backend.modules.debts.public as debts_public
+from backend.modules.debts import domain as _domain
 from backend.modules.debts.public import (
     CrossHouseholdError,
     DebtNotFoundError,
@@ -187,3 +188,7 @@ def test_public_names_are_identical_objects_to_internals() -> None:
         debts_public.LinkedTransactionNotTransferError
         is _settlement.LinkedTransactionNotTransferError
     )
+    # The S13.4 param-types consumed by the sync handlers re-export the real
+    # `debts.domain` symbols (`SettlementLineInput` is a concrete class — no stub).
+    assert debts_public.SettlementType is _domain.SettlementType
+    assert debts_public.SettlementLineInput is _domain.SettlementLineInput

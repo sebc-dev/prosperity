@@ -20,7 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.modules.auth.domain import UserRole
 from backend.modules.auth.models import User
 from backend.modules.sync.schemas import BatchUpload, Mutation, MutationOp, WriteResult
-from backend.modules.sync.service.dispatcher import Handler, PermissionCheck, process_batch
+from backend.modules.sync.service.dispatcher import (
+    HANDLERS,
+    Handler,
+    PermissionCheck,
+    process_batch,
+)
 from tests.strategies import batch_upload_strategy
 
 
@@ -123,6 +128,7 @@ async def test_default_registry_rejects_unmapped_table() -> None:
     avec les vraies tables sync) tombe en `unknown_table`. Le routage court-circuite
     AVANT l'auth/idempotence, donc l'appel reste DB-free malgré les défauts réels
     `permission_checks`/`is_processed` (table inconnue ⇒ jamais de hit DB)."""
+    assert "definitely_not_a_sync_table" not in HANDLERS  # garde anti-false-green
     m = _mutation("definitely_not_a_sync_table")
 
     [result] = await process_batch(sentinel.session, _user(), BatchUpload(mutations=[m]))

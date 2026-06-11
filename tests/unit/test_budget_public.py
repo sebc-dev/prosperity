@@ -18,6 +18,8 @@ from backend.modules.budget.public import (
     BudgetUpdatedEvent,
     BudgetWithConsumption,
     OverflowBudgetContext,
+    PeriodKind,
+    Scope,
     archive_budget,
     archive_category,
     compute_consumption,
@@ -94,3 +96,6 @@ def test_public_names_are_identical_re_exports() -> None:
     assert create_budget is _budget_crud.create_budget
     assert update_budget is _budget_crud.update_budget
     assert archive_budget is _budget_crud.archive_budget
+    # S13.4 param-types (`Literal` aliases) re-export the real `budget.domain` ones.
+    assert PeriodKind is _domain.PeriodKind
+    assert Scope is _domain.Scope

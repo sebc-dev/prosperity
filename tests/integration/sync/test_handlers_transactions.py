@@ -187,6 +187,37 @@ async def test_split_insert_unknown_transaction_denied(
     assert result.error.code == "auth_denied"
 
 
+async def test_split_insert_foreign_leg_denied(
+    household_singleton: AsyncSession, bound_transaction_factories: _TxFactories
+) -> None:
+    """D-N : un `splits/insert` dont la tx PARENTE est accessible MAIS dont la jambe
+    (`account_id`) vise un compte d'AUTRUI → `auth_denied`. C'est la garantie « pas de
+    jambe glissée vers un compte d'autrui » migrée de `_check_create_transaction` vers
+    `_check_mutate_split` sous la décomposition plate — un fail-open ici la perdrait."""
+    user_f, account_f, tx_f, _ = await bound_transaction_factories()
+
+    def _seed(_s: Session) -> tuple[User, uuid.UUID, uuid.UUID]:
+        owner = user_f(email="leg-owner@ex.com")
+        other = user_f(email="leg-other@ex.com")
+        acc = account_f(owner_id=owner.id)
+        foreign = account_f(owner_id=other.id)  # compte d'autrui
+        tx = tx_f(account_id=acc.id, created_by=owner.id, splits=False)
+        return owner, tx.id, foreign.id
+
+    owner, tx_id, foreign_account_id = await household_singleton.run_sync(_seed)
+    payload = {
+        "transaction_id": str(tx_id),  # tx parente accessible
+        "account_id": str(foreign_account_id),  # jambe vers un compte d'autrui
+        "amount_cents": 100,
+        "currency": "EUR",
+    }
+    result = await _run(household_singleton, owner, _mut("splits", "insert", payload))
+
+    assert result.success is False
+    assert result.error is not None
+    assert result.error.code == "auth_denied"
+
+
 async def test_splits_update_unsupported_denied(
     household_singleton: AsyncSession, bound_transaction_factories: _TxFactories
 ) -> None:

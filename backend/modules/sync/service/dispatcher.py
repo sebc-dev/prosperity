@@ -129,12 +129,16 @@ def _payload_uuid(value: object) -> UUID | None:
 
 def _referenced_account_ids(payload: dict[str, object]) -> list[UUID] | None:
     """TOUS les comptes qu'une mutation `transactions/insert` touche : le compte
-    racine ET chaque `split.account_id` (un transfert en couvre ≥ 2,
-    `transactions.domain.is_transfer`). Best-effort AVANT validation Pydantic,
-    agnostique de la décomposition wire finale (la forme par-table est S13.4).
+    racine ET chaque `split.account_id` embarqué. Best-effort AVANT validation
+    Pydantic, fail-closed (`None`) si AUCUN compte exploitable OU si une référence
+    présente est malformée / d'une structure douteuse — on ne devine pas, on refuse.
 
-    Fail-closed (`None`) si AUCUN compte exploitable OU si une référence présente
-    est malformée / d'une structure douteuse — on ne devine pas, on refuse.
+    ⚠️ Sous la décomposition wire PLATE de S13.4 (D-A), un `transactions/insert`
+    ne porte plus de `splits` embarqué (`TransactionInsertPayload` est
+    `extra="forbid"`) : la branche `splits` ci-dessous est donc INERTE en pratique,
+    conservée en défense-en-profondeur. La garantie « pas de jambe glissée vers un
+    compte d'autrui » vit désormais dans `_check_mutate_split` au `splits/insert`
+    (D-N). Élagage possible quand le contrat wire est figé (S13.6).
     """
     ids: list[UUID] = []
     if "account_id" in payload:  # compte racine

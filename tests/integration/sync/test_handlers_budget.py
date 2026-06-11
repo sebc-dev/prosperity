@@ -86,6 +86,31 @@ async def test_category_update_parent_routes_move(
     assert refreshed.parent_id == parent.id
 
 
+async def test_category_update_parent_none_routes_move_to_root(
+    initialized_household: AsyncSession,
+    bound_user_factory: _UserFactory,
+    bound_category_factory: _CategoryFactory,
+) -> None:
+    """`has_parent_change` (D-L) : `parent_id=None` FOURNI explicitement (≠ absent) doit
+    router vers `move_category(new_parent_id=None)` — re-parentage vers la RACINE, PAS un
+    no-op `update_category`. Distinction « `None` explicite vs champ absent » que capture
+    `"parent_id" in model_fields_set` (qu'un `if self.parent_id is None` naïf raterait).
+    Oracle DB = `parent_id is None`."""
+    user = await bound_user_factory(email="cat-root@ex.com")
+    parent = await bound_category_factory(name="RootParent")
+    child = await bound_category_factory(name="RootChild", parent_id=parent.id)
+    result = await _run(
+        initialized_household,
+        user,
+        _mut("categories", "update", {"id": str(child.id), "parent_id": None}),
+    )
+
+    assert result.success is True
+    refreshed = await initialized_household.get(Category, child.id)
+    assert refreshed is not None
+    assert refreshed.parent_id is None  # déplacé à la racine (≠ parent inchangé)
+
+
 async def test_category_move_cycle_raises(
     initialized_household: AsyncSession,
     bound_user_factory: _UserFactory,
@@ -234,6 +259,52 @@ async def test_budget_delete_archives(
     assert result.success is True
     await initialized_household.refresh(budget)
     assert budget.archived_at is not None
+
+
+async def test_budget_insert_too_many_contributors_rejected(
+    initialized_household: AsyncSession,
+    bound_user_factory: _UserFactory,
+    bound_category_factory: _CategoryFactory,
+) -> None:
+    """Borne anti-DoS (D-L, C-SEC-2) : `contributor_ids` au-delà de la cardinale max
+    (`_MAX_CONTRIBUTORS=50`) → `ValidationError` AVANT tout write."""
+    user = await bound_user_factory(email="bud-dos@ex.com")
+    cat = await bound_category_factory(name="DosCat")
+    payload = _budget_payload(cat.id) | {"contributor_ids": [str(uuid.uuid4()) for _ in range(51)]}
+    with pytest.raises(ValidationError):
+        await _run(initialized_household, user, _mut("budgets", "insert", payload))
+
+
+async def test_budget_update_not_visible_is_noop(
+    initialized_household: AsyncSession,
+    bound_user_factory: _UserFactory,
+    bound_category_factory: _CategoryFactory,
+) -> None:
+    """Cas « falsey » : un budget non visible par l'appelant (non-contributeur, membre
+    actif néanmoins → étape 1 passe) → `update_budget` renvoie `None` (404-first) ; le
+    handler renvoie quand même `success=True` (mapping 404 = S13.6). Oracle = état DB
+    INCHANGÉ (le `WriteResult` n'est PAS un oracle valide pour un no-op)."""
+    owner = await bound_user_factory(email="bud-own@ex.com")
+    other = await bound_user_factory(email="bud-oth@ex.com")
+    cat = await bound_category_factory(name="VisCat")
+    await _run(
+        initialized_household,
+        owner,
+        _mut("budgets", "insert", _budget_payload(cat.id) | {"contributor_ids": [str(owner.id)]}),
+    )
+    budget = (
+        await initialized_household.execute(select(Budget).where(Budget.category_id == cat.id))
+    ).scalar_one()
+
+    result = await _run(
+        initialized_household,
+        other,
+        _mut("budgets", "update", {"id": str(budget.id), "amount_cents": 99999}),
+    )
+
+    assert result.success is True  # handler flush-only ; mapping du 404 = S13.6
+    await initialized_household.refresh(budget)
+    assert budget.amount_cents == 30000  # INCHANGÉ (update_budget a renvoyé None)
 
 
 async def test_categories_and_budgets_both_routed(

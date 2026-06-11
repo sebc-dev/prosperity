@@ -13,6 +13,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Mapping
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
@@ -107,9 +108,43 @@ async def test_share_request_revoke_not_owner_raises(
     ).scalar_one()
     bob = await household_singleton.get(User, sc.bob_id)
     assert bob is not None
+    assert (
+        await debt_count(household_singleton, tx_id=sc.tx_id) == 1
+    )  # matérialisé avant la tentative
 
     with pytest.raises(ShareRequestNotFoundError):
         await _run(household_singleton, bob, _mut("share_requests", "delete", {"id": str(sr_id)}))
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("ratio", "5"),  # ratio > 1 (borne `(0, 1]`, parité REST)
+        ("ratio", "0"),  # ratio == 0 (borne `gt=0`)
+        ("short_label", "line1\nline2"),  # caractère de contrôle (whitelist anti-injection)
+        ("short_label", ""),  # vide (min_length=1 / blank après trim)
+    ],
+)
+async def test_share_request_insert_invalid_payload_rejected(
+    household_singleton: AsyncSession,
+    bound_transaction_factories: _TxFactories,
+    field: str,
+    value: str,
+) -> None:
+    """Bornes de valeur/format de la frontière sync (parité REST) → `ValidationError`
+    AVANT tout write : `ratio ∈ (0, 1]` et `short_label` whitelisté (texte imposé au
+    débiteur, single-line). L'étape 1 passe (Alice = membre actif), donc le rejet vient
+    bien de la validation Pydantic du handler, pas de l'auth."""
+    alice, sc = await _seed_expense(household_singleton, bound_transaction_factories)
+    payload = {
+        "transaction_id": str(sc.tx_id),
+        "requested_from": str(sc.bob_id),
+        "ratio": "0.5",
+        "short_label": "diner",
+        field: value,
+    }
+    with pytest.raises(ValidationError):
+        await _run(household_singleton, alice, _mut("share_requests", "insert", payload))
 
 
 # ── settlements ───────────────────────────────────────────────────────────────
@@ -167,3 +202,36 @@ async def test_settlement_update_unsupported_denied(
     assert result.success is False
     assert result.error is not None
     assert result.error.code == "auth_denied"
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"note": "paid\nin cash"},  # caractère de contrôle (whitelist anti-injection)
+        {"lines": [{"debt_id": "00000000-0000-0000-0000-000000000001", "amount_cents": 0}]},  # ≤ 0
+        {
+            "lines": [
+                {"debt_id": "00000000-0000-0000-0000-000000000001", "amount_cents": 1}
+                for _ in range(101)  # > _MAX_SETTLEMENT_LINES
+            ]
+        },
+    ],
+)
+async def test_settlement_insert_invalid_payload_rejected(
+    household_singleton: AsyncSession,
+    bound_transaction_factories: _TxFactories,
+    overrides: Mapping[str, object],
+) -> None:
+    """Bornes de la frontière sync (parité REST) → `ValidationError` AVANT tout write :
+    `note` whitelistée (texte imposé, single-line), `amount_cents > 0` par ligne, et
+    bornage anti-DoS du nombre de lignes. L'étape 1 passe (Alice = membre actif)."""
+    alice, _sc = await _seed_expense(household_singleton, bound_transaction_factories)
+    payload: dict[str, object] = {
+        "settlement_type": "external_transfer",
+        "linked_transaction_id": str(uuid.uuid4()),
+        "settled_at": "2026-06-05",
+        "lines": [{"debt_id": str(uuid.uuid4()), "amount_cents": 100}],
+        **overrides,
+    }
+    with pytest.raises(ValidationError):
+        await _run(household_singleton, alice, _mut("settlements", "insert", payload))

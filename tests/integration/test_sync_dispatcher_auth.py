@@ -246,6 +246,7 @@ async def test_fail_closed_payloads_deny_without_exception(
         {"account_id": {"a": 1}},  # non-scalaire (dict)
         {"account_id": True},  # non-scalaire (bool)
         {"splits": "oops"},  # splits pas une liste
+        {"splits": [42]},  # split pas un dict
         {"splits": [{}]},  # split sans account_id
         {"splits": [{"account_id": [42]}]},  # split.account_id non-scalaire
     ]

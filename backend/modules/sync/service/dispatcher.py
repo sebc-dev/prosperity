@@ -36,6 +36,7 @@ from backend.modules.sync.schemas import (
     WriteError,
     WriteResult,
 )
+from backend.modules.sync.service.idempotency import already_processed
 
 
 class Handler(Protocol):
@@ -45,6 +46,17 @@ class Handler(Protocol):
     async def __call__(
         self, session: AsyncSession, user: User, mutation: Mutation
     ) -> WriteResult: ...
+
+
+class IdempotencyCheck(Protocol):
+    """Lookup d'idempotence (étape 2). Défaut = `already_processed` (lecture scopée
+    user de `sync_request_log`). Injectable comme `handlers`/`permission_checks` :
+    les tests de ROUTAGE unitaires stubent un `→ False` pour rester DB-free sans
+    mocker la session SQLA (anti-pattern repo) ; l'intégration garde le défaut réel."""
+
+    async def __call__(
+        self, session: AsyncSession, *, user_id: UUID, client_request_id: UUID
+    ) -> bool: ...
 
 
 # Registre CENTRAL de routage : `table -> Handler`. VIDE en S13.3 — la machine
@@ -141,13 +153,14 @@ _UNKNOWN_TABLE = "unknown_table"  # vocabulaire ADR 0014 (resserré Literal en S
 _AUTH_DENIED = "auth_denied"  # vocabulaire ADR 0014
 
 
-async def process_batch(
+async def process_batch(  # noqa: PLR0913 — 3 coutures de test keyword-only injectables
     session: AsyncSession,
     user: User,
     batch: BatchUpload,
     *,
     handlers: Mapping[str, Handler] = HANDLERS,
     permission_checks: Mapping[tuple[str, MutationOp], PermissionCheck] = PERMISSION_CHECKS,
+    is_processed: IdempotencyCheck = already_processed,
 ) -> list[WriteResult]:
     """Route chaque mutation vers le sous-handler de sa `table`, dans l'ordre du
     tableau (séquentiel, pas de parallélisation — ADR 0014). Par mutation :
@@ -156,13 +169,14 @@ async def process_batch(
     1. auth/RBAC : `(table, op)` non mappé OU check `False` → `auth_denied`
        (fail-closed — un handler routable sans politique d'auth est une lacune de
        config, pas un laissez-passer) ;
-    2. (idempotence — P13.3.3) ;
+    2. idempotence : `client_request_id` déjà dans `sync_request_log` (scopé user)
+       → ack `success=True` SANS appeler le handler (replay d'un write déjà commité) ;
     puis délégation au handler (mocké S13.3).
 
     La session (UoW de l'appelant, ADR 0015) est threadée aux checks et au
     handler ; AUCUN `commit()` ici (la frontière par-mutation est S13.6).
-    `handlers` / `permission_checks` injectables = couture de test + point
-    d'enregistrement S13.4 (défaut = registres module).
+    `handlers` / `permission_checks` / `is_processed` injectables = couture de test
+    + point d'enregistrement S13.4 (défaut = registres / lookup module).
     """
     results: list[WriteResult] = []
     for mutation in batch.mutations:  # ordre préservé, séquentiel
@@ -185,6 +199,13 @@ async def process_batch(
                     error=WriteError(code=_AUTH_DENIED, message="Not authorized."),
                 )
             )
+            continue
+        if await is_processed(
+            session, user_id=user.id, client_request_id=mutation.client_request_id
+        ):
+            # Replay d'une mutation déjà commitée (étape 9, S13.6) : ack SANS
+            # ré-écrire (handler NON appelé) — idempotence stricte, scopée user.
+            results.append(WriteResult(client_request_id=mutation.client_request_id, success=True))
             continue
         results.append(await handler(session, user, mutation))
     return results

@@ -87,6 +87,16 @@ class _AllowAllChecks(Mapping[tuple[str, MutationOp], PermissionCheck]):
 _ALLOW_ALL_CHECKS = _AllowAllChecks()
 
 
+async def _never_processed(
+    session: AsyncSession, *, user_id: uuid.UUID, client_request_id: uuid.UUID
+) -> bool:
+    """Stub d'idempotence DB-free : rien n'est jamais « déjà traité » → la voie
+    route → handler n'est pas court-circuitée. Injecté dans les tests de ROUTAGE
+    pour rester DB-free sans mocker la session SQLA (l'idempotence réelle est
+    testée en intégration)."""
+    return False
+
+
 async def test_routes_known_table_to_handler() -> None:
     """Mutation `transactions` → handler appelé UNE fois avec `(session, user,
     mutation)` ; son `WriteResult` est dans la liste."""
@@ -101,6 +111,7 @@ async def test_routes_known_table_to_handler() -> None:
         BatchUpload(mutations=[m]),
         handlers={"transactions": handler},
         permission_checks=_ALLOW_ALL_CHECKS,
+        is_processed=_never_processed,
     )
 
     handler.assert_awaited_once_with(sentinel.session, user, m)
@@ -140,6 +151,7 @@ async def test_ordering_preserved_and_continue_on_error() -> None:
         BatchUpload(mutations=[m1, m_bad, m3]),
         handlers={"transactions": handler},
         permission_checks=_ALLOW_ALL_CHECKS,
+        is_processed=_never_processed,
     )
 
     assert [r.client_request_id for r in results] == [
@@ -177,6 +189,7 @@ async def test_property_one_result_per_mutation_in_order(batch: BatchUpload) -> 
         batch,
         handlers=_AllowAllHandlers(),
         permission_checks=_ALLOW_ALL_CHECKS,
+        is_processed=_never_processed,
     )
 
     assert [r.client_request_id for r in results] == [m.client_request_id for m in batch.mutations]

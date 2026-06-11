@@ -19,8 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.auth.domain import UserRole
 from backend.modules.auth.models import User
-from backend.modules.sync.schemas import BatchUpload, Mutation, WriteResult
-from backend.modules.sync.service.dispatcher import Handler, process_batch
+from backend.modules.sync.schemas import BatchUpload, Mutation, MutationOp, WriteResult
+from backend.modules.sync.service.dispatcher import Handler, PermissionCheck, process_batch
 from tests.strategies import batch_upload_strategy
 
 
@@ -49,9 +49,7 @@ class _AllowAllHandlers(Mapping[str, Handler]):
     """
 
     def __getitem__(self, key: str) -> Handler:
-        async def _echo(
-            session: AsyncSession, user: User, mutation: Mutation
-        ) -> WriteResult:
+        async def _echo(session: AsyncSession, user: User, mutation: Mutation) -> WriteResult:
             return WriteResult(client_request_id=mutation.client_request_id, success=True)
 
         return _echo
@@ -63,6 +61,32 @@ class _AllowAllHandlers(Mapping[str, Handler]):
         return 0
 
 
+class _AllowAllChecks(Mapping[tuple[str, MutationOp], PermissionCheck]):
+    """Registre de checks d'auth répondant à TOUTE clé `(table, op)` → `True`.
+
+    Les tests de ROUTAGE (P13.3.1) injectent ce Mapping pour isoler le routage de
+    l'étape 1 : sans lui, `process_batch` tomberait en `auth_denied` dès P13.3.2
+    (l'auth réelle est testée en intégration). Comme `_AllowAllHandlers`, il
+    répond à toute clé (pas un `dict` figé) — `batch_upload_strategy` tire des
+    `(table, op)` arbitraires.
+    """
+
+    def __getitem__(self, key: tuple[str, MutationOp]) -> PermissionCheck:
+        async def _allow(session: AsyncSession, user: User, mutation: Mutation) -> bool:
+            return True
+
+        return _allow
+
+    def __iter__(self) -> Iterator[tuple[str, MutationOp]]:  # pragma: no cover
+        return iter(())
+
+    def __len__(self) -> int:  # pragma: no cover
+        return 0
+
+
+_ALLOW_ALL_CHECKS = _AllowAllChecks()
+
+
 async def test_routes_known_table_to_handler() -> None:
     """Mutation `transactions` → handler appelé UNE fois avec `(session, user,
     mutation)` ; son `WriteResult` est dans la liste."""
@@ -72,7 +96,11 @@ async def test_routes_known_table_to_handler() -> None:
     handler = AsyncMock(return_value=ack)
 
     results = await process_batch(
-        sentinel.session, user, BatchUpload(mutations=[m]), handlers={"transactions": handler}
+        sentinel.session,
+        user,
+        BatchUpload(mutations=[m]),
+        handlers={"transactions": handler},
+        permission_checks=_ALLOW_ALL_CHECKS,
     )
 
     handler.assert_awaited_once_with(sentinel.session, user, m)
@@ -111,6 +139,7 @@ async def test_ordering_preserved_and_continue_on_error() -> None:
         _user(),
         BatchUpload(mutations=[m1, m_bad, m3]),
         handlers={"transactions": handler},
+        permission_checks=_ALLOW_ALL_CHECKS,
     )
 
     assert [r.client_request_id for r in results] == [
@@ -142,6 +171,12 @@ async def test_property_one_result_per_mutation_in_order(batch: BatchUpload) -> 
     est en bijection ORDONNÉE avec `batch.mutations` (un `WriteResult` par mutation,
     même `client_request_id`, même ordre). Complète — sans dupliquer — la property
     de convergence/permutation S13.9."""
-    results = await process_batch(sentinel.session, _user(), batch, handlers=_AllowAllHandlers())
+    results = await process_batch(
+        sentinel.session,
+        _user(),
+        batch,
+        handlers=_AllowAllHandlers(),
+        permission_checks=_ALLOW_ALL_CHECKS,
+    )
 
     assert [r.client_request_id for r in results] == [m.client_request_id for m in batch.mutations]

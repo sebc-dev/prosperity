@@ -793,6 +793,10 @@ ignore_imports =
     backend.modules.auth.public -> backend.modules.auth.service.roles
     backend.modules.auth.public -> backend.modules.auth.service.users
     backend.modules.auth.public -> backend.modules.auth.transports.dependencies
+    backend.modules.accounts.public -> backend.modules.accounts.models
+    backend.modules.accounts.public -> backend.modules.accounts.service.accounts
+    backend.modules.accounts.public -> backend.modules.accounts.service.household
+    backend.modules.accounts.public -> backend.modules.accounts.service.setup
 unmatched_ignore_imports_alerting = error
 
 [importlinter:contract:3]

@@ -20,12 +20,12 @@ layers =
 name = Only public surface importable cross-module (non-auth, non-accounts sources)
 type = forbidden
 # Sources exclude any module that hosts its own internals (currently
-# `auth`, `accounts`, `budget`, `transactions`, `debts` and `banking`) so
-# source and forbidden subtrees never overlap — otherwise grimp's
+# `auth`, `accounts`, `budget`, `transactions`, `debts`, `banking` and `sync`)
+# so source and forbidden subtrees never overlap — otherwise grimp's
 # `find_shortest_chains` rejects the pair as "shared descendants". Each excluded
 # module gets its own contract (`2-auth`, `2-accounts`, `2-budget`,
-# `2-transactions`, `2-debts`, `2-banking`) below. As future modules grow
-# internals, mirror that split here.
+# `2-transactions`, `2-debts`, `2-banking`, `2-sync`) below. As future modules
+# grow internals, mirror that split here.
 #
 # `backend.modules.{auth,accounts}.*` internals are listed explicitly in
 # `forbidden_modules` (in addition to the `backend.modules.*.<layer>` globs)
@@ -37,7 +37,6 @@ source_modules =
     backend.modules.notifications
     backend.modules.reconciliation
     backend.modules.savings
-    backend.modules.sync
 forbidden_modules =
     backend.modules.*.service
     backend.modules.*.models
@@ -682,6 +681,92 @@ forbidden_modules =
     backend.modules.sync.repository
     backend.modules.sync.transports
     backend.modules.sync.handlers
+    backend.modules.transactions.service
+    backend.modules.transactions.models
+    backend.modules.transactions.domain
+    backend.modules.transactions.repository
+    backend.modules.transactions.transports
+    backend.modules.transactions.handlers
+
+[importlinter:contract:2-sync]
+name = sync must not import peer modules' internals
+type = forbidden
+# Sync-as-source mirrors the `2-auth` / … / `2-banking` split: S13.2 gives sync
+# its first internals (`service/`, `handlers/`, then `models.py`/`schemas.py`),
+# so sync can no longer sit in contract:2's `source_modules` (sync and
+# `backend.modules.*.{service,models,...}` would share a descendant → grimp's
+# shared-descendants error). Intra-module imports (sync.public → sync.schemas /
+# sync.models) stay legitimate; peer modules' internals are enumerated explicitly
+# so sync's own never appear here. `sync` sits at the TOP of the directional
+# graph (contract 1, just under `mcp`), so it may import every peer's `.public`
+# freely — reaching into their internals stays forbidden. NO `ignore_imports`
+# block yet: in S13.2 sync imports NO peer `.public` surface (the second hops
+# arrive in S13.4 when the sub-handlers consume transactions.public /
+# accounts.public / … — enumerated there, since
+# `unmatched_ignore_imports_alerting = error` would otherwise break the lint).
+source_modules =
+    backend.modules.sync
+forbidden_modules =
+    backend.modules.auth.service
+    backend.modules.auth.models
+    backend.modules.auth.domain
+    backend.modules.auth.repository
+    backend.modules.auth.transports
+    backend.modules.auth.handlers
+    backend.modules.accounts.service
+    backend.modules.accounts.models
+    backend.modules.accounts.domain
+    backend.modules.accounts.repository
+    backend.modules.accounts.transports
+    backend.modules.accounts.handlers
+    backend.modules.banking.service
+    backend.modules.banking.models
+    backend.modules.banking.domain
+    backend.modules.banking.repository
+    backend.modules.banking.transports
+    backend.modules.banking.handlers
+    backend.modules.budget.service
+    backend.modules.budget.models
+    backend.modules.budget.domain
+    backend.modules.budget.repository
+    backend.modules.budget.transports
+    backend.modules.budget.handlers
+    backend.modules.debts.service
+    backend.modules.debts.models
+    backend.modules.debts.domain
+    backend.modules.debts.repository
+    backend.modules.debts.transports
+    backend.modules.debts.handlers
+    backend.modules.forecasting.service
+    backend.modules.forecasting.models
+    backend.modules.forecasting.domain
+    backend.modules.forecasting.repository
+    backend.modules.forecasting.transports
+    backend.modules.forecasting.handlers
+    backend.modules.mcp.service
+    backend.modules.mcp.models
+    backend.modules.mcp.domain
+    backend.modules.mcp.repository
+    backend.modules.mcp.transports
+    backend.modules.mcp.handlers
+    backend.modules.notifications.service
+    backend.modules.notifications.models
+    backend.modules.notifications.domain
+    backend.modules.notifications.repository
+    backend.modules.notifications.transports
+    backend.modules.notifications.handlers
+    backend.modules.reconciliation.service
+    backend.modules.reconciliation.models
+    backend.modules.reconciliation.domain
+    backend.modules.reconciliation.repository
+    backend.modules.reconciliation.transports
+    backend.modules.reconciliation.handlers
+    backend.modules.savings.service
+    backend.modules.savings.models
+    backend.modules.savings.domain
+    backend.modules.savings.repository
+    backend.modules.savings.transports
+    backend.modules.savings.handlers
     backend.modules.transactions.service
     backend.modules.transactions.models
     backend.modules.transactions.domain

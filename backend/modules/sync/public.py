@@ -9,7 +9,10 @@ only* — le contrat `2-sync` interdit aux pairs d'atteindre
 `public` lui-même) — aucune exception import-linter requise.
 
 Surface : l'enveloppe batch PowerSync (`BatchUpload`/`Mutation`/`MutationOp`/
-`WriteError`/`WriteResult`), le contrat wire du write upload handler (ADR 0014).
+`WriteError`/`WriteResult`), le contrat wire du write upload handler (ADR 0014),
+et `process_batch` (le dispatcher S13.3 — consommé par la route `POST /sync/upload`
+en S13.8, composition root). Le re-export `sync.public → sync.service.dispatcher`
+est intra-module (le contrat `2-sync` bride les *pairs*, pas `public` lui-même).
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from backend.modules.sync.schemas import (
     WriteError,
     WriteResult,
 )
+from backend.modules.sync.service.dispatcher import process_batch
 
 __all__ = [
     "BatchUpload",
@@ -28,4 +32,5 @@ __all__ = [
     "MutationOp",
     "WriteError",
     "WriteResult",
+    "process_batch",
 ]

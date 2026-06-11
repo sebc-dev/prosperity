@@ -699,11 +699,17 @@ type = forbidden
 # sync.models) stay legitimate; peer modules' internals are enumerated explicitly
 # so sync's own never appear here. `sync` sits at the TOP of the directional
 # graph (contract 1, just under `mcp`), so it may import every peer's `.public`
-# freely — reaching into their internals stays forbidden. NO `ignore_imports`
-# block yet: in S13.2 sync imports NO peer `.public` surface (the second hops
-# arrive in S13.4 when the sub-handlers consume transactions.public /
-# accounts.public / … — enumerated there, since
-# `unmatched_ignore_imports_alerting = error` would otherwise break the lint).
+# freely — reaching into their internals stays forbidden. The `ignore_imports`
+# block below was added in S13.3 when the dispatcher (`sync.service.dispatcher`)
+# first imports `auth.public` (`User`, for typing) and `accounts.public`
+# (`account_is_accessible`, the step-1 RBAC check): `find_shortest_chains` would
+# otherwise surface `sync → auth.public → auth.X` and `sync → accounts.public →
+# accounts.X` as broken chains. Ignoring the *second hop* (X.public → X.internal)
+# makes those invisible without weakening the direct-import protection (a
+# hypothetical `sync.service.Y → auth.models` would still be flagged). The sub-
+# handlers (S13.4) will consume more peer surfaces (transactions.public / …) and
+# extend this block then. The nine `auth` arcs land in P13.3.1, the four
+# `accounts` arcs in P13.3.2.
 source_modules =
     backend.modules.sync
 forbidden_modules =
@@ -773,6 +779,21 @@ forbidden_modules =
     backend.modules.transactions.repository
     backend.modules.transactions.transports
     backend.modules.transactions.handlers
+# The nine `auth.public → auth.X` arcs are the same block as `2-transactions`/
+# `2-accounts`; they all exist in `auth.public` independently of sync, so each is
+# "matched" (`unmatched_ignore_imports_alerting = error`). The four `accounts`
+# arcs are added in P13.3.2 when the step-1 check imports `account_is_accessible`.
+ignore_imports =
+    backend.modules.auth.public -> backend.modules.auth.domain
+    backend.modules.auth.public -> backend.modules.auth.models
+    backend.modules.auth.public -> backend.modules.auth.service.audit
+    backend.modules.auth.public -> backend.modules.auth.service.invitations
+    backend.modules.auth.public -> backend.modules.auth.service.jwt
+    backend.modules.auth.public -> backend.modules.auth.service.refresh_tokens
+    backend.modules.auth.public -> backend.modules.auth.service.roles
+    backend.modules.auth.public -> backend.modules.auth.service.users
+    backend.modules.auth.public -> backend.modules.auth.transports.dependencies
+unmatched_ignore_imports_alerting = error
 
 [importlinter:contract:3]
 name = shared imports nothing of modules

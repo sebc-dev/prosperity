@@ -41,6 +41,10 @@ import backend.modules.accounts.models  # noqa: F401  # pyright: ignore[reportUn
 # `debts.models`, so the e2e `create_all` (below) cannot resolve that FK target
 # table unless `share_requests` is registered here first.
 import backend.modules.debts.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
+
+# Side-effect: register `sync_request_log` (S13.2, #187) so the real-commit
+# `committed_engine` `create_all` materialises it for the purge-script test.
+import backend.modules.sync.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
 from backend.main import app
 from backend.shared.db import get_db
 from backend.shared.models import Base

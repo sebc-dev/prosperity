@@ -30,6 +30,13 @@ Livrable agrégé : un client PowerSync peut s'authentifier, recevoir les rows v
 | **P13.1.2** | `powersync/config.yaml` (côté PowerSync Service) : connection Postgres, publication PostgreSQL pour les tables à sync. Tests : démarrer le compose, vérifier que PowerSync est connecté à Postgres et publie un état | ~100 |
 | **P13.1.3** | Runbook ops `runbooks/powersync_setup.md` : prod = Quadlet unit dédié (qui sera fini en E16), dev = compose. Variables d'env critiques | ~80 |
 
+> **Deltas d'implémentation (S13.1, cf. issue #186)** — écarts assumés vs le découpage initial, sans contradiction d'ADR :
+> - **Bucket storage ajouté.** PowerSync exige un bucket storage **séparé de la source**. Choix : base Postgres dédiée `powersync_storage` (rôle `ps_storage`) dans la même instance dev — pas de MongoDB (une seule famille de moteur, aligné Restic→B2 d'E16). Prod (E16) peut séparer les instances.
+> - **`client_auth` obligatoire au boot.** Le service ne démarre pas sans. Bloc dev : `audience: [prosperity-api]` (= `jwt_audience`, ADR 0016) + `allow_local_jwks: true`. JWKS réel + `iss` (`prosperity-auth`) câblés en **S13.8/E14**.
+> - **Tables debt-projection différées à S13.7.** `debts`/`share_requests`/`settlements`/`settlement_lines` portent `account_id`/`source_transaction_id` (masquage **conditionnel** per-destinataire) et `materialization_trace` (jamais synchronisé). Une publication colonne globale ne convient pas (le propriétaire doit les recevoir). S13.1 prouve la connectivité avec un set sûr **sans colonne sensible** : `accounts`, `account_members`, `transactions`, `splits`, `categories`, `budgets`, `budget_contributors`.
+> - **Ordre de setup.** La `PUBLICATION` (frontière de sécurité, jamais `FOR ALL TABLES`) est posée **hors Alembic** et **après** `alembic upgrade head` (elle référence les tables applicatives). Le script `compose/initdb/10_powersync_publication.sql` est idempotent + additif + à garde d'existence ; le runbook documente la séquence.
+> - **Garde-fou prod `PS_*`.** Les credentials PowerSync vivent hors Pydantic → non couverts par `_forbid_dev_defaults_in_prod`. Asymétrie documentée dans le runbook ; équivalent prod à ajouter en **E16**.
+
 ---
 
 ### S13.2 — Scaffolding du module `sync`
@@ -37,7 +44,7 @@ Livrable agrégé : un client PowerSync peut s'authentifier, recevoir les rows v
 | Phase | Description | Diff |
 |---|---|---|
 | **P13.2.1** | `modules/sync/__init__.py`, `public.py`, `domain.py` (vide pour l'instant), `service/` (vide), `handlers/` (sous-dossier pour les sous-handlers par table) | ~60 |
-| **P13.2.2** | Table `sync_request_log` : `client_request_id` UUID PK, `user_id`, `table_name`, `processed_at`. Server-only. Migration `0016_sync_request_log.py`. Retention 30j (purge nightly via APScheduler job mineur) | ~120 |
+| **P13.2.2** | Table `sync_request_log` : `client_request_id` UUID PK, `user_id`, `table_name`, `processed_at`. Server-only. Migration `0019_sync_request_log.py` (down revision `0018` — dernière migration mergée). Retention 30j (purge nightly via APScheduler job mineur) | ~120 |
 | **P13.2.3** | Schemas Pydantic pour le format batch PowerSync : `BatchUpload(mutations=list[Mutation])`, `Mutation(client_request_id, table, op='insert|update|delete', payload)`, `WriteResult(client_request_id, success, error?)`. Tests | ~150 |
 
 ---
@@ -57,18 +64,20 @@ Livrable agrégé : un client PowerSync peut s'authentifier, recevoir les rows v
 | Phase | Description | Diff |
 |---|---|---|
 | **P13.4.1** | `handlers/transactions.py` : appelle `transactions.public.create_draft`/`add_split`/`transition_*` selon l'op. Validation Pydantic → domain validation → DB write → events. Tests intégration avec `db_session` | ~250 |
-| **P13.4.2** | `handlers/accounts.py`, `handlers/categories.py`, `handlers/budgets.py` : mêmes patterns appelant les `public.py` respectifs. Tests | ~300 |
-| **P13.4.3** | `handlers/settlements.py`, `handlers/share_requests.py`, `handlers/debt_overrides.py` : appellent `debts.public` (le seul write côté client autorisé sur debts est `share_ratio` + share_request + settlement). Tests | ~250 |
+| **P13.4.2** | `handlers/accounts.py` (→ `accounts.public`), `handlers/budget.py` (→ `budget.public`, qui héberge **`Category` ET `Budget`** : pas de module `categories` séparé). Tests | ~300 |
+| **P13.4.3** | `handlers/settlements.py`, `handlers/share_requests.py` : appellent `debts.public` (`create_settlement`, `create_share_request`, `revoke_share_request` — **seuls writes debts autorisés côté client**). `debt_overrides`/`share_ratio` **descopés** : aucun write public n'existe côté debts, et `debt_generation_override` (reclassement F10) est déclenché par les events budget, pas par un write client. Tests | ~250 |
 | **P13.4.4** | `handlers/reconciliations.py` (préparation V1) : placeholder qui retourne `WriteResult.error='not_implemented_yet'`. Tests | ~50 |
 
 ---
 
-### S13.5 — Étape 6 : matérialisation synchrone des dettes
+### S13.5 — Étape 6 : matérialisation synchrone des dettes (verrou de régression)
+
+> **Reframe.** La matérialisation est **déjà automatique** via le mini-bus : `transactions.public.transition_to_confirmed`/`void`/`update_editable_fields` appellent `dispatch(session, event)`, et `backend/main.py` câble `subscribe_async(materialize_overflow, …)`. `debts.public.create_share_request` matérialise le `Debt` dans la même transaction. Il n'y a **pas** de fonction `materialize_overflow_for_tx(tx_id)`. Cette story est donc un **verrou de régression** (tests read-after-write via le chemin sync), pas du nouveau code de matérialisation.
 
 | Phase | Description | Diff |
 |---|---|---|
-| **P13.5.1** | Dans `handlers/transactions.py` après `transition_to_confirmed` (ou void) : appel synchrone à `debts.public.materialize_overflow_for_tx(tx_id)` (créé en E11) DANS LA MÊME TRANSACTION DB. Tests : write une tx → dette overflow visible immédiatement post-commit | ~150 |
-| **P13.5.2** | Mêmes appels synchrones pour les autres handlers qui peuvent toucher les dettes : `handlers/share_requests.py` (create → matérialise une dette), `handlers/debt_overrides.py` (change `share_ratio` → recalcul). Tests | ~120 |
+| **P13.5.1** | Tests : un batch `{create_draft, add_split dépassant budget, transition_to_confirmed}` via `process_batch` → la `Debt` overflow est lisible dans la **même** transaction (read-after-write) et persiste post-commit ; un `void` la retire. Vérifie que le handler s'appuie sur le `dispatch` des services (subscribers wirés en `main.py`), pas sur un appel manuel | ~150 |
+| **P13.5.2** | Tests : un `create_share_request` via `process_batch` → `Debt` matérialisé dans la même transaction ; `revoke_share_request` le supprime. Verrou : si un handler court-circuite le mini-bus, un test casse | ~120 |
 
 ---
 
@@ -76,8 +85,8 @@ Livrable agrégé : un client PowerSync peut s'authentifier, recevoir les rows v
 
 | Phase | Description | Diff |
 |---|---|---|
-| **P13.6.1** | Events post-commit : le dispatcher capture les events émis dans la transaction (via `shared/events.py`), les buffère, et les dispatche **après commit DB**. Cela évite qu'un event subscriber qui fait un BackgroundTask déclenche un push notification avant que le commit soit garanti. Tests | ~180 |
-| **P13.6.2** | Append `sync_request_log` (étape 9) dans la même transaction DB que le write. Ack (étape 10) construit le `WriteResult` avec server-generated IDs si nécessaire. Tests | ~120 |
+| **P13.6.1** | **Transaction par mutation (étapes 8-9).** Commit par mutation : échec de N → rollback de N seulement, 1..N-1 restent committées (ADR 0014). Append `sync_request_log` (étape 9) dans la même transaction que le write. **Reframe (vs roadmap initial) :** pas de buffering d'events — le mini-bus dispatche **in-transaction** (ADR 0014 : « events → commit »). Seul le delivery email/push sort post-commit en `BackgroundTasks`, mais `notifications` est un stub → hook no-op différé. Tests | ~150 |
+| **P13.6.2** | Ack (étape 10) construit le `WriteResult` avec server-generated IDs (ex. `id` d'un insert) si nécessaire. Tests | ~120 |
 | **P13.6.3** | Erreur typée : `WriteResult.error` mappe les exceptions du domain (`ImmutableFieldViolation`, `UncategorizedExpenseError`, etc.) en codes typés `validation_error`, `immutable_field_violation`, `auth_denied`, etc. Tests httpx couvrant toutes les catégories d'erreur | ~150 |
 
 ---
@@ -88,7 +97,7 @@ Livrable agrégé : un client PowerSync peut s'authentifier, recevoir les rows v
 |---|---|---|
 | **P13.7.1** | `powersync/sync_rules.yaml` : bucket `user_personal_{user_id}` (tables `accounts WHERE owner_id = $user`, transactions/splits associées, budgets perso, notifications, savings perso). Tests : un user voit ses rows, pas celles des autres | ~200 |
 | **P13.7.2** | Bucket `account_shared_{account_id}` : tables `accounts WHERE id IN (SELECT account_id FROM account_members WHERE user_id = $user)`, leurs transactions/splits, account_members, budgets communs. Tests | ~150 |
-| **P13.7.3** | Bucket `user_debt_{user_id}` : `debts WHERE from_user_id = $user OR to_user_id = $user`, settlements/settlement_lines associés, share_requests. **Column-level filter** : `source_transaction_id` retourné NULL quand origine `personal_share_request` ET user n'est pas owner du compte source. Tests cruciaux : un débiteur ne voit jamais le source_tx_id qu'il ne devrait pas voir | ~250 |
+| **P13.7.3** | Bucket `user_debt_{user_id}` : `debts WHERE from_user_id = $user OR to_user_id = $user`, settlements/settlement_lines associés, share_requests. **Column-level filter sur DEUX colonnes** : `source_transaction_id` **ET** `account_id` retournés NULL quand origine `personal_share_request` ET user n'est pas owner du compte source (ADR 0003 maj review #22 / S09.4 #145). Tests cruciaux : un débiteur ne voit jamais ces deux colonnes | ~250 |
 | **P13.7.4** | Bucket `household` : `categories`, `users_public`. Tests | ~100 |
 
 ---
@@ -134,7 +143,7 @@ Livrable agrégé : un client PowerSync peut s'authentifier, recevoir les rows v
 - [ ] Matérialisation synchrone des dettes après write transaction (visible post-commit)
 - [ ] Erreurs typées : `validation_error`, `immutable_field_violation`, `auth_denied`, `unknown_table`, etc.
 - [ ] Sync rules : un user ne reçoit jamais les comptes personnels d'un autre user (testé)
-- [ ] Column-level filter : `source_transaction_id` NULL pour dettes `personal_share_request` quand user ≠ owner compte source (testé)
+- [ ] Column-level filter : `source_transaction_id` **ET** `account_id` NULL pour dettes `personal_share_request` quand user ≠ owner compte source (testé) — les deux colonnes (ADR 0003 maj #145)
 - [ ] Property Hypothesis convergence + idempotence + isolation passe
 - [ ] Coverage `modules/sync/` ≥ 95% (cible exhaustive cf. stratégie de tests §4.5)
 
@@ -144,7 +153,7 @@ Livrable agrégé : un client PowerSync peut s'authentifier, recevoir les rows v
 
 - **C'est l'epic le plus risqué.** Si quelque chose dérape, c'est probablement sur la connexion logical replication Postgres ↔ PowerSync Service. Documenter le runbook ops en détail.
 - L'ordering du batch est préservé en parcourant `mutations` dans l'ordre array. Pas de parallélisation. Pour un batch de 20+ mutations, c'est OK (chacune en quelques ms).
-- Les events émis dans une transaction DB doivent être **buffered** puis dispatchés **après commit**, sinon les BackgroundTasks (push, email) peuvent partir avant le commit. À factoriser dans `shared/events.py` avec un mode "transactional dispatch" qui supporte rollback.
+- **Events in-transaction (corrigé).** Le mini-bus `shared/events.py` dispatche déjà les events **dans** la transaction de requête (`dispatch(session, event)`), conforme à l'ADR 0014 (« events → commit ») : un handler async qui lève **rollback** le write (atomicité de la matérialisation). Ne PAS réintroduire de buffering post-commit pour les events. Seul le **delivery** email/push doit sortir post-commit en `BackgroundTasks` — et `notifications` étant un stub, ce hook est un no-op différé.
 - Les sync rules YAML PowerSync sont déclaratives — pas du Python. Versionner avec attention, écrire un test qui parse le YAML et valide la syntaxe au démarrage.
-- **Column-level filter** : la sync rule PowerSync utilise une SELECT clause par bucket. On peut écrire `SELECT id, from_user_id, to_user_id, amount_cents, currency, CASE WHEN origin = 'personal_share_request' AND :user_id NOT IN (SELECT owner_id FROM accounts WHERE id = source_account_id_via_transaction) THEN NULL ELSE source_transaction_id END AS source_transaction_id FROM debts WHERE ...`. Vérifier la perf — cette CASE peut être lourde sur volume.
+- **Column-level filter (DEUX colonnes)** : la sync rule PowerSync utilise une SELECT clause par bucket masquant **`source_transaction_id` ET `account_id`** (ADR 0003 maj #145). On applique le même `CASE WHEN origin = 'personal_share_request' AND :user_id NOT IN (SELECT owner_id FROM accounts WHERE id = source_account_id_via_transaction) THEN NULL ELSE <col> END` aux deux colonnes. Vérifier la perf — ce CASE peut être lourd sur volume. `materialization_trace` reste server-only.
 - Le PowerSync Service côté serveur N'EXÉCUTE PAS `/sync/upload` lui-même : les writes des clients passent par notre backend FastAPI. Le PowerSync Service ne gère que la **download** sync (push des reads vers le client). Bien différencier les deux flows.

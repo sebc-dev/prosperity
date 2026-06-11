@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://unpkg.com/@powersync/service-sync-rules@latest/schema/sync_rules.json
+#
+# PLACEHOLDER for S13.1 — its only job is to prove the service can publish an
+# initial state over an active replication slot. The real buckets (the 4 ADR
+# 0003 families + column-level filters) are defined in S13.7.
+#
+# The bucket name is DELIBERATELY out-of-vocabulary (`_connectivity_check`, not
+# `household`/`account_shared`/`user_personal`/`user_debt`) so it preempts NO
+# S13.7 decision. It selects only `categories`, which IS in the `powersync`
+# publication (compose/initdb/10_powersync_publication.sql).
+bucket_definitions:
+  _connectivity_check:
+    data:
+      - SELECT * FROM categories

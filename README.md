@@ -34,6 +34,32 @@ The project ships no `Makefile`; commands are uv invocations. Aliases below mirr
 | `migrate-new` | `uv run alembic revision -m "<message>"` |
 | `pre-commit` | `uv run pre-commit run --all-files` |
 
+## PowerSync (dev)
+
+Local sync infra via [`compose.dev.yml`](compose.dev.yml) (Podman or Docker): Postgres 17 (`wal_level=logical`) + PowerSync Service Open Edition + a dedicated `powersync_storage` bucket-storage database. See [`runbooks/powersync_setup.md`](runbooks/powersync_setup.md) for the full setup, env-var reference, and logical-replication troubleshooting. Prod (Quadlet + Caddy + Cloudflare Tunnel) is E16.
+
+> **Two distinct flows — PowerSync does NOT handle writes.** The PowerSync Service handles the **download** flow (pushing reads to each client according to its buckets). Client **writes do NOT go through it**: they hit our FastAPI backend at `POST /sync/upload` (the write upload handler — ADR 0014, S13.8). The PowerSync Service never executes that handler.
+
+```sh
+cp .env.example .env            # dev-only defaults; passwords match compose/initdb
+podman compose -f compose.dev.yml up -d postgres   # source + storage DB + roles
+uv run alembic upgrade head     # create the app tables (NOT done by compose)
+psql "postgresql://prosperity:prosperity@localhost:5432/prosperity" \
+  -f compose/initdb/10_powersync_publication.sql   # populate the `powersync` publication
+podman compose -f compose.dev.yml up -d powersync  # connects, creates the replication slot
+bash scripts/smoke_powersync.sh # verify: slot active + "connected" + readiness 200
+```
+
+| Env var | Role | Secret in prod? |
+|---|---|---|
+| `PS_IMAGE_TAG` | Pinned PowerSync Service image tag (never `latest`) | no |
+| `PS_PORT` | PowerSync API server port | no |
+| `PS_SOURCE_URI` | Replication connection (least-privilege `powersync` role) | **yes** |
+| `PS_STORAGE_URI` | Bucket-storage connection (`ps_storage` owns `powersync_storage`) | **yes** |
+| `PS_JWKS_URI` | Client-JWT JWKS endpoint (dev placeholder; real one S13.8/E14) | no |
+| `PS_ADMIN_TOKEN` | Local admin API token (diagnostics) | **yes** |
+| `PS_LOG_LEVEL` | Log level (`info`; never `debug` in prod — logs payloads) | no |
+
 ## CI
 
 GitHub Actions, mirroring [Stratégie de tests §9](docs/Strat%C3%A9gie%20de%20tests.md#9-pipelinecicd):

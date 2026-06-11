@@ -26,6 +26,7 @@ dev = [
     "testcontainers[postgres]>=4.14.2",
     "psycopg2-binary>=2.9.10",
     "factory-boy>=3.3.3",
+    "pyyaml>=6.0",
     "coverage>=7.14.0",
     "pytest-cov>=7.1.0",
     "pyright>=1.1.405",

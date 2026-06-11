@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://unpkg.com/@powersync/service-schema@latest/json-schema/powersync-config.json
+#
+# PowerSync Service config (Open Edition, self-hosted). DEV ONLY values are
+# injected via `!env PS_*` (only env vars starting with PS_ are substitutable).
+# Mounted read-only at /config in compose.dev.yml. See runbooks/powersync_setup.md.
+
+telemetry:
+  # Opt OUT of anonymized usage metrics — this is a self-hosted finance/PII
+  # product, so we default to no external sharing even in dev.
+  disable_telemetry_sharing: true
+
+# Source database (logical replication). Only one connection is supported today.
+replication:
+  connections:
+    - type: postgresql
+      uri: !env PS_SOURCE_URI
+      # dev local only. Prod = verify-full (default) — see runbook §Prod (E16).
+      sslmode: disable
+
+# Bucket storage — a SEPARATE database from the source (PowerSync requirement).
+# In dev this is the `powersync_storage` DB on the same Postgres instance; the
+# `ps_storage` owner has the CREATE privilege PowerSync needs for its schema.
+storage:
+  type: postgresql
+  uri: !env PS_STORAGE_URI
+  sslmode: disable
+
+# API server port.
+port: !env PS_PORT
+
+# Sync rules — placeholder for S13.1 (real buckets land in S13.7). Path is
+# resolved relative to this config file's directory (/config).
+sync_config:
+  path: sync_rules.yaml
+
+# Client (end-user) JWT authentication. The real JWKS endpoint + `iss`
+# (prosperity-auth) are wired in S13.8/E14 (ADR 0016); S13.1 only pre-pins the
+# audience. No static HS256 key is embedded (fail-closed if JWKS is unset).
+client_auth:
+  jwks_uri: !env PS_JWKS_URI
+  # Permit the dev http:// JWKS placeholder above. Prod uses an https JWKS and
+  # can drop this.
+  allow_local_jwks: true
+  audience:
+    - prosperity-api  # = backend.config.Settings.jwt_audience (ADR 0016)
+
+# Local admin API routes (diagnostics). Dev-only token via env.
+api:
+  tokens:
+    - !env PS_ADMIN_TOKEN
+
+# Log level/format are NOT set here on purpose: the service reads them from the
+# PS_LOG_LEVEL / PS_LOG_FORMAT env vars (precedence env > file > default
+# info/text), which is how compose.dev.yml / .env wire them. Keep PS_LOG_LEVEL at
+# `info` in prod — `debug` logs replication payloads (see runbook §Sécurité).

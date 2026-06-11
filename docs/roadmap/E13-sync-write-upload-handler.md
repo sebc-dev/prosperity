@@ -44,7 +44,7 @@ Livrable agrégé : un client PowerSync peut s'authentifier, recevoir les rows v
 | Phase | Description | Diff |
 |---|---|---|
 | **P13.2.1** | `modules/sync/__init__.py`, `public.py`, `domain.py` (vide pour l'instant), `service/` (vide), `handlers/` (sous-dossier pour les sous-handlers par table) | ~60 |
-| **P13.2.2** | Table `sync_request_log` : `client_request_id` UUID PK, `user_id`, `table_name`, `processed_at`. Server-only. Migration `0019_sync_request_log.py` (down revision `0018` — dernière migration mergée). Retention 30j (purge nightly via APScheduler job mineur) | ~120 |
+| **P13.2.2** | Table `sync_request_log` : PK composite `(user_id, client_request_id)` (idempotence scopée user, ferme l'oracle cross-user — review Sécu F1), `table_name`, `processed_at`. Server-only. Migration `0019_sync_request_log.py` (down revision `0018` — dernière migration mergée). Retention 30j : **purge nightly idempotente déclenchée par le cron CI** (`nightly.yml`, entrypoint `backend.scripts.purge_sync_request_log`) — **PAS** d'APScheduler runtime ici (**D2** : APScheduler reporté à l'épic récurrences, ADR 0007 / F06) | ~120 |
 | **P13.2.3** | Schemas Pydantic pour le format batch PowerSync : `BatchUpload(mutations=list[Mutation])`, `Mutation(client_request_id, table, op='insert|update|delete', payload)`, `WriteResult(client_request_id, success, error?)`. Tests | ~150 |
 
 ---
@@ -53,20 +53,40 @@ Livrable agrégé : un client PowerSync peut s'authentifier, recevoir les rows v
 
 | Phase | Description | Diff |
 |---|---|---|
-| **P13.3.1** | `modules/sync/service/dispatcher.py` : `process_batch(user, batch) → list[WriteResult]`. Pour chaque mutation : récupère le sous-handler de la table, ou retourne `WriteResult.error='unknown_table'`. Tests unitaires avec sous-handler mocké | ~150 |
+| **P13.3.1** | `modules/sync/service/dispatcher.py` : `process_batch(session, user, batch, *, handlers=HANDLERS, permission_checks=PERMISSION_CHECKS, is_processed=already_processed) → list[WriteResult]` (delta vs `process_batch(user, batch)` : `session` requis car les étapes 1-2 touchent la DB — UoW de la route S13.8, ADR 0015, aucun `commit()` ici ; registres/lookup injectables = couture de test + point d'enregistrement S13.4). Pour chaque mutation : récupère le sous-handler de la table, ou retourne `WriteResult.error='unknown_table'`. Tests unitaires avec sous-handler mocké | ~150 |
 | **P13.3.2** | Step 1 (auth + RBAC) : vérifie que `user` peut muter cette table sur ce row (par exemple créer une `Transaction` sur un compte dont il est member). Centralisé dans `dispatcher.py` via lookup `(table, op) → permission_check_fn`. Tests | ~200 |
 | **P13.3.3** | Step 2 (idempotence) : si `client_request_id` ∈ `sync_request_log` → ack sans re-écrire. Tests : rejouer la même mutation N fois = 1 commit | ~150 |
 
 ---
 
-### S13.4 — Sous-handlers (étapes 3-7 par table)
+### S13.4 — Sous-handlers (étapes 3-5 par table)
+
+> **Découpage réconcilié (delta D-J, issue #189).** La maille initiale en 4 phases est
+> raffinée en **5** : `accounts` et `budget` sont scindés (règle ≤ 400 lignes/PR), et
+> `settlements`/`share_requests` regroupés. L'**étape 3 d'ADR 0014 (validation Pydantic
+> par-table)** est livrée DANS cette story (delta D-L) : `handlers/payloads.py` porte un
+> schéma `extra="forbid"` borné par `(table, op-family)`, validé en tête de chaque
+> handler avant toute coercition/appel service (ferme la robustesse aux payloads
+> malformés + le mass-assignment + le bornage anti-DoS des listes). Handlers flush-only
+> (D-I) : les exceptions domaine **propagent** ; les codes d'erreur typés, `server_values`
+> et l'isolation par-mutation restent S13.6.
 
 | Phase | Description | Diff |
 |---|---|---|
-| **P13.4.1** | `handlers/transactions.py` : appelle `transactions.public.create_draft`/`add_split`/`transition_*` selon l'op. Validation Pydantic → domain validation → DB write → events. Tests intégration avec `db_session` | ~250 |
-| **P13.4.2** | `handlers/accounts.py` (→ `accounts.public`), `handlers/budget.py` (→ `budget.public`, qui héberge **`Category` ET `Budget`** : pas de module `categories` séparé). Tests | ~300 |
-| **P13.4.3** | `handlers/settlements.py`, `handlers/share_requests.py` : appellent `debts.public` (`create_settlement`, `create_share_request`, `revoke_share_request` — **seuls writes debts autorisés côté client**). `debt_overrides`/`share_ratio` **descopés** : aucun write public n'existe côté debts, et `debt_generation_override` (reclassement F10) est déclenché par les events budget, pas par un write client. Tests | ~250 |
-| **P13.4.4** | `handlers/reconciliations.py` (préparation V1) : placeholder qui retourne `WriteResult.error='not_implemented_yet'`. Tests | ~50 |
+| **P13.4.1** | `handlers/transactions.py` (transactions **+** splits, D-C) + `handlers/payloads.py` + câblage `HANDLERS`/`PERMISSION_CHECKS`/`SUPPORTED_OPS` (verrou de parité décidable) dans `dispatcher.py`. Route `insert→create_draft`, `update` (`state` seul → transition, D-K ; sinon `update_editable_fields`), `delete→void`, `splits/insert→add_split`, `splits/delete→remove_split`. +3 arcs `transactions.public`. Tests intégration `db_session` + fixture mini-bus | ~250 |
+| **P13.4.2** | `handlers/accounts.py` → `accounts.public` (re-exports +6 : writes + `AccountType`/`MemberShare`). `insert` discriminé perso/commun ; **check d'appartenance D-M** à l'étape 1 (`create_shared` n'étant pas auth-aware). Tests | ~250 |
+| **P13.4.3** | `handlers/budget.py` (categories **et** budgets, delta D5) → `budget.public` (re-exports +9). Allowlists d'édition FERMÉES. +6 arcs `budget.public` (dont `budget_crud`/`categories`). Tests | ~300 |
+| **P13.4.4** | `handlers/settlements.py` + `handlers/share_requests.py` → `debts.public` (`create_settlement`, `create_share_request`, `revoke_share_request` — **seuls writes debts autorisés côté client**, delta D6). +6 arcs `debts.public` (dont `domain` pour `SettlementType`/`SettlementLineInput`). Tests | ~250 |
+| **P13.4.5** | `handlers/reconciliations.py` (placeholder V1) : check « membre actif » qui passe, puis `WriteResult.error='not_implemented_yet'`. 0 arc. Tests | ~50 |
+
+> **Delta import-linter (assumé).** Les TYPES de valeur consommés (`AccountType`/`MemberShare`,
+> `SettlementType`/`SettlementLineInput`, `PeriodKind`/`Scope`) sont des PARAMÈTRES des fonctions
+> publiques re-exportées → ils appartiennent à la surface `*.public`. Les re-exporter ajoute des
+> arcs second-hop `X.public → X.domain`/`X.service.*` qui, pour les surfaces consommées AILLEURS
+> (accounts/budget importés par debts/transactions/budget), retombent dans les contrats `2-debts`/
+> `2-transactions`/`2-budget` — ces blocs `ignore_imports` reçoivent donc aussi les nouveaux
+> second-hops (`accounts.public → accounts.domain` ; `budget.public → budget.service.{budget_crud,
+> categories}`). Mécanisme inchangé (la protection directe `peer.X → autre.internal` reste active).
 
 ---
 
@@ -125,13 +145,13 @@ Livrable agrégé : un client PowerSync peut s'authentifier, recevoir les rows v
 | S13.1 (3 phases) | PowerSync Service setup | 300 | 300 |
 | S13.2 (3 phases) | Scaffolding + sync_request_log | 330 | 630 |
 | S13.3 (3 phases) | Dispatcher + auth + idempotence | 500 | 1130 |
-| S13.4 (4 phases) | Sous-handlers | 850 | 1980 |
+| S13.4 (5 phases) | Sous-handlers | 850 | 1980 |
 | S13.5 (2 phases) | Matérialisation synchrone dettes | 270 | 2250 |
 | S13.6 (3 phases) | Events + commit + log + ack | 450 | 2700 |
 | S13.7 (4 phases) | Sync rules YAML | 700 | 3400 |
 | S13.8 (1 phase) | Endpoint upload | 150 | 3550 |
 | S13.9 (1 phase) | Hypothesis | 250 | 3800 |
-| **Total** | **9 stories / 24 phases** | **~3800 lignes** | |
+| **Total** | **9 stories / 25 phases** | **~3800 lignes** | |
 
 ---
 
@@ -139,7 +159,7 @@ Livrable agrégé : un client PowerSync peut s'authentifier, recevoir les rows v
 
 - [ ] PowerSync Service tourne en dev compose, connecté à Postgres
 - [ ] `POST /sync/upload` traite un batch de N mutations avec ordering préservé
-- [ ] `client_request_id` UUID v7 → idempotence stricte (replay = no-op)
+- [ ] `client_request_id` (UUID v7 recommandé côté client ; le serveur accepte **tout UUID bien formé** — **D7**) → idempotence stricte **scopée user** (replay = no-op)
 - [ ] Matérialisation synchrone des dettes après write transaction (visible post-commit)
 - [ ] Erreurs typées : `validation_error`, `immutable_field_violation`, `auth_denied`, `unknown_table`, etc.
 - [ ] Sync rules : un user ne reçoit jamais les comptes personnels d'un autre user (testé)

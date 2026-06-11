@@ -1,0 +1,215 @@
+"""Routage du dispatcher PowerSync (S13.3 / P13.3.1).
+
+`process_batch` route chaque mutation vers le sous-handler de sa `table` DANS
+L'ORDRE DU TABLEAU (ADR 0014). On teste le routage en ISOLATION : les sous-
+handlers sont MOCKÉS (`AsyncMock`) et injectés via le paramètre `handlers` —
+aucune dépendance aux handlers réels (S13.4). La session est un SENTINEL opaque
+threadé au handler : la voie routage ne touche PAS la DB (anti-pattern repo : on
+ne mocke jamais une session SQLA, on la passe au handler mocké).
+"""
+
+from __future__ import annotations
+
+import uuid
+from collections.abc import Iterator, Mapping
+from unittest.mock import AsyncMock, sentinel
+
+from hypothesis import given, settings
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.modules.auth.domain import UserRole
+from backend.modules.auth.models import User
+from backend.modules.sync.schemas import BatchUpload, Mutation, MutationOp, WriteResult
+from backend.modules.sync.service.dispatcher import (
+    HANDLERS,
+    Handler,
+    PermissionCheck,
+    process_batch,
+)
+from tests.strategies import batch_upload_strategy
+
+
+def _user() -> User:
+    """Un `User` non persisté — opaque pour le routage (seul le handler le lit)."""
+    return User(
+        email="u@example.com",
+        password_hash="x" * 60,
+        display_name="U",
+        role=UserRole.MEMBER,
+    )
+
+
+def _mutation(table: str = "transactions") -> Mutation:
+    return Mutation(client_request_id=uuid.uuid4(), table=table, op="insert", payload={})
+
+
+class _AllowAllHandlers(Mapping[str, Handler]):
+    """Registre de handlers répondant à TOUTE `table` (pas un `dict` figé).
+
+    `batch_upload_strategy` tire des `table` arbitraires (`st.text`) ; un `dict`
+    figé ferait tomber le routage en `unknown_table` et TAUTOLOGISERAIT la
+    property (le mapping 1:1 serait trivialement vrai sur des échecs). Chaque clé
+    renvoie un handler qui ÉCHO le `client_request_id` de la mutation, pour que la
+    property vérifie le routage réel, pas un ack constant.
+    """
+
+    def __getitem__(self, key: str) -> Handler:
+        async def _echo(session: AsyncSession, user: User, mutation: Mutation) -> WriteResult:
+            return WriteResult(client_request_id=mutation.client_request_id, success=True)
+
+        return _echo
+
+    def __iter__(self) -> Iterator[str]:  # pragma: no cover - jamais énuméré
+        return iter(())
+
+    def __len__(self) -> int:  # pragma: no cover - jamais mesuré
+        return 0
+
+
+class _AllowAllChecks(Mapping[tuple[str, MutationOp], PermissionCheck]):
+    """Registre de checks d'auth répondant à TOUTE clé `(table, op)` → `True`.
+
+    Les tests de ROUTAGE (P13.3.1) injectent ce Mapping pour isoler le routage de
+    l'étape 1 : sans lui, `process_batch` tomberait en `auth_denied` dès P13.3.2
+    (l'auth réelle est testée en intégration). Comme `_AllowAllHandlers`, il
+    répond à toute clé (pas un `dict` figé) — `batch_upload_strategy` tire des
+    `(table, op)` arbitraires.
+    """
+
+    def __getitem__(self, key: tuple[str, MutationOp]) -> PermissionCheck:
+        async def _allow(session: AsyncSession, user: User, mutation: Mutation) -> bool:
+            return True
+
+        return _allow
+
+    def __iter__(self) -> Iterator[tuple[str, MutationOp]]:  # pragma: no cover
+        return iter(())
+
+    def __len__(self) -> int:  # pragma: no cover
+        return 0
+
+
+_ALLOW_ALL_CHECKS = _AllowAllChecks()
+
+
+async def _never_processed(
+    session: AsyncSession, *, user_id: uuid.UUID, client_request_id: uuid.UUID
+) -> bool:
+    """Stub d'idempotence DB-free : rien n'est jamais « déjà traité » → la voie
+    route → handler n'est pas court-circuitée. Injecté dans les tests de ROUTAGE
+    pour rester DB-free sans mocker la session SQLA (l'idempotence réelle est
+    testée en intégration)."""
+    return False
+
+
+async def test_routes_known_table_to_handler() -> None:
+    """Mutation `transactions` → handler appelé UNE fois avec `(session, user,
+    mutation)` ; son `WriteResult` est dans la liste."""
+    user = _user()
+    m = _mutation("transactions")
+    ack = WriteResult(client_request_id=m.client_request_id, success=True)
+    handler = AsyncMock(return_value=ack)
+
+    results = await process_batch(
+        sentinel.session,
+        user,
+        BatchUpload(mutations=[m]),
+        handlers={"transactions": handler},
+        permission_checks=_ALLOW_ALL_CHECKS,
+        is_processed=_never_processed,
+    )
+
+    handler.assert_awaited_once_with(sentinel.session, user, m)
+    assert results == [ack]
+
+
+async def test_default_registry_rejects_unmapped_table() -> None:
+    """SANS injection, une table HORS du registre central `HANDLERS` (peuplé en S13.4
+    avec les vraies tables sync) tombe en `unknown_table`. Le routage court-circuite
+    AVANT l'auth/idempotence, donc l'appel reste DB-free malgré les défauts réels
+    `permission_checks`/`is_processed` (table inconnue ⇒ jamais de hit DB)."""
+    assert "definitely_not_a_sync_table" not in HANDLERS  # garde anti-false-green
+    m = _mutation("definitely_not_a_sync_table")
+
+    [result] = await process_batch(sentinel.session, _user(), BatchUpload(mutations=[m]))
+
+    assert result.success is False
+    assert result.error is not None and result.error.code == "unknown_table"
+    assert result.client_request_id == m.client_request_id
+
+
+async def test_unknown_table_yields_typed_error() -> None:
+    """Table absente du registre → `unknown_table`, handler jamais appelé, le
+    `client_request_id` de la mutation est préservé dans le `WriteResult`."""
+    m = _mutation("nope")
+    handler = AsyncMock()
+
+    [result] = await process_batch(
+        sentinel.session, _user(), BatchUpload(mutations=[m]), handlers={"transactions": handler}
+    )
+
+    assert result.success is False
+    assert result.error is not None
+    assert result.error.code == "unknown_table"
+    assert result.client_request_id == m.client_request_id
+    handler.assert_not_awaited()
+
+
+async def test_ordering_preserved_and_continue_on_error() -> None:
+    """Batch `[connue, inconnue, connue]` → 3 résultats DANS L'ORDRE ; la 2ᵉ
+    (inconnue) n'interrompt pas le traitement de la 3ᵉ (continue-on-error)."""
+    m1, m_bad, m3 = _mutation(), _mutation("nope"), _mutation()
+
+    def _echo(_s: object, _u: User, mutation: Mutation) -> WriteResult:
+        return WriteResult(client_request_id=mutation.client_request_id, success=True)
+
+    handler = AsyncMock(side_effect=_echo)
+
+    results = await process_batch(
+        sentinel.session,
+        _user(),
+        BatchUpload(mutations=[m1, m_bad, m3]),
+        handlers={"transactions": handler},
+        permission_checks=_ALLOW_ALL_CHECKS,
+        is_processed=_never_processed,
+    )
+
+    assert [r.client_request_id for r in results] == [
+        m1.client_request_id,
+        m_bad.client_request_id,
+        m3.client_request_id,
+    ]
+    assert results[0].success and results[2].success
+    assert results[1].error is not None and results[1].error.code == "unknown_table"
+    assert handler.await_count == 2  # m1 et m3 routées, m_bad court-circuitée
+
+
+async def test_empty_batch_returns_empty_list() -> None:
+    """`BatchUpload(mutations=[])` → `[]` (no-op valide, D9) ; handler jamais appelé."""
+    handler = AsyncMock()
+
+    results = await process_batch(
+        sentinel.session, _user(), BatchUpload(mutations=[]), handlers={"transactions": handler}
+    )
+
+    assert results == []
+    handler.assert_not_awaited()
+
+
+@settings(max_examples=50)
+@given(batch=batch_upload_strategy())
+async def test_property_one_result_per_mutation_in_order(batch: BatchUpload) -> None:
+    """Verrou d'ordering : avec un registre répondant à TOUTE `table`, le résultat
+    est en bijection ORDONNÉE avec `batch.mutations` (un `WriteResult` par mutation,
+    même `client_request_id`, même ordre). Complète — sans dupliquer — la property
+    de convergence/permutation S13.9."""
+    results = await process_batch(
+        sentinel.session,
+        _user(),
+        batch,
+        handlers=_AllowAllHandlers(),
+        permission_checks=_ALLOW_ALL_CHECKS,
+        is_processed=_never_processed,
+    )
+
+    assert [r.client_request_id for r in results] == [m.client_request_id for m in batch.mutations]

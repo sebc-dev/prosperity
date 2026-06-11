@@ -116,3 +116,35 @@ jobs:
         # The CI credentials are dev-only, but this keeps the pattern correct for
         # when E16 runs this with real secrets.
         run: docker compose -f compose.dev.yml logs --no-color | sed -E 's#(://[^:/@]+:)[^@]+@#\1***@#g'
+
+  # Nightly retention of the server-only idempotence journal (S13.2 / D2): the
+  # purge function is pure (commit owned by this entrypoint, ADR 0015) and the
+  # scheduler is THIS cron — APScheduler is deferred to the recurrences epic
+  # (ADR 0007 / F06). Same `powersync-smoke` template (Postgres + DATABASE_URL).
+  purge-sync-request-log:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - run: uv sync --frozen
+      # No `.env` step: this job starts only `postgres` (credentials hardcoded in
+      # compose.dev.yml) and overrides `DATABASE_URL` inline — the `${PS_*}` vars
+      # of the powersync service are never read here (cf. powersync-smoke, which
+      # does need .env because it starts powersync).
+      - name: Start Postgres
+        run: docker compose -f compose.dev.yml up -d --wait postgres
+      - name: Apply migrations (creates sync_request_log)
+        env:
+          DATABASE_URL: postgresql+asyncpg://prosperity:prosperity@localhost:5432/prosperity
+        run: uv run alembic upgrade head
+      - name: Purge expired rows (idempotent)
+        env:
+          DATABASE_URL: postgresql+asyncpg://prosperity:prosperity@localhost:5432/prosperity
+        # Mask `user:password@` in any URI the run might surface — the entrypoint
+        # logs only the deleted-row count, never the DSN, but the mask is the belt
+        # to that brace for when E16 runs this with real secrets.
+        run: uv run python -m backend.scripts.purge_sync_request_log 2>&1 | sed -E 's#(://[^:/@]+:)[^@]+@#\1***@#g'

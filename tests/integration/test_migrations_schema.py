@@ -223,6 +223,37 @@ def test_baseline_migration_round_trip(postgres_container: PostgresContainer) ->
     assert "table imported_transactions" not in post, (
         f"imported_transactions table leaked after downgrade:\n{post}"
     )
+    assert "table sync_request_log" not in post, (
+        f"sync_request_log table leaked after downgrade:\n{post}"
+    )
+
+
+def test_sync_request_log_isolated_downgrade(postgres_container: PostgresContainer) -> None:
+    """`0019.downgrade()` drops `sync_request_log` while KEEPING `users`.
+
+    The global round-trip only exercises `downgrade base`, where the table
+    disappears anyway when `0001` drops `users` — so a `0019.downgrade()` that
+    pointed at the wrong table would still pass there. Step down EXACTLY one
+    revision (head → `0018`) to assert `0019`'s downgrade removes its table
+    *specifically* and leaves `users` (its FK parent) intact, then return the
+    shared container to `base` (the round-trip's end state) for sibling tests.
+    """
+    async_dsn = postgres_container.get_connection_url()
+    sync_dsn = async_dsn.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+    cfg = _alembic_config(async_dsn)
+
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, "0018")  # undo ONLY 0019
+    engine = create_engine(sync_dsn)
+    try:
+        insp = inspect(engine)
+        tables = insp.get_table_names()
+        assert "users" in tables  # FK parent survives the partial downgrade
+        assert "sync_request_log" not in tables  # 0019 dropped just its table
+    finally:
+        engine.dispose()
+
+    command.downgrade(cfg, "base")  # leave the container clean (round-trip end state)
 
 
 def test_imported_transactions_isolated_downgrade(postgres_container: PostgresContainer) -> None:

@@ -27,18 +27,18 @@ from backend.modules.debts.service.dashboard import (
     CounterpartyNet,
     DebtWithContext,
 )
+from backend.shared.text import IMPOSED_TEXT_ALLOWED
 
-# Whitelist for `short_label`: ASCII printable (0x20–0x7E) + printable Latin-1
-# (0xA1–0xFF), minus SHY (U+00AD, a `Cf` format char). Pattern adapted from
-# `auth.schemas._DEVICE_LABEL_ALLOWED` (cited by the issue), EXTENDED to Latin-1
-# so French accents pass. Blocks *by construction*: control/format chars (Cc/Cf
-# — BiDi overrides U+202E…, zero-width joiners, NBSP & every non-space `Zs`) and
-# any non-Latin script (so Cyrillic/Greek homoglyphs cannot spoof a label). V1
-# limitation (assumed, mono-foyer FR): a label is ASCII + Latin-1 only; anything
-# else is a 422 (NOT the silent drop of `sanitize_device_label`).
-_LABEL_ALLOWED = frozenset(chr(c) for c in (*range(0x20, 0x7F), *range(0xA1, 0x100))) - {
-    chr(0xAD)  # SHY (soft hyphen, a Cf format char)
-}
+# Whitelist for `short_label`/`note`: ASCII printable (0x20–0x7E) + printable
+# Latin-1 (0xA1–0xFF), minus SHY (U+00AD, a `Cf` format char). SINGLE source of
+# truth in `backend.shared.text` (S13.4) — the sync write boundary
+# (`sync.handlers.payloads`) MUST share the exact same set, otherwise a sync
+# client could persist control/format chars this REST boundary rejects. Blocks
+# *by construction*: control/format chars (Cc/Cf — BiDi overrides U+202E…,
+# zero-width joiners, NBSP & every non-space `Zs`) and any non-Latin script (so
+# Cyrillic/Greek homoglyphs cannot spoof a label). V1 limitation (assumed,
+# mono-foyer FR): ASCII + Latin-1 only; anything else is a 422.
+_LABEL_ALLOWED = IMPOSED_TEXT_ALLOWED
 
 
 class ShareRequestCreate(BaseModel):

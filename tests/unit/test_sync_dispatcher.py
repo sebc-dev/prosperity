@@ -118,6 +118,21 @@ async def test_routes_known_table_to_handler() -> None:
     assert results == [ack]
 
 
+async def test_default_handlers_registry_is_empty() -> None:
+    """SANS injection, le registre central `HANDLERS` est VIDE en S13.3 : toute
+    mutation tombe en `unknown_table` (les vrais handlers sont S13.4). Verrouille
+    le comportement PAR DÉFAUT (registre vide ⇒ rien n'est routable) — le routage
+    court-circuite avant l'auth/idempotence, donc l'appel reste DB-free malgré les
+    défauts réels `permission_checks`/`is_processed`."""
+    m = _mutation("transactions")
+
+    [result] = await process_batch(sentinel.session, _user(), BatchUpload(mutations=[m]))
+
+    assert result.success is False
+    assert result.error is not None and result.error.code == "unknown_table"
+    assert result.client_request_id == m.client_request_id
+
+
 async def test_unknown_table_yields_typed_error() -> None:
     """Table absente du registre → `unknown_table`, handler jamais appelé, le
     `client_request_id` de la mutation est préservé dans le `WriteResult`."""

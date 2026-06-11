@@ -27,7 +27,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.modules.accounts.public import account_is_accessible
+from backend.modules.accounts.public import accessible_account_ids
 from backend.modules.auth.public import User
 from backend.modules.sync.schemas import (
     BatchUpload,
@@ -128,16 +128,20 @@ def _referenced_account_ids(payload: dict[str, object]) -> list[UUID] | None:
 async def _check_create_transaction(session: AsyncSession, user: User, mutation: Mutation) -> bool:
     """Étape 1 pour `insert` sur `transactions` : TOUS les comptes touchés
     (racine + chaque split — un transfert en couvre ≥ 2) doivent être accessibles
-    (owner ∪ live-member ; admin NON exempté — `account_is_accessible` est
+    (owner ∪ live-member ; admin NON exempté — `accessible_account_ids` est
     role-blind). Un seul compte inaccessible → deny (sinon on sous-autoriserait un
-    transfert glissant une jambe vers un compte d'autrui — finding Sécu Majeur)."""
+    transfert glissant une jambe vers un compte d'autrui — finding Sécu Majeur).
+
+    L'ensemble accessible est résolu en UN SEUL SELECT (`accessible_account_ids`),
+    puis chaque compte référencé est testé par appartenance ensembliste — vs N
+    requêtes `account_is_accessible` pour un transfert à N jambes (même prédicat
+    `_accessible`, donc équivalent : `aid ∈ accessible_account_ids(user)` ⟺
+    `account_is_accessible(aid, user)`)."""
     account_ids = _referenced_account_ids(mutation.payload)
-    if not account_ids:
-        return False  # fail-closed
-    for account_id in account_ids:
-        if not await account_is_accessible(session, account_id=account_id, user_id=user.id):
-            return False  # un seul inaccessible → deny
-    return True
+    if account_ids is None:
+        return False  # fail-closed (aucun compte exploitable / payload douteux)
+    accessible = await accessible_account_ids(session, user_id=user.id)
+    return all(account_id in accessible for account_id in account_ids)
 
 
 # Registre CENTRAL des checks d'auth (étape 1). S13.4 ÉTEND : update/delete (compte

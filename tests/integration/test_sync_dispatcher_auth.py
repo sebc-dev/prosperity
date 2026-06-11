@@ -14,6 +14,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from unittest.mock import AsyncMock
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
@@ -224,13 +225,30 @@ async def test_unmapped_table_op_denied(
 # ── Fail-closed sur payload douteux (best-effort AVANT validation Pydantic) ────
 
 
+_DOUBTFUL_PAYLOADS: list[dict[str, object]] = [
+    {},  # aucun compte
+    {"splits": []},  # liste vide → aucun compte
+    {"account_id": "not-a-uuid"},  # racine malformée
+    {"account_id": ["x"]},  # non-scalaire (list)
+    {"account_id": {"a": 1}},  # non-scalaire (dict)
+    {"account_id": True},  # non-scalaire (bool)
+    {"splits": "oops"},  # splits pas une liste
+    {"splits": [42]},  # split pas un dict
+    {"splits": [{}]},  # split sans account_id
+    {"splits": [{"account_id": [42]}]},  # split.account_id non-scalaire
+]
+
+
+@pytest.mark.parametrize("payload", _DOUBTFUL_PAYLOADS)
 async def test_fail_closed_payloads_deny_without_exception(
+    payload: dict[str, object],
     household_singleton: AsyncSession,
     bound_account_factories: FactoryBundle,
 ) -> None:
     """Aucun compte exploitable / référence malformée / structure non-scalaire →
     `auth_denied` SANS exception qui remonte (`_referenced_account_ids` fail-closed).
-    Couvre toutes les branches douteuses en un test paramétrique."""
+    Un cas paramétré PAR branche douteuse : chaque échec est rapporté isolément
+    (pas d'arrêt au premier, pas de masquage)."""
     user_factory, _account_factory, _ = await bound_account_factories()
 
     def _seed(_s: Session) -> User:
@@ -238,20 +256,7 @@ async def test_fail_closed_payloads_deny_without_exception(
 
     user = await household_singleton.run_sync(_seed)
 
-    doubtful_payloads: list[dict[str, object]] = [
-        {},  # aucun compte
-        {"splits": []},  # liste vide → aucun compte
-        {"account_id": "not-a-uuid"},  # racine malformée
-        {"account_id": ["x"]},  # non-scalaire (list)
-        {"account_id": {"a": 1}},  # non-scalaire (dict)
-        {"account_id": True},  # non-scalaire (bool)
-        {"splits": "oops"},  # splits pas une liste
-        {"splits": [42]},  # split pas un dict
-        {"splits": [{}]},  # split sans account_id
-        {"splits": [{"account_id": [42]}]},  # split.account_id non-scalaire
-    ]
+    result, handler = await _run(household_singleton, user, _mutation(payload))
 
-    for payload in doubtful_payloads:
-        result, handler = await _run(household_singleton, user, _mutation(payload))
-        assert result.error is not None and result.error.code == "auth_denied", payload
-        handler.assert_not_awaited()
+    assert result.error is not None and result.error.code == "auth_denied"
+    handler.assert_not_awaited()

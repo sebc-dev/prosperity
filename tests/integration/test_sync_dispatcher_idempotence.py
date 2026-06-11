@@ -111,6 +111,37 @@ async def test_fresh_crid_routes_to_handler(
     handler.assert_awaited_once()
 
 
+async def test_mixed_batch_replay_and_fresh(
+    household_singleton: AsyncSession,
+    bound_account_factories: FactoryBundle,
+) -> None:
+    """Batch MIXTE dans le même `process_batch` : une mutation déjà traitée (replay,
+    `crid` pré-semé) suivie d'une neuve. La replay → ack SANS handler ; la neuve →
+    handler appelé UNE seule fois (avec SA mutation) ; ordre du tableau préservé.
+    Verrouille l'idempotence PAR-mutation combinée au continue-on-error intra-batch
+    (les autres tests n'exercent qu'un batch mono-mutation)."""
+    owner, account_id = await _seed_owner(
+        household_singleton, bound_account_factories, email="r7@e.com"
+    )
+    seen_crid, fresh_crid = uuid.uuid4(), uuid.uuid4()
+    await _seed_log(household_singleton, user_id=owner.id, crid=seen_crid)
+
+    m_replay = _mutation(account_id, crid=seen_crid)
+    m_fresh = _mutation(account_id, crid=fresh_crid)
+    handler = AsyncMock(return_value=WriteResult(client_request_id=fresh_crid, success=True))
+
+    results = await process_batch(
+        household_singleton,
+        owner,
+        BatchUpload(mutations=[m_replay, m_fresh]),
+        handlers={"transactions": handler},
+    )
+
+    assert [r.client_request_id for r in results] == [seen_crid, fresh_crid]  # ordre préservé
+    assert all(r.success for r in results)
+    handler.assert_awaited_once_with(household_singleton, owner, m_fresh)  # seule la neuve
+
+
 async def test_n_replays_n_acks_zero_db_effect(
     household_singleton: AsyncSession,
     bound_account_factories: FactoryBundle,

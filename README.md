@@ -58,6 +58,7 @@ bash scripts/smoke_powersync.sh # verify: slot active + "connected" + readiness 
 | `PS_STORAGE_URI` | Bucket-storage connection (`ps_storage` owns `powersync_storage`) | **yes** |
 | `PS_JWKS_URI` | Client-JWT JWKS endpoint (dev placeholder; real one S13.8/E14) | no |
 | `PS_ADMIN_TOKEN` | Local admin API token (diagnostics) | **yes** |
+| `PS_LOG_LEVEL` | Log level (`info`; never `debug` in prod — logs payloads) | no |
 
 ## CI
 

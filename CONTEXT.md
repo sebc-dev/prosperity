@@ -95,7 +95,7 @@ Acte explicite par lequel le propriétaire d'un compte personnel matérialise un
 _Avoid_: split request, ask for refund, share
 
 **Visibilité d'une dette personal_share_request** :
-Le débiteur (U2) voit la dette (`from`, `to`, `amount`, `category`, `date`, `requested_by`, `libellé court`) mais **jamais** la `source_transaction_id` ni la transaction source. Cette dernière reste strictement visible par le propriétaire du compte personnel.
+Le débiteur (U2) voit la dette (`from`, `to`, `amount`, `category`, `date`, `requested_by`, `libellé court`) mais **jamais** la `source_transaction_id`, le `account_id` du compte source, ni la transaction source. Ces champs restent strictement visibles par le propriétaire du compte personnel (masquage sur **deux** colonnes, ADR 0003 maj #145).
 
 **`Settlement`** :
 Entité du module `debts` qui matérialise un règlement d'une ou plusieurs dettes. Trois `type` distincts : `internal_transfer` (virement entre deux comptes du foyer, lié à une `Transaction` normale via `linked_transaction_id`), `external_transfer` (virement vers une contrepartie hors-foyer, lié à la transaction sortante du compte source), `virtual` (compensation comptable sans mouvement d'argent, `linked_transaction_id` NULL). Une `Settlement` porte N `SettlementLine` qui distribuent l'apurement sur des dettes (multi-debt par règlement natif, supporte nettage croisé bidirectionnel). Sync sur les buckets `user_debt_{user_id}` (mêmes que `debts`).
@@ -266,7 +266,7 @@ Table server-only (PII : tokens FCM) qui mappe `(user_id, platform, token, regis
 SMTP générique configurable par env (`SMTP_HOST`, `SMTP_USER`, etc.), `aiosmtplib` côté serveur, templates Jinja2 dans `notifications/templates/`. Provider par défaut recommandé : Brevo free tier 300/j (volume V1 très bas), mais le code ne sait rien du provider — switch trivial.
 
 **Column-level filter (sync rule)** :
-Mécanisme où la requête de bucket sélectionne explicitement `NULL AS <column>` pour masquer un champ selon le destinataire. Utilisé pour `source_transaction_id` sur les dettes `personal_share_request` : le débiteur ne le reçoit jamais, seul le propriétaire du compte personnel source le voit.
+Mécanisme où la requête de bucket sélectionne explicitement `NULL AS <column>` pour masquer un champ selon le destinataire. Utilisé pour **`source_transaction_id` ET `account_id`** (deux colonnes, ADR 0003 maj #145) sur les dettes `personal_share_request` : le débiteur ne les reçoit jamais, seul le propriétaire du compte personnel source les voit.
 
 ## Flagged ambiguities
 

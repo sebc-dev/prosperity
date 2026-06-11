@@ -77,6 +77,7 @@ services:
       PS_STORAGE_URI: ${PS_STORAGE_URI}   # ps_storage@postgres/powersync_storage
       PS_JWKS_URI: ${PS_JWKS_URI}         # dev placeholder — real JWKS = S13.8/E14
       PS_ADMIN_TOKEN: ${PS_ADMIN_TOKEN}   # local admin API token (dev only)
+      PS_LOG_LEVEL: ${PS_LOG_LEVEL}       # info; never debug in prod (logs payloads)
     volumes:
       # config.yaml + sync_rules.yaml, read-only and versioned (diff-reviewable).
       - ./powersync:/config:ro

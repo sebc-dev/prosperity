@@ -112,4 +112,7 @@ jobs:
         run: bash scripts/smoke_powersync.sh
       - name: Dump logs on completion
         if: always()
-        run: docker compose -f compose.dev.yml logs
+        # Mask `user:password@` in any connection URI the service logs at boot.
+        # The CI credentials are dev-only, but this keeps the pattern correct for
+        # when E16 runs this with real secrets.
+        run: docker compose -f compose.dev.yml logs --no-color | sed -E 's#(://[^:/@]+:)[^@]+@#\1***@#g'

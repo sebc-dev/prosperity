@@ -24,27 +24,15 @@ from sqlalchemy import Engine, create_engine, text
 from testcontainers.postgres import PostgresContainer
 
 from alembic import command
+from tests._powersync_tables import PUBLISHED_TABLES
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
 INITDB = REPO_ROOT / "compose" / "initdb"
 
-# Client-sync tables published in S13.1 (ADR 0003 — no sensitive columns).
-# MUST stay in sync with PUBLISHED_TABLES in tests/unit/test_powersync_manifest.py.
-# This tier is the source of truth: it asserts the SQL produces EXACTLY this set,
-# so a server-only table added by mistake (or a debt-projection table advanced
-# prematurely) turns the build red.
-PUBLISHED_TABLES = frozenset(
-    {
-        "accounts",
-        "account_members",
-        "transactions",
-        "splits",
-        "categories",
-        "budgets",
-        "budget_contributors",
-    }
-)
+# Driver-safe initdb scripts applied here (00 roles, 10 publication). 05
+# (CREATE DATABASE via \gexec) is psql-only and irrelevant to publication checks.
+INITDB_FILES = ("00_powersync_roles.sql", "10_powersync_publication.sql")
 
 
 def _docker_available() -> bool:
@@ -59,6 +47,34 @@ def _alembic_config(async_dsn: str) -> Config:
     cfg = Config(str(ALEMBIC_INI))
     cfg.set_main_option("sqlalchemy.url", async_dsn)
     return cfg
+
+
+def _apply_initdb(engine: Engine) -> None:
+    """Apply the driver-safe initdb scripts via a raw psycopg2 cursor.
+
+    NO params: the SQL contains `%I` (server-side format()) which psycopg2 would
+    otherwise mistake for a client-side parameter placeholder. Safe to call more
+    than once — the scripts are idempotent (see test_initdb_scripts_are_idempotent).
+    """
+    raw = engine.raw_connection()
+    try:
+        cursor = raw.cursor()
+        for name in INITDB_FILES:
+            cursor.execute((INITDB / name).read_text())
+        raw.commit()
+    finally:
+        raw.close()
+
+
+def _published_tables(engine: Engine) -> set[str]:
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text(
+                "SELECT tablename FROM pg_publication_tables "
+                "WHERE pubname = 'powersync' AND schemaname = 'public'"
+            )
+        )
+        return {r[0] for r in rows}
 
 
 @pytest.fixture(scope="module")
@@ -79,19 +95,8 @@ def published_engine() -> Iterator[Engine]:
         command.upgrade(_alembic_config(async_dsn), "head")
 
         # 2. Apply the driver-safe initdb scripts (00 roles, 10 publication).
-        #    05 (CREATE DATABASE via \gexec) is psql-only and irrelevant here.
-        #    Use a raw psycopg2 cursor with NO params: the SQL contains `%I`
-        #    (server-side format()) which psycopg2 would otherwise mistake for a
-        #    client-side parameter placeholder.
         engine = create_engine(sync_dsn)
-        raw = engine.raw_connection()
-        try:
-            cursor = raw.cursor()
-            for name in ("00_powersync_roles.sql", "10_powersync_publication.sql"):
-                cursor.execute((INITDB / name).read_text())
-            raw.commit()
-        finally:
-            raw.close()
+        _apply_initdb(engine)
 
         try:
             yield engine
@@ -100,19 +105,22 @@ def published_engine() -> Iterator[Engine]:
 
 
 def test_publication_matches_client_allowlist(published_engine: Engine) -> None:
-    with published_engine.connect() as conn:
-        rows = conn.execute(
-            text(
-                "SELECT tablename FROM pg_publication_tables "
-                "WHERE pubname = 'powersync' AND schemaname = 'public'"
-            )
-        )
-        published = {r[0] for r in rows}
+    published = _published_tables(published_engine)
     # Exact match (allowlist): too many = leak, too few = broken sync.
     assert published == set(PUBLISHED_TABLES), (
         f"publication drift — unexpected: {published - PUBLISHED_TABLES}, "
         f"missing: {PUBLISHED_TABLES - published}"
     )
+
+
+def test_initdb_scripts_are_idempotent(published_engine: Engine) -> None:
+    # The scripts claim idempotence + non-destructiveness, and the real dev/prod
+    # flow re-runs 10 after migrations (runbook + nightly smoke). Re-apply 00+10
+    # twice more (3 applications total) and assert no error and an unchanged
+    # publication — locks in the invariant the runbook relies on.
+    _apply_initdb(published_engine)
+    _apply_initdb(published_engine)
+    assert _published_tables(published_engine) == set(PUBLISHED_TABLES)
 
 
 def test_replication_role_has_least_privilege(published_engine: Engine) -> None:

@@ -54,6 +54,19 @@ fail() {
   exit 1
 }
 
+poll_probe() {
+  # Poll an HTTP probe for up to ~60s — both liveness and readiness can lag a
+  # cold boot, so neither is a one-shot.
+  local path="$1"
+  for _ in $(seq 1 30); do
+    if curl -fsS "http://localhost:${PS_PORT}${path}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
 echo "==> 1/4 wal_level is logical"
 wal_level="$(psql_source 'SHOW wal_level;' | tr -d '[:space:]')"
 [[ "${wal_level}" == "logical" ]] || fail "wal_level=${wal_level} (expected logical)"
@@ -75,20 +88,11 @@ done
 [[ -n "${slot_ok}" ]] || fail "no active pgoutput replication slot (PowerSync not replicating)"
 
 echo "==> 3/4 PowerSync liveness probe"
-curl -fsS "http://localhost:${PS_PORT}/probes/liveness" >/dev/null \
-  || fail "liveness probe not 2xx on :${PS_PORT}"
+poll_probe /probes/liveness || fail "liveness probe not 2xx on :${PS_PORT}"
 echo "    ok: /probes/liveness"
 
 echo "==> 4/4 PowerSync readiness probe (connected to source + storage)"
-ready_ok=""
-for _ in $(seq 1 30); do
-  if curl -fsS "http://localhost:${PS_PORT}/probes/readiness" >/dev/null 2>&1; then
-    ready_ok="yes"
-    break
-  fi
-  sleep 2
-done
-[[ -n "${ready_ok}" ]] || fail "readiness probe not 2xx on :${PS_PORT} (not connected)"
+poll_probe /probes/readiness || fail "readiness probe not 2xx on :${PS_PORT} (not connected)"
 echo "    ok: /probes/readiness"
 
 echo "PASS: PowerSync connected to Postgres, replication slot active, state published."

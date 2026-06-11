@@ -5,9 +5,9 @@
 # Mounted read-only at /config in compose.dev.yml. See runbooks/powersync_setup.md.
 
 telemetry:
-  # Opt out of anonymized usage metrics. (Dev: false is fine; the runbook notes
-  # prod considerations.)
-  disable_telemetry_sharing: false
+  # Opt OUT of anonymized usage metrics — this is a self-hosted finance/PII
+  # product, so we default to no external sharing even in dev.
+  disable_telemetry_sharing: true
 
 # Source database (logical replication). Only one connection is supported today.
 replication:
@@ -48,3 +48,8 @@ client_auth:
 api:
   tokens:
     - !env PS_ADMIN_TOKEN
+
+# Log level/format are NOT set here on purpose: the service reads them from the
+# PS_LOG_LEVEL / PS_LOG_FORMAT env vars (precedence env > file > default
+# info/text), which is how compose.dev.yml / .env wire them. Keep PS_LOG_LEVEL at
+# `info` in prod — `debug` logs replication payloads (see runbook §Sécurité).

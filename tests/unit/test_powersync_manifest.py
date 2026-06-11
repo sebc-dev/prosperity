@@ -2,9 +2,9 @@
 
 These assert the *shape* of the static config — compose, .env.example,
 config.yaml, sync_rules.yaml, and the publication SQL. The real security
-boundary (the exact set of published tables) is enforced against a live
-Postgres in tests/integration/sync/test_powersync_publication.py; the
-constant below is the single source of truth both tiers reference.
+boundary (the exact set of published tables, verified against a live Postgres)
+lives in tests/integration/sync/test_powersync_publication.py; the allowlist
+itself is defined once in tests/_powersync_tables.py and both tiers import it.
 """
 
 from __future__ import annotations
@@ -23,6 +23,11 @@ import backend.modules.budget.models  # noqa: F401  # pyright: ignore[reportUnus
 import backend.modules.debts.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
 import backend.modules.transactions.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
 from backend.shared.models import Base
+from tests._powersync_tables import (
+    PUBLICATION_SQL,
+    PUBLISHED_TABLES,
+    publication_allowlist_from_sql,
+)
 from tests.unit import _yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -30,23 +35,7 @@ COMPOSE = REPO_ROOT / "compose.dev.yml"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
 CONFIG_YAML = REPO_ROOT / "powersync" / "config.yaml"
 SYNC_RULES = REPO_ROOT / "powersync" / "sync_rules.yaml"
-PUBLICATION_SQL = REPO_ROOT / "compose" / "initdb" / "10_powersync_publication.sql"
 README = REPO_ROOT / "README.md"
-
-# Client-sync tables published in S13.1 (ADR 0003 — no sensitive columns).
-# The integration test asserts the publication SQL produces EXACTLY this set;
-# keep the two in sync.
-PUBLISHED_TABLES = frozenset(
-    {
-        "accounts",
-        "account_members",
-        "transactions",
-        "splits",
-        "categories",
-        "budgets",
-        "budget_contributors",
-    }
-)
 
 
 def _parse_dotenv(text: str) -> dict[str, str]:
@@ -109,6 +98,14 @@ def test_publication_forbids_for_all_tables() -> None:
     assert "FOR ALL TABLES" not in sql
 
 
+def test_publication_sql_declares_exactly_the_allowlist() -> None:
+    # Single-source guard: the `allow text[]` array in the publication SQL must
+    # equal PUBLISHED_TABLES, so the SQL and the Python constant cannot drift
+    # (e.g. when S13.7 adds the debt-projection tables, both move together or the
+    # build goes red here).
+    assert publication_allowlist_from_sql() == PUBLISHED_TABLES
+
+
 def test_config_yaml_parses_and_env_refs_are_declared() -> None:
     data = _yaml.load(CONFIG_YAML.read_text())
     assert "connections" in data["replication"]
@@ -135,7 +132,11 @@ def test_sync_rules_reference_only_published_tables() -> None:
     referenced: set[str] = set()
     for bucket in data["bucket_definitions"].values():
         for query in bucket.get("data", []):
-            referenced |= set(re.findall(r"\bFROM\s+([a-z_][a-z0-9_]*)", query, re.IGNORECASE))
+            # Match both FROM and JOIN so the guard still covers the multi-table
+            # buckets that arrive in S13.7, not just the single-table placeholder.
+            referenced |= set(
+                re.findall(r"\b(?:FROM|JOIN)\s+([a-z_][a-z0-9_]*)", query, re.IGNORECASE)
+            )
     assert referenced, "placeholder sync rules should select from at least one table"
     unpublished = referenced - PUBLISHED_TABLES
     assert not unpublished, f"unpublished tables in sync rules: {unpublished}"

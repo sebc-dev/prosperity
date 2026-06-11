@@ -73,6 +73,7 @@ bash scripts/smoke_powersync.sh
 | `PS_STORAGE_URI` | Connexion bucket storage (rôle `ps_storage`, owner de `powersync_storage`) | **oui** |
 | `PS_JWKS_URI` | Endpoint JWKS pour valider les JWT clients (placeholder dev ; réel en S13.8/E14) | non |
 | `PS_ADMIN_TOKEN` | Token des routes admin API locales (diagnostic) | **oui** |
+| `PS_LOG_LEVEL` | Niveau de log (`info` par défaut ; jamais `debug` en prod) | non |
 
 Seules les variables préfixées `PS_` sont substituables via le tag YAML `!env` dans `powersync/config.yaml`.
 
@@ -82,7 +83,7 @@ Seules les variables préfixées `PS_` sont substituables via le tag YAML `!env`
 - **Credentials prod = secrets manager**, montés en **fichier** (pas en `environment:`, visible via `podman inspect` / logs au boot).
 - **`PUBLICATION` = frontière de sécurité (ADR 0003).** Jamais `FOR ALL TABLES`. Les tables server-only (`users`, `refresh_tokens`, `invitations`, `admin_audit_logs`, staging banking) ne sont **jamais** publiées. Les tables debt-projection (`debts`, `share_requests`, `settlements`, `settlement_lines`) sont **différées à S13.7** (colonnes à masquer conditionnellement + `materialization_trace` jamais synchronisable). Le test d'intégration `tests/integration/sync/test_powersync_publication.py` verrouille l'allowlist exacte.
 - **`sslmode`** : `disable` en dev. **Prod = `verify-full`** (défaut PowerSync) avec CA/certs.
-- **`logging.level`** : garder `info` en prod (le niveau `debug` logge les payloads de réplication).
+- **Niveau de log** : réglé via la variable d'env **`PS_LOG_LEVEL`** (défaut `info` ; précédence env > fichier config). Garder `info` en prod — `debug` logge les payloads de réplication.
 - **`client_auth`** : en dev, `audience: [prosperity-api]` (= `jwt_audience`, ADR 0016) + `allow_local_jwks: true` pour le JWKS placeholder http. **Dettes assumées** : le JWKS réel et l'`iss` (`prosperity-auth`) sont câblés en **S13.8/E14**.
 
 ## Prod (E16 — pointeur, non implémenté ici)

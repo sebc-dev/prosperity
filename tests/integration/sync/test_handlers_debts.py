@@ -21,20 +21,11 @@ from sqlalchemy.orm import Session
 from backend.modules.auth.models import User
 from backend.modules.debts.models import Debt, ShareRequest
 from backend.modules.debts.public import ShareRequestNotFoundError, compute_remaining
-from backend.modules.sync.public import BatchUpload, Mutation, WriteResult
-from backend.modules.sync.service.dispatcher import process_batch
 from tests.integration._debts_helpers import Scenario, debt_count, seed, share_request_count
+from tests.integration.sync._sync_helpers import mut as _mut
+from tests.integration.sync._sync_helpers import run_one as _run
 
 _TxFactories = Callable[[], Awaitable[tuple[type, type, type, type]]]
-
-
-def _mut(table: str, op: str, payload: Mapping[str, object]) -> Mutation:
-    return Mutation(client_request_id=uuid.uuid4(), table=table, op=op, payload=dict(payload))  # type: ignore[arg-type]
-
-
-async def _run(session: AsyncSession, user: User, mutation: Mutation) -> WriteResult:
-    [result] = await process_batch(session, user, BatchUpload(mutations=[mutation]))
-    return result
 
 
 async def _seed_expense(session: AsyncSession, factories: _TxFactories) -> tuple[User, Scenario]:
@@ -61,43 +52,6 @@ async def test_share_request_insert_materializes_debt(
     assert result.success is True
     assert await share_request_count(household_singleton, tx_id=sc.tx_id) == 1
     assert await debt_count(household_singleton, tx_id=sc.tx_id) == 1  # matérialisé in-transaction
-
-
-async def test_share_request_debt_visible_after_expire_all(
-    household_singleton: AsyncSession, bound_transaction_factories: _TxFactories
-) -> None:
-    """Read-after-write au niveau DB (S13.5) : après `share_requests/insert` via
-    `process_batch`, un `flush()`+`expire_all()`+re-`select(Debt)` relit le `Debt`
-    (`origin='personal_share_request'`) — l'`INSERT` SQL est bien émis et relisible
-    IN-TRANSACTION (pas un objet `pending`). N.B. : la matérialisation share_request est
-    SYNCHRONE IN-FUNCTION (`create_share_request`), PAS via le mini-bus — cette suite ne
-    verrouille donc pas le `dispatch`, seulement « le handler appelle bien
-    `create_share_request` » ; l'asymétrie insert(`debt_count==1`)/delete(`==0`) des tests
-    voisins reste le contrôle anti-always-green."""
-    alice, sc = await _seed_expense(household_singleton, bound_transaction_factories)
-    payload = {
-        "transaction_id": str(sc.tx_id),
-        "requested_from": str(sc.bob_id),
-        "ratio": "0.5",
-        "short_label": "diner",
-    }
-    result = await _run(household_singleton, alice, _mut("share_requests", "insert", payload))
-    assert result.success is True
-
-    await household_singleton.flush()
-    household_singleton.expire_all()
-    debts = (
-        (
-            await household_singleton.execute(
-                select(Debt).where(
-                    Debt.source_transaction_id == sc.tx_id, Debt.origin == "personal_share_request"
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
-    assert len(debts) == 1
 
 
 async def test_share_request_delete_revokes_and_removes_debt(

@@ -53,7 +53,7 @@ Livrable agrégé : un client PowerSync peut s'authentifier, recevoir les rows v
 
 | Phase | Description | Diff |
 |---|---|---|
-| **P13.3.1** | `modules/sync/service/dispatcher.py` : `process_batch(user, batch) → list[WriteResult]`. Pour chaque mutation : récupère le sous-handler de la table, ou retourne `WriteResult.error='unknown_table'`. Tests unitaires avec sous-handler mocké | ~150 |
+| **P13.3.1** | `modules/sync/service/dispatcher.py` : `process_batch(session, user, batch, *, handlers=HANDLERS, permission_checks=PERMISSION_CHECKS, is_processed=already_processed) → list[WriteResult]` (delta vs `process_batch(user, batch)` : `session` requis car les étapes 1-2 touchent la DB — UoW de la route S13.8, ADR 0015, aucun `commit()` ici ; registres/lookup injectables = couture de test + point d'enregistrement S13.4). Pour chaque mutation : récupère le sous-handler de la table, ou retourne `WriteResult.error='unknown_table'`. Tests unitaires avec sous-handler mocké | ~150 |
 | **P13.3.2** | Step 1 (auth + RBAC) : vérifie que `user` peut muter cette table sur ce row (par exemple créer une `Transaction` sur un compte dont il est member). Centralisé dans `dispatcher.py` via lookup `(table, op) → permission_check_fn`. Tests | ~200 |
 | **P13.3.3** | Step 2 (idempotence) : si `client_request_id` ∈ `sync_request_log` → ack sans re-écrire. Tests : rejouer la même mutation N fois = 1 commit | ~150 |
 

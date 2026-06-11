@@ -23,10 +23,12 @@ def test_sync_internal_packages_importable() -> None:
 
 
 def test_sync_public_reexports_batch_schemas() -> None:
-    """`sync.public.__all__` is the sorted five-name set and each name IS the
-    schema object (no shadow copies) — P13.2.3."""
+    """`sync.public.__all__` re-exports the five batch schemas plus `process_batch`
+    (S13.3) and each name IS the underlying object (no shadow copies) — P13.2.3 /
+    P13.3.1."""
     public = importlib.import_module("backend.modules.sync.public")
     schemas = importlib.import_module("backend.modules.sync.schemas")
+    dispatcher = importlib.import_module("backend.modules.sync.service.dispatcher")
 
     assert public.__all__ == [
         "BatchUpload",
@@ -34,9 +36,11 @@ def test_sync_public_reexports_batch_schemas() -> None:
         "MutationOp",
         "WriteError",
         "WriteResult",
+        "process_batch",
     ]
     assert public.BatchUpload is schemas.BatchUpload
     assert public.Mutation is schemas.Mutation
     assert public.MutationOp is schemas.MutationOp
     assert public.WriteError is schemas.WriteError
     assert public.WriteResult is schemas.WriteResult
+    assert public.process_batch is dispatcher.process_batch

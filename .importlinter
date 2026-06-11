@@ -327,8 +327,11 @@ forbidden_modules =
 # `owned_personal_account_ids` / `shared_account_ids_with_members_subset` from
 # `accounts.public` (D7 contributor filter — `accounts` sits *below* budget in
 # contract 1, so this is the legitimate arc; `transactions`, a peer, is read via
-# SQLAlchemy Core instead, never imported). All thirteen arcs exist in the
-# `.public` modules independently of budget, so each is "matched".
+# SQLAlchemy Core instead, never imported). The `accounts.domain` arc was added in
+# S13.4 (`accounts.public` re-exports `AccountType`/`MemberShare` for the sync
+# handlers), so `budget.service.X -> accounts.public -> accounts.domain` is a matched
+# second hop here too. All arcs exist in the `.public` modules independently of
+# budget, so each is "matched".
 ignore_imports =
     backend.modules.auth.public -> backend.modules.auth.domain
     backend.modules.auth.public -> backend.modules.auth.models
@@ -339,6 +342,7 @@ ignore_imports =
     backend.modules.auth.public -> backend.modules.auth.service.roles
     backend.modules.auth.public -> backend.modules.auth.service.users
     backend.modules.auth.public -> backend.modules.auth.transports.dependencies
+    backend.modules.accounts.public -> backend.modules.accounts.domain
     backend.modules.accounts.public -> backend.modules.accounts.models
     backend.modules.accounts.public -> backend.modules.accounts.service.accounts
     backend.modules.accounts.public -> backend.modules.accounts.service.household
@@ -438,11 +442,14 @@ forbidden_modules =
 # `transactions.transports.http` imports `User`/`get_current_user` from
 # `auth.public` and `account_is_accessible`/`accessible_account_ids` from
 # `accounts.public`. The nine `auth.public → auth.X` arcs are the same block as
-# `2-accounts`/`2-budget`; the four `accounts.public → accounts.X` arcs cover the
+# `2-accounts`/`2-budget`; the five `accounts.public → accounts.X` arcs cover the
 # re-exports `accounts.public` makes (events import only `shared.events`, so
-# `accounts.events` is not forbidden and stays out of this block). All thirteen
-# arcs exist in the `.public` modules independently of transactions → each is
-# "matched" (`unmatched_ignore_imports_alerting = error`).
+# `accounts.events` is not forbidden and stays out of this block). The `accounts.domain`
+# arc was added in S13.4: `accounts.public` re-exports `AccountType`/`MemberShare` (the
+# parameter types of `create_personal`/`create_shared`, consumed by the sync handlers),
+# so `transactions.transports.http -> accounts.public -> accounts.domain` becomes a
+# matched second hop here too. All arcs exist in the `.public` modules independently of
+# transactions → each is "matched" (`unmatched_ignore_imports_alerting = error`).
 ignore_imports =
     backend.modules.auth.public -> backend.modules.auth.domain
     backend.modules.auth.public -> backend.modules.auth.models
@@ -453,6 +460,7 @@ ignore_imports =
     backend.modules.auth.public -> backend.modules.auth.service.roles
     backend.modules.auth.public -> backend.modules.auth.service.users
     backend.modules.auth.public -> backend.modules.auth.transports.dependencies
+    backend.modules.accounts.public -> backend.modules.accounts.domain
     backend.modules.accounts.public -> backend.modules.accounts.models
     backend.modules.accounts.public -> backend.modules.accounts.service.accounts
     backend.modules.accounts.public -> backend.modules.accounts.service.household
@@ -555,9 +563,11 @@ forbidden_modules =
 # the *second hop* (X.public → X.internal) makes those invisible without
 # weakening the direct-import protection (a hypothetical `debts.service.Y →
 # auth.models` would still be flagged). The nine `auth.public → auth.X` arcs are
-# the same block as `2-accounts`/`2-budget`/`2-transactions`; the four
+# the same block as `2-accounts`/`2-budget`/`2-transactions`; the five
 # `accounts.public → accounts.X` arcs cover its re-exports (`accounts.events`
-# imports only `shared.events`, so it is not forbidden and stays out). The three
+# imports only `shared.events`, so it is not forbidden and stays out; the
+# `accounts.domain` arc was added in S13.4 when `accounts.public` began re-exporting
+# `AccountType`/`MemberShare` for the sync handlers). The three
 # `transactions.public → transactions.X` arcs cover `domain` (`TransactionState`
 # AND `is_transfer`, the latter consumed by `debts.service.settlement` since S10.4),
 # `service.queries` (`get_transaction`), AND `service.lifecycle`: the service
@@ -570,12 +580,14 @@ forbidden_modules =
 # materializer (`debts.service.overflow_materializer`) adds the FIRST `debts →
 # budget.public` arc (`resolve_overflow_context`/`OverflowBudgetContext` live in
 # `budget.service.consumption`): `debts` is *above* `budget` in contract 1, so the
-# arc is directionally legitimate. The four `budget.public → budget.X` second-hops
+# arc is directionally legitimate. The six `budget.public → budget.X` second-hops
 # below cover it — `budget.public` re-exports from `domain`, `service.budgets`,
-# `service.consumption` and `service.threshold_detector` (`budget.events` imports
-# only `shared.events`, so it is not forbidden and stays out). All twenty arcs
-# exist in the `.public` modules independently of debts → each is "matched"
-# (`unmatched_ignore_imports_alerting = error`).
+# `service.consumption` and `service.threshold_detector`, plus `service.budget_crud`
+# and `service.categories` since S13.4 (the category + budget write surface the sync
+# handlers drive — `debts` itself only uses the overflow reads, but the second hop is
+# now visible through `budget.public`). `budget.events` imports only `shared.events`,
+# so it is not forbidden and stays out. All arcs exist in the `.public` modules
+# independently of debts → each is "matched" (`unmatched_ignore_imports_alerting = error`).
 ignore_imports =
     backend.modules.auth.public -> backend.modules.auth.domain
     backend.modules.auth.public -> backend.modules.auth.models
@@ -586,6 +598,7 @@ ignore_imports =
     backend.modules.auth.public -> backend.modules.auth.service.roles
     backend.modules.auth.public -> backend.modules.auth.service.users
     backend.modules.auth.public -> backend.modules.auth.transports.dependencies
+    backend.modules.accounts.public -> backend.modules.accounts.domain
     backend.modules.accounts.public -> backend.modules.accounts.models
     backend.modules.accounts.public -> backend.modules.accounts.service.accounts
     backend.modules.accounts.public -> backend.modules.accounts.service.household
@@ -595,6 +608,8 @@ ignore_imports =
     backend.modules.transactions.public -> backend.modules.transactions.service.queries
     backend.modules.budget.public -> backend.modules.budget.domain
     backend.modules.budget.public -> backend.modules.budget.service.budgets
+    backend.modules.budget.public -> backend.modules.budget.service.budget_crud
+    backend.modules.budget.public -> backend.modules.budget.service.categories
     backend.modules.budget.public -> backend.modules.budget.service.consumption
     backend.modules.budget.public -> backend.modules.budget.service.threshold_detector
 unmatched_ignore_imports_alerting = error
@@ -782,7 +797,21 @@ forbidden_modules =
 # The nine `auth.public → auth.X` arcs are the same block as `2-transactions`/
 # `2-accounts`; they all exist in `auth.public` independently of sync, so each is
 # "matched" (`unmatched_ignore_imports_alerting = error`). The four `accounts`
-# arcs are added in P13.3.2 when the step-1 check imports `account_is_accessible`.
+# arcs (`models`/`service.{accounts,household,setup}`) are added in P13.3.2 when the
+# step-1 check imports `account_is_accessible`. S13.4 wires the sub-handlers, so the
+# second-hop arcs for every consumed peer surface land here:
+#   * `accounts.public → accounts.domain` — `AccountType`/`MemberShare`, the value
+#     objects the `accounts/insert` payload must build (P13.4.2);
+#   * `transactions.public → transactions.{domain,service.lifecycle,service.queries}`
+#     — `create_draft`/`add_split`/transitions/`void` + `get_transaction` for the
+#     step-1 row lookup (P13.4.1; `find_shortest_chains` routes through `lifecycle`);
+#   * `budget.public → budget.{domain,service.{budgets,consumption,threshold_detector,
+#     budget_crud,categories}}` — the category + budget write surface (P13.4.3, D5);
+#   * `debts.public → debts.{domain,service.{dashboard,overflow_materializer,remaining,
+#     settlement,share_request}}` — settlements / share-requests (P13.4.4, D6).
+# Every arc is matched (the re-export exists in that peer's `public`); ignoring the
+# SECOND hop keeps the direct-import protection intact (a `sync.X → peer.internal`
+# would still be flagged).
 ignore_imports =
     backend.modules.auth.public -> backend.modules.auth.domain
     backend.modules.auth.public -> backend.modules.auth.models
@@ -793,10 +822,26 @@ ignore_imports =
     backend.modules.auth.public -> backend.modules.auth.service.roles
     backend.modules.auth.public -> backend.modules.auth.service.users
     backend.modules.auth.public -> backend.modules.auth.transports.dependencies
+    backend.modules.accounts.public -> backend.modules.accounts.domain
     backend.modules.accounts.public -> backend.modules.accounts.models
     backend.modules.accounts.public -> backend.modules.accounts.service.accounts
     backend.modules.accounts.public -> backend.modules.accounts.service.household
     backend.modules.accounts.public -> backend.modules.accounts.service.setup
+    backend.modules.transactions.public -> backend.modules.transactions.domain
+    backend.modules.transactions.public -> backend.modules.transactions.service.lifecycle
+    backend.modules.transactions.public -> backend.modules.transactions.service.queries
+    backend.modules.budget.public -> backend.modules.budget.domain
+    backend.modules.budget.public -> backend.modules.budget.service.budgets
+    backend.modules.budget.public -> backend.modules.budget.service.consumption
+    backend.modules.budget.public -> backend.modules.budget.service.threshold_detector
+    backend.modules.budget.public -> backend.modules.budget.service.budget_crud
+    backend.modules.budget.public -> backend.modules.budget.service.categories
+    backend.modules.debts.public -> backend.modules.debts.domain
+    backend.modules.debts.public -> backend.modules.debts.service.dashboard
+    backend.modules.debts.public -> backend.modules.debts.service.overflow_materializer
+    backend.modules.debts.public -> backend.modules.debts.service.remaining
+    backend.modules.debts.public -> backend.modules.debts.service.settlement
+    backend.modules.debts.public -> backend.modules.debts.service.share_request
 unmatched_ignore_imports_alerting = error
 
 [importlinter:contract:3]

@@ -18,14 +18,23 @@ from backend.modules.budget.public import (
     BudgetUpdatedEvent,
     BudgetWithConsumption,
     OverflowBudgetContext,
+    archive_budget,
+    archive_category,
     compute_consumption,
+    create_budget,
+    create_category,
     list_active_budgets_for_user,
     list_overflow_budget_ids_for_categories,
     list_overflow_recompute_tx_ids,
+    move_category,
     on_transaction_confirmed,
     resolve_overflow_context,
+    update_budget,
+    update_category,
 )
+from backend.modules.budget.service import budget_crud as _budget_crud
 from backend.modules.budget.service import budgets as _budgets
+from backend.modules.budget.service import categories as _categories
 from backend.modules.budget.service import consumption as _consumption
 from backend.modules.budget.service import threshold_detector as _threshold_detector
 
@@ -36,12 +45,21 @@ _EXPECTED = {
     "BudgetUpdatedEvent",
     "BudgetWithConsumption",
     "OverflowBudgetContext",
+    "PeriodKind",
+    "Scope",
+    "archive_budget",
+    "archive_category",
     "compute_consumption",
+    "create_budget",
+    "create_category",
     "list_active_budgets_for_user",
     "list_overflow_budget_ids_for_categories",
     "list_overflow_recompute_tx_ids",
+    "move_category",
     "on_transaction_confirmed",
     "resolve_overflow_context",
+    "update_budget",
+    "update_category",
 }
 
 
@@ -68,3 +86,11 @@ def test_public_names_are_identical_re_exports() -> None:
         list_overflow_budget_ids_for_categories
         is _consumption.list_overflow_budget_ids_for_categories
     )
+    # S13.4 write surface (categories + budgets) consumed by the sync handlers.
+    assert create_category is _categories.create_category
+    assert move_category is _categories.move_category
+    assert update_category is _categories.update_category
+    assert archive_category is _categories.archive_category
+    assert create_budget is _budget_crud.create_budget
+    assert update_budget is _budget_crud.update_budget
+    assert archive_budget is _budget_crud.archive_budget

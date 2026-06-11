@@ -131,8 +131,10 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
       - run: uv sync --frozen
-      - name: Materialise .env
-        run: cp .env.example .env
+      # No `.env` step: this job starts only `postgres` (credentials hardcoded in
+      # compose.dev.yml) and overrides `DATABASE_URL` inline — the `${PS_*}` vars
+      # of the powersync service are never read here (cf. powersync-smoke, which
+      # does need .env because it starts powersync).
       - name: Start Postgres
         run: docker compose -f compose.dev.yml up -d --wait postgres
       - name: Apply migrations (creates sync_request_log)

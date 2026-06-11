@@ -65,7 +65,7 @@ from backend.modules.debts.domain import (
     ShareRequestData,
 )
 from backend.modules.sync.schemas import (
-    _MAX_TABLE_NAME,  # pyright: ignore[reportPrivateUsage]  # borne wire = source unique
+    MAX_TABLE_NAME,
     BatchUpload,
     Mutation,
 )
@@ -888,40 +888,42 @@ def overflow_scenario_strategy(
 # Objets de transport sans logique métier ⇒ pile dans le périmètre Hypothesis
 # (§4.2) : la property round-trip `model_validate(b.model_dump()) == b` attrape
 # les cas que 2-3 exemples manquent (UUID arbitraires, payloads imbriqués,
-# cardinalités 0..MAX). `_MAX_TABLE_NAME` importé du schema = source unique.
+# cardinalités 0..MAX). `MAX_TABLE_NAME` importé du schema = source unique.
 # ---------------------------------------------------------------------------
 
 # JSON-isable, borné en profondeur ET en largeur : un `payload` opaque réaliste
 # (l'enveloppe ne valide pas l'intérieur — la borne taille/profondeur métier est
 # déférée au sous-handler S13.4). `floats` sans NaN/inf (model_dump/validate les
-# round-trip à l'identique ; NaN casserait l'égalité). Profondeur bornée via
-# `max_leaves` ⇒ jamais d'explosion combinatoire.
-_PAYLOAD_KEY = st.text(min_size=1, max_size=10)
+# round-trip à l'identique ; NaN casserait l'égalité). Profondeur/largeur bornées
+# (`max_leaves`, `max_size`) ⇒ jamais d'explosion combinatoire ET génération bon
+# marché : la construction Pydantic se fait par tirage, on garde donc le coût par
+# exemple bas pour rester sous le `HealthCheck.too_slow` sur une CI froide.
+_PAYLOAD_KEY = st.text(min_size=1, max_size=8)
 _PAYLOAD_VALUE = st.recursive(
     st.none()
     | st.booleans()
     | st.integers()
     | st.floats(allow_nan=False, allow_infinity=False)
-    | st.text(max_size=20),
+    | st.text(max_size=12),
     lambda children: (
-        st.lists(children, max_size=4) | st.dictionaries(_PAYLOAD_KEY, children, max_size=4)
+        st.lists(children, max_size=3) | st.dictionaries(_PAYLOAD_KEY, children, max_size=3)
     ),
-    max_leaves=10,
+    max_leaves=5,
 )
-_PAYLOAD = st.dictionaries(_PAYLOAD_KEY, _PAYLOAD_VALUE, max_size=4)
+_PAYLOAD = st.dictionaries(_PAYLOAD_KEY, _PAYLOAD_VALUE, max_size=3)
 
 
 @st.composite
 def mutation_strategy(draw: st.DrawFn) -> Mutation:
     """Une `Mutation` VALIDE : UUID arbitraire (toute version, D7), `op` tiré du
-    `Literal`, `table` bornée `_MAX_TABLE_NAME`, `payload` imbriqué borné.
+    `Literal`, `table` bornée `MAX_TABLE_NAME`, `payload` imbriqué borné.
 
     SANS rejet (convention repo) : tous les tirages sont valides par construction
     (`st.uuids()` ⇒ UUID bien formé ; `op` ∈ enum ; `table` non vide ≤ borne).
     """
     return Mutation(
         client_request_id=draw(st.uuids()),
-        table=draw(st.text(min_size=1, max_size=_MAX_TABLE_NAME)),
+        table=draw(st.text(min_size=1, max_size=MAX_TABLE_NAME)),
         op=draw(st.sampled_from(["insert", "update", "delete"])),
         payload=draw(_PAYLOAD),
     )
@@ -930,7 +932,7 @@ def mutation_strategy(draw: st.DrawFn) -> Mutation:
 @st.composite
 def batch_upload_strategy(draw: st.DrawFn, *, max_mutations: int = 8) -> BatchUpload:
     """Un `BatchUpload` VALIDE, cardinalité 0..`max_mutations` (vide = no-op légal,
-    D9). `max_mutations` reste modeste (vs `_MAX_MUTATIONS=1000`) : la property
+    D9). `max_mutations` reste modeste (vs `MAX_MUTATIONS=1000`) : la property
     round-trip n'a pas besoin de la borne haute, exercée par un test à l'exemple.
     """
     return BatchUpload(mutations=draw(st.lists(mutation_strategy(), max_size=max_mutations)))

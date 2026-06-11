@@ -11,12 +11,12 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from hypothesis import given
+from hypothesis import HealthCheck, given, settings
 from pydantic import ValidationError
 
 from backend.modules.sync.schemas import (
-    _MAX_MUTATIONS,  # pyright: ignore[reportPrivateUsage]  # borne anti-DoS épinglée par le test
-    _MAX_TABLE_NAME,  # pyright: ignore[reportPrivateUsage]
+    MAX_MUTATIONS,
+    MAX_TABLE_NAME,
     BatchUpload,
     Mutation,
     WriteError,
@@ -40,25 +40,39 @@ def _mutation(**overrides: object) -> dict[str, object]:
 
 
 def test_batch_round_trip_example() -> None:
-    """Un batch bien formé (2 mutations insert/update) → dump → validate identique."""
+    """Un batch bien formé (insert/update/delete) → dump → validate identique, en
+    mode Python ET en mode wire JSON (UUID → str → UUID), aller-retour réel."""
     batch = BatchUpload(
         mutations=[
             Mutation.model_validate(_mutation(op="insert")),
             Mutation.model_validate(_mutation(op="update", table="accounts")),
+            Mutation.model_validate(_mutation(op="delete", table="splits")),
         ]
     )
     assert BatchUpload.model_validate(batch.model_dump()) == batch
+    # Mode wire : `mode="json"` (UUID/None sérialisés) puis `model_validate`.
+    assert BatchUpload.model_validate(batch.model_dump(mode="json")) == batch
+    # Aller-retour JSON *chaîne* complet (le vrai transport réseau, ADR 0014).
+    assert BatchUpload.model_validate_json(batch.model_dump_json()) == batch
 
 
+@settings(deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(batch_upload_strategy())
 def test_batch_round_trip_property(batch: BatchUpload) -> None:
     """`model_validate(b.model_dump()) == b` sur des UUID/payloads/cardinalités
-    arbitraires (schemas purs, §4.2) — attrape ce que les exemples manquent."""
+    arbitraires (schemas purs, §4.2) — attrape ce que les exemples manquent. Le
+    `suppress_health_check=[too_slow]` suit la convention repo des property tests
+    (cf. `test_settlement_invariants`) : la génération construit du Pydantic, donc
+    le `HealthCheck.too_slow` se déclenche sur une `.hypothesis` froide (CI)."""
     assert BatchUpload.model_validate(batch.model_dump()) == batch
+    # Mode wire (UUID → str) sur des entrées arbitraires : `mode="json"` reste sûr
+    # face aux surrogates (pas d'encodage UTF-8, contrairement à `model_dump_json`).
+    assert BatchUpload.model_validate(batch.model_dump(mode="json")) == batch
 
 
 def test_write_result_round_trip() -> None:
-    """Symétrie des 3 schemas : `WriteResult` (succès + échec) round-trip aussi."""
+    """Symétrie des 3 schemas : `WriteResult` (succès + échec) round-trip aussi,
+    en mode Python ET en mode wire JSON."""
     ok = WriteResult(client_request_id=uuid.uuid4(), success=True)
     ko = WriteResult(
         client_request_id=uuid.uuid4(),
@@ -68,6 +82,8 @@ def test_write_result_round_trip() -> None:
     )
     assert WriteResult.model_validate(ok.model_dump()) == ok
     assert WriteResult.model_validate(ko.model_dump()) == ko
+    assert WriteResult.model_validate_json(ok.model_dump_json()) == ok
+    assert WriteResult.model_validate_json(ko.model_dump_json()) == ko
 
 
 # --- validation : Mutation -------------------------------------------------
@@ -92,9 +108,16 @@ def test_non_v7_uuid_accepted() -> None:
 
 def test_table_length_bounded() -> None:
     with pytest.raises(ValidationError):
-        Mutation.model_validate(_mutation(table="t" * (_MAX_TABLE_NAME + 1)))
+        Mutation.model_validate(_mutation(table="t" * (MAX_TABLE_NAME + 1)))
     # La borne exacte passe.
-    assert Mutation.model_validate(_mutation(table="t" * _MAX_TABLE_NAME)).table
+    assert Mutation.model_validate(_mutation(table="t" * MAX_TABLE_NAME)).table
+
+
+def test_empty_table_rejected() -> None:
+    """`table` non vide (`min_length=1`) : une `table=""` n'a pas de sous-handler
+    (S13.3 la rejetterait) — autant la fermer au niveau wire."""
+    with pytest.raises(ValidationError):
+        Mutation.model_validate(_mutation(table=""))
 
 
 def test_extra_field_on_mutation_rejected() -> None:
@@ -117,7 +140,7 @@ def test_empty_batch_is_valid() -> None:
 
 
 def test_batch_cardinality_bounded() -> None:
-    too_many = [_mutation() for _ in range(_MAX_MUTATIONS + 1)]
+    too_many = [_mutation() for _ in range(MAX_MUTATIONS + 1)]
     with pytest.raises(ValidationError):
         BatchUpload.model_validate({"mutations": too_many})
 

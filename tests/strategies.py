@@ -64,6 +64,11 @@ from backend.modules.debts.domain import (
     SettlementType,
     ShareRequestData,
 )
+from backend.modules.sync.schemas import (
+    _MAX_TABLE_NAME,  # pyright: ignore[reportPrivateUsage]  # borne wire = source unique
+    BatchUpload,
+    Mutation,
+)
 from backend.modules.transactions.domain import Split, Transaction, TransactionState
 from backend.shared.currency import CURRENCIES, Currency
 from backend.shared.money import Money
@@ -876,3 +881,56 @@ def overflow_scenario_strategy(
         )
     )
     return OverflowScenario(account=account, budget=budget, txs=txs)
+
+
+# ---------------------------------------------------------------------------
+# S13.2 — enveloppe batch PowerSync (`Mutation`/`BatchUpload`, schemas PURS, D8).
+# Objets de transport sans logique métier ⇒ pile dans le périmètre Hypothesis
+# (§4.2) : la property round-trip `model_validate(b.model_dump()) == b` attrape
+# les cas que 2-3 exemples manquent (UUID arbitraires, payloads imbriqués,
+# cardinalités 0..MAX). `_MAX_TABLE_NAME` importé du schema = source unique.
+# ---------------------------------------------------------------------------
+
+# JSON-isable, borné en profondeur ET en largeur : un `payload` opaque réaliste
+# (l'enveloppe ne valide pas l'intérieur — la borne taille/profondeur métier est
+# déférée au sous-handler S13.4). `floats` sans NaN/inf (model_dump/validate les
+# round-trip à l'identique ; NaN casserait l'égalité). Profondeur bornée via
+# `max_leaves` ⇒ jamais d'explosion combinatoire.
+_PAYLOAD_KEY = st.text(min_size=1, max_size=10)
+_PAYLOAD_VALUE = st.recursive(
+    st.none()
+    | st.booleans()
+    | st.integers()
+    | st.floats(allow_nan=False, allow_infinity=False)
+    | st.text(max_size=20),
+    lambda children: (
+        st.lists(children, max_size=4) | st.dictionaries(_PAYLOAD_KEY, children, max_size=4)
+    ),
+    max_leaves=10,
+)
+_PAYLOAD = st.dictionaries(_PAYLOAD_KEY, _PAYLOAD_VALUE, max_size=4)
+
+
+@st.composite
+def mutation_strategy(draw: st.DrawFn) -> Mutation:
+    """Une `Mutation` VALIDE : UUID arbitraire (toute version, D7), `op` tiré du
+    `Literal`, `table` bornée `_MAX_TABLE_NAME`, `payload` imbriqué borné.
+
+    SANS rejet (convention repo) : tous les tirages sont valides par construction
+    (`st.uuids()` ⇒ UUID bien formé ; `op` ∈ enum ; `table` non vide ≤ borne).
+    """
+    return Mutation(
+        client_request_id=draw(st.uuids()),
+        table=draw(st.text(min_size=1, max_size=_MAX_TABLE_NAME)),
+        op=draw(st.sampled_from(["insert", "update", "delete"])),
+        payload=draw(_PAYLOAD),
+    )
+
+
+@st.composite
+def batch_upload_strategy(draw: st.DrawFn, *, max_mutations: int = 8) -> BatchUpload:
+    """Un `BatchUpload` VALIDE, cardinalité 0..`max_mutations` (vide = no-op légal,
+    D9). `max_mutations` reste modeste (vs `_MAX_MUTATIONS=1000`) : la property
+    round-trip n'a pas besoin de la borne haute, exercée par un test à l'exemple.
+    """
+    return BatchUpload(mutations=draw(st.lists(mutation_strategy(), max_size=max_mutations)))

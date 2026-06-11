@@ -251,6 +251,15 @@ table splits
   idx ix_splits_category_id INDEX: category_id
   idx ix_splits_transaction_id INDEX: transaction_id
 
+table sync_request_log
+  col client_request_id: UUID NOT NULL
+  col processed_at: TIMESTAMP WITH TIME ZONE NOT NULL
+  col table_name: VARCHAR(63) NOT NULL
+  col user_id: UUID NOT NULL
+  pk pk_sync_request_log(user_id, client_request_id)
+  fk fk_sync_request_log_user_id_users: (user_id) -> users(id) ON DELETE RESTRICT
+  idx ix_sync_request_log_processed_at INDEX: processed_at
+
 table transactions
   col account_id: UUID NOT NULL
   col category_id: UUID NULL

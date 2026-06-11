@@ -44,7 +44,7 @@ Livrable agrégé : un client PowerSync peut s'authentifier, recevoir les rows v
 | Phase | Description | Diff |
 |---|---|---|
 | **P13.2.1** | `modules/sync/__init__.py`, `public.py`, `domain.py` (vide pour l'instant), `service/` (vide), `handlers/` (sous-dossier pour les sous-handlers par table) | ~60 |
-| **P13.2.2** | Table `sync_request_log` : `client_request_id` UUID PK, `user_id`, `table_name`, `processed_at`. Server-only. Migration `0019_sync_request_log.py` (down revision `0018` — dernière migration mergée). Retention 30j (purge nightly via APScheduler job mineur) | ~120 |
+| **P13.2.2** | Table `sync_request_log` : PK composite `(user_id, client_request_id)` (idempotence scopée user, ferme l'oracle cross-user — review Sécu F1), `table_name`, `processed_at`. Server-only. Migration `0019_sync_request_log.py` (down revision `0018` — dernière migration mergée). Retention 30j : **purge nightly idempotente déclenchée par le cron CI** (`nightly.yml`, entrypoint `backend.scripts.purge_sync_request_log`) — **PAS** d'APScheduler runtime ici (**D2** : APScheduler reporté à l'épic récurrences, ADR 0007 / F06) | ~120 |
 | **P13.2.3** | Schemas Pydantic pour le format batch PowerSync : `BatchUpload(mutations=list[Mutation])`, `Mutation(client_request_id, table, op='insert|update|delete', payload)`, `WriteResult(client_request_id, success, error?)`. Tests | ~150 |
 
 ---
@@ -53,7 +53,7 @@ Livrable agrégé : un client PowerSync peut s'authentifier, recevoir les rows v
 
 | Phase | Description | Diff |
 |---|---|---|
-| **P13.3.1** | `modules/sync/service/dispatcher.py` : `process_batch(user, batch) → list[WriteResult]`. Pour chaque mutation : récupère le sous-handler de la table, ou retourne `WriteResult.error='unknown_table'`. Tests unitaires avec sous-handler mocké | ~150 |
+| **P13.3.1** | `modules/sync/service/dispatcher.py` : `process_batch(session, user, batch, *, handlers=HANDLERS, permission_checks=PERMISSION_CHECKS, is_processed=already_processed) → list[WriteResult]` (delta vs `process_batch(user, batch)` : `session` requis car les étapes 1-2 touchent la DB — UoW de la route S13.8, ADR 0015, aucun `commit()` ici ; registres/lookup injectables = couture de test + point d'enregistrement S13.4). Pour chaque mutation : récupère le sous-handler de la table, ou retourne `WriteResult.error='unknown_table'`. Tests unitaires avec sous-handler mocké | ~150 |
 | **P13.3.2** | Step 1 (auth + RBAC) : vérifie que `user` peut muter cette table sur ce row (par exemple créer une `Transaction` sur un compte dont il est member). Centralisé dans `dispatcher.py` via lookup `(table, op) → permission_check_fn`. Tests | ~200 |
 | **P13.3.3** | Step 2 (idempotence) : si `client_request_id` ∈ `sync_request_log` → ack sans re-écrire. Tests : rejouer la même mutation N fois = 1 commit | ~150 |
 
@@ -139,7 +139,7 @@ Livrable agrégé : un client PowerSync peut s'authentifier, recevoir les rows v
 
 - [ ] PowerSync Service tourne en dev compose, connecté à Postgres
 - [ ] `POST /sync/upload` traite un batch de N mutations avec ordering préservé
-- [ ] `client_request_id` UUID v7 → idempotence stricte (replay = no-op)
+- [ ] `client_request_id` (UUID v7 recommandé côté client ; le serveur accepte **tout UUID bien formé** — **D7**) → idempotence stricte **scopée user** (replay = no-op)
 - [ ] Matérialisation synchrone des dettes après write transaction (visible post-commit)
 - [ ] Erreurs typées : `validation_error`, `immutable_field_violation`, `auth_denied`, `unknown_table`, etc.
 - [ ] Sync rules : un user ne reçoit jamais les comptes personnels d'un autre user (testé)

@@ -50,6 +50,7 @@ async def test_insert_personal_owned_by_user(
         await initialized_household.execute(select(Account).where(Account.name == "Courant"))
     ).scalar_one()
     assert acc.owner_id == owner.id
+    assert result.server_values == {"id": str(acc.id)}  # ack étape 10 : id généré serveur
 
 
 async def test_insert_rejects_owner_id_in_payload(
@@ -89,6 +90,7 @@ async def test_insert_shared_creates_members(
         await initialized_household.execute(select(Account).where(Account.name == "Commun"))
     ).scalar_one()
     assert acc.owner_id is None
+    assert result.server_values == {"id": str(acc.id)}  # ack étape 10 : id généré serveur
     members = (
         await initialized_household.execute(
             select(func.count())
@@ -181,7 +183,10 @@ async def test_update_renames_only(
         return owner, account_f(owner_id=owner.id, name="Avant").id
 
     owner, account_id = await household_singleton.run_sync(_seed)
-    await _run(household_singleton, owner, _mut("update", {"id": str(account_id), "name": "Après"}))
+    result = await _run(
+        household_singleton, owner, _mut("update", {"id": str(account_id), "name": "Après"})
+    )
+    assert result.server_values is None  # update : l'id vient du client, pas de server_values
     acc = await household_singleton.get(Account, account_id)
     assert acc is not None
     assert acc.name == "Après"
@@ -215,6 +220,7 @@ async def test_delete_archives(
     result = await _run(household_singleton, owner, _mut("delete", {"id": str(account_id)}))
 
     assert result.success is True
+    assert result.server_values is None  # delete : pas de server_values
     acc = await household_singleton.get(Account, account_id)
     assert acc is not None
     assert acc.archived_at is not None

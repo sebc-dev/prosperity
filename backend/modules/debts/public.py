@@ -33,7 +33,12 @@ created/updated events (reclassement F10). All re-exports are intra-module.
 
 from __future__ import annotations
 
-from backend.modules.debts.domain import SettlementLineInput, SettlementType
+from backend.modules.debts.domain import (
+    DebtCalculationError,
+    SettlementLineInput,
+    SettlementType,
+    SettlementValidationError,
+)
 from backend.modules.debts.service.dashboard import (
     CounterpartyNet,
     DebtDirection,
@@ -78,6 +83,7 @@ from backend.modules.debts.service.share_request import (
 __all__ = [
     "CounterpartyNet",
     "CrossHouseholdError",
+    "DebtCalculationError",
     "DebtDirection",
     "DebtNotFoundError",
     "DebtWithContext",
@@ -92,6 +98,7 @@ __all__ = [
     "SettlementLineInput",
     "SettlementServiceError",
     "SettlementType",
+    "SettlementValidationError",
     "ShareRequestError",
     "ShareRequestNotFoundError",
     "SourceAccountNotShareableError",

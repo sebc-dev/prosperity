@@ -8,6 +8,8 @@ revoke_share_request` (supprime le `Debt` matérialisé). `by_user_id` forcé `u
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.auth.public import User
@@ -19,13 +21,21 @@ from backend.modules.sync.handlers.payloads import (
 from backend.modules.sync.schemas import Mutation, WriteResult
 
 
+def _ack(mutation: Mutation, *, server_values: dict[str, Any] | None = None) -> WriteResult:
+    """Ack étape 10 ; `server_values` reporte l'`id` généré serveur pour un `insert`
+    (`None` pour `delete`, l'`id` vient du client)."""
+    return WriteResult(
+        client_request_id=mutation.client_request_id, success=True, server_values=server_values
+    )
+
+
 async def handle_share_request(
     session: AsyncSession, user: User, mutation: Mutation
 ) -> WriteResult:
     """`share_requests/{insert,delete}` → `debts.public`."""
     if mutation.op == "insert":
         ins = ShareRequestInsertPayload.model_validate(mutation.payload)
-        await create_share_request(
+        share_request = await create_share_request(
             session,
             transaction_id=ins.transaction_id,
             requested_from=ins.requested_from,
@@ -33,10 +43,11 @@ async def handle_share_request(
             short_label=ins.short_label,
             by_user_id=user.id,
         )
-    elif mutation.op == "delete":
+        return _ack(mutation, server_values={"id": str(share_request.id)})  # id généré serveur
+    if mutation.op == "delete":
         dele = ShareRequestDeletePayload.model_validate(mutation.payload)
         await revoke_share_request(session, share_request_id=dele.id, by_user_id=user.id)
-    else:  # pragma: no cover — `share_requests/update` non supporté → rejeté à l'étape 1 (D-G)
-        msg = f"unsupported share_requests op: {mutation.op}"
-        raise AssertionError(msg)
-    return WriteResult(client_request_id=mutation.client_request_id, success=True)
+        return _ack(mutation)
+    # pragma: no cover — `share_requests/update` non supporté → rejeté à l'étape 1 (D-G)
+    msg = f"unsupported share_requests op: {mutation.op}"  # pragma: no cover
+    raise AssertionError(msg)  # pragma: no cover

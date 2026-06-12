@@ -2,13 +2,15 @@
 
 `process_batch` (handlers + checks RÉELS, vrai Postgres, rollback-isolé) route
 chaque `(op, payload)` vers `transactions.public` puis flush. Oracle = état DB lu
-dans la même session (les cas « lève » via `pytest.raises` autour de `process_batch`,
-D-I : pas de try/except dans le dispatcher en S13.4).
+dans la même session. Depuis S13.6 (P13.6.3) le dispatcher MAPPE les exceptions
+domaine en `result.error.code` (plus de propagation) ; les seuls `pytest.raises`
+résiduels assertent une `ValidationError` Pydantic (payload mal formé, étape 3 — AVANT
+le write, donc inconnue du mapping domaine : elle propage → 500, D-I).
 
 Les entités RÉFÉRENCÉES (tx, split) sont SEED via factories pour disposer d'un id
-connu : la réconciliation des ids générés serveur (`server_values`) appartient à
-S13.6, donc un batch « create draft → add split sur cet id » end-to-end n'est pas
-encore tissable. Ici on prouve le ROUTAGE de chaque op.
+connu. Depuis S13.6 (P13.6.2) chaque `insert` reporte aussi l'`id` généré serveur
+dans `result.server_values` (ack étape 10), asséré ici contre la row créée ;
+`update`/`delete` n'en portent pas.
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ from backend.modules.auth.models import User
 from backend.modules.sync.models import SyncRequestLog
 from backend.modules.sync.public import BatchUpload, Mutation
 from backend.modules.sync.service.dispatcher import process_batch
-from backend.modules.transactions.domain import TransactionError, TransactionState
+from backend.modules.transactions.domain import TransactionState
 from backend.modules.transactions.models import Split, Transaction
 from tests.integration.sync._sync_helpers import mut as _mut
 from tests.integration.sync._sync_helpers import run_one as _run
@@ -58,6 +60,7 @@ async def test_insert_creates_draft(
     ).scalar_one()
     assert row.state == TransactionState.DRAFT.value
     assert row.created_by == owner.id
+    assert result.server_values == {"id": str(row.id)}  # ack étape 10 : id généré serveur
 
 
 async def test_insert_rejects_server_derived_field(
@@ -98,12 +101,51 @@ async def test_split_insert_adds_leg(
     result = await _run(household_singleton, owner, _mut("splits", "insert", payload))
 
     assert result.success is True
-    count = (
-        await household_singleton.execute(
-            select(func.count()).select_from(Split).where(Split.transaction_id == tx_id)
+    new_split = (
+        await household_singleton.execute(select(Split).where(Split.transaction_id == tx_id))
+    ).scalar_one()  # exactement une jambe ajoutée
+    # `domain.Split` n'a pas d'`id` : le handler isole l'id du split neuf par diff
+    # `list_split_ids` avant/après — l'ack le reporte au client (étape 10).
+    assert result.server_values == {"id": str(new_split.id)}
+
+
+async def test_split_insert_ack_id_is_the_new_leg_not_a_prior_one(
+    household_singleton: AsyncSession, bound_transaction_factories: _TxFactories
+) -> None:
+    """Verrou du diff `list_split_ids` (D-D adapté) : sur une tx qui porte DÉJÀ une jambe,
+    l'ack d'un `splits/insert` reporte l'id de la jambe NEUVE — pas celui de la préexistante.
+    Un handler qui renverrait « la dernière » ou un id arbitraire le ferait tomber."""
+    user_f, account_f, tx_f, split_f = await bound_transaction_factories()
+
+    def _seed(_s: Session) -> tuple[User, uuid.UUID, uuid.UUID, uuid.UUID]:
+        owner = user_f(email="o3b@ex.com")
+        acc = account_f(owner_id=owner.id)
+        tx = tx_f(account_id=acc.id, created_by=owner.id, splits=False)
+        existing = split_f(transaction_id=tx.id, account_id=acc.id)  # jambe préexistante
+        return owner, acc.id, tx.id, existing.id
+
+    owner, account_id, tx_id, existing_id = await household_singleton.run_sync(_seed)
+    payload = {
+        "transaction_id": str(tx_id),
+        "account_id": str(account_id),
+        "amount_cents": 700,
+        "currency": "EUR",
+    }
+    result = await _run(household_singleton, owner, _mut("splits", "insert", payload))
+
+    assert result.success is True
+    assert result.server_values is not None
+    new_id = result.server_values["id"]
+    assert new_id != str(existing_id)  # PAS la jambe préexistante
+    all_ids = {
+        str(sid)
+        for sid in (
+            await household_singleton.execute(select(Split.id).where(Split.transaction_id == tx_id))
         )
-    ).scalar_one()
-    assert count == 1
+        .scalars()
+        .all()
+    }
+    assert all_ids == {str(existing_id), new_id}  # l'ack désigne bien la jambe neuve
 
 
 async def test_split_delete_removes_leg(
@@ -303,10 +345,12 @@ async def test_update_rejects_state_and_field_together(
         await _run(household_singleton, owner, _mut("transactions", "update", payload))
 
 
-async def test_confirm_unbalanced_raises(
+async def test_unbalanced_planned_rejected(
     household_singleton: AsyncSession, bound_transaction_factories: _TxFactories
 ) -> None:
-    """Une transition refusée par le domaine PROPAGE (D-I) — oracle = `pytest.raises`."""
+    """Une transition `draft → planned` sur une tx déséquilibrée (`assert_zero_sum`
+    après `assert_transition`) → `UnbalancedTransactionError`, CAPTURÉE par la frontière
+    par-mutation (S13.6) → `success=False`, code typé `unbalanced_transaction` (P13.6.3)."""
     user_f, account_f, tx_f, split_f = await bound_transaction_factories()
 
     def _seed(_s: Session) -> tuple[User, uuid.UUID]:
@@ -317,12 +361,14 @@ async def test_confirm_unbalanced_raises(
         return owner, tx.id
 
     owner, tx_id = await household_singleton.run_sync(_seed)
-    with pytest.raises(TransactionError):
-        await _run(
-            household_singleton,
-            owner,
-            _mut("transactions", "update", {"id": str(tx_id), "state": "confirmed"}),
-        )
+    result = await _run(
+        household_singleton,
+        owner,
+        _mut("transactions", "update", {"id": str(tx_id), "state": "planned"}),
+    )
+    assert result.success is False
+    assert result.error is not None
+    assert result.error.code == "unbalanced_transaction"
 
 
 async def test_update_state_void_routes_transition(

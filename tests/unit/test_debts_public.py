@@ -14,6 +14,7 @@ import backend.modules.debts.public as debts_public
 from backend.modules.debts import domain as _domain
 from backend.modules.debts.public import (
     CrossHouseholdError,
+    DebtCalculationError,
     DebtNotFoundError,
     DuplicateActiveShareRequestError,
     LinkedTransactionNotAccessibleError,
@@ -24,6 +25,7 @@ from backend.modules.debts.public import (
     SelfShareError,
     SettlementDebtNotAccessibleError,
     SettlementServiceError,
+    SettlementValidationError,
     ShareRequestError,
     ShareRequestNotFoundError,
     SourceAccountNotShareableError,
@@ -45,6 +47,7 @@ def test_public_exports_exact_set() -> None:
     assert sorted(debts_public.__all__) == [
         "CounterpartyNet",
         "CrossHouseholdError",
+        "DebtCalculationError",
         "DebtDirection",
         "DebtNotFoundError",
         "DebtWithContext",
@@ -59,6 +62,7 @@ def test_public_exports_exact_set() -> None:
         "SettlementLineInput",
         "SettlementServiceError",
         "SettlementType",
+        "SettlementValidationError",
         "ShareRequestError",
         "ShareRequestNotFoundError",
         "SourceAccountNotShareableError",
@@ -113,6 +117,15 @@ def test_settlement_service_surface() -> None:
         assert issubclass(sub, SettlementServiceError)
     # CrossHouseholdError is a SUB-case of "debt not accessible" → same 404.
     assert issubclass(CrossHouseholdError, SettlementDebtNotAccessibleError)
+
+
+def test_validation_error_bases_exposed_for_sync_mapping() -> None:
+    # S13.6 (P13.6.3) : `sync.service.errors` collapse ces bases en `validation_error`.
+    # On les expose telles quelles depuis `debts.domain` (mêmes objets, pas de stub).
+    assert debts_public.DebtCalculationError is _domain.DebtCalculationError
+    assert debts_public.SettlementValidationError is _domain.SettlementValidationError
+    assert issubclass(DebtCalculationError, Exception)
+    assert issubclass(SettlementValidationError, Exception)
 
 
 def test_error_codes_are_stable_and_pii_free() -> None:

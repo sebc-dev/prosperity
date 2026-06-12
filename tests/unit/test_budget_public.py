@@ -14,9 +14,11 @@ from backend.modules.budget import events as _events
 from backend.modules.budget.public import (
     BudgetConsumption,
     BudgetCreatedEvent,
+    BudgetError,
     BudgetThresholdEvent,
     BudgetUpdatedEvent,
     BudgetWithConsumption,
+    CategoryError,
     OverflowBudgetContext,
     PeriodKind,
     Scope,
@@ -43,9 +45,11 @@ from backend.modules.budget.service import threshold_detector as _threshold_dete
 _EXPECTED = {
     "BudgetConsumption",
     "BudgetCreatedEvent",
+    "BudgetError",
     "BudgetThresholdEvent",
     "BudgetUpdatedEvent",
     "BudgetWithConsumption",
+    "CategoryError",
     "OverflowBudgetContext",
     "PeriodKind",
     "Scope",
@@ -99,3 +103,7 @@ def test_public_names_are_identical_re_exports() -> None:
     # S13.4 param-types (`Literal` aliases) re-export the real `budget.domain` ones.
     assert PeriodKind is _domain.PeriodKind
     assert Scope is _domain.Scope
+    # S13.6 (P13.6.3) error bases re-export the real `budget.domain` symbols
+    # (consumed by `sync.service.errors` → `validation_error`).
+    assert CategoryError is _domain.CategoryError
+    assert BudgetError is _domain.BudgetError

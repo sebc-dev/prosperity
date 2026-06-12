@@ -134,10 +134,25 @@ async def db_engine(postgres_container: PostgresContainer) -> AsyncIterator[obje
 
 @pytest_asyncio.fixture(loop_scope="session")
 async def db_session(db_engine) -> AsyncIterator[AsyncSession]:
-    """Per-test async session with rollback-on-teardown isolation."""
+    """Per-test async session with rollback-on-teardown isolation.
+
+    `join_transaction_mode="create_savepoint"` (same technique as `async_client`):
+    the session is bound to a connection that already holds an outer
+    `connection.begin()` transaction, so each unit of work opens a SAVEPOINT. An
+    in-service `session.commit()` (ADR 0015 — and the sync dispatcher's per-mutation
+    commit, S13.6) becomes a SAVEPOINT *release* (data merged into the outer
+    transaction, never a real COMMIT), and `session.rollback()` reverts to that
+    savepoint. The outer `transaction.rollback()` at teardown still wipes everything
+    → per-test isolation holds even for code that commits. Without this mode the
+    session's commit/rollback would act on the outer transaction itself
+    (deassociating it and breaking isolation)."""
     async with db_engine.connect() as connection:
         transaction = await connection.begin()
-        session_factory = async_sessionmaker(bind=connection, expire_on_commit=False)
+        session_factory = async_sessionmaker(
+            bind=connection,
+            expire_on_commit=False,
+            join_transaction_mode="create_savepoint",
+        )
         async with session_factory() as session:
             try:
                 yield session

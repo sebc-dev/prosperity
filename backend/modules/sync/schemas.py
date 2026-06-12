@@ -23,6 +23,23 @@ MAX_TABLE_NAME = 63  # limite d'identifiant Postgres
 
 MutationOp = Literal["insert", "update", "delete"]
 
+# Vocabulaire FERMÉ des codes d'erreur wire (ADR 0014 ; resserré en S13.6 / P13.6.3, D6).
+# S13.2 déclarait `code: str` (libre) ; le `Literal` ferme le contrat client (set stable,
+# auditable). La table de correspondance exception domaine → code vit dans
+# `sync.service.errors` (`to_write_error`), source unique. `internal_error` n'y figure
+# PAS : une erreur serveur (non mappée) propage en 500 (retry PowerSync), jamais un code.
+WriteErrorCode = Literal[
+    "auth_denied",
+    "unknown_table",
+    "not_implemented_yet",
+    "validation_error",
+    "immutable_field_violation",
+    "uncategorized_expense",
+    "unbalanced_transaction",
+    "invalid_state_transition",
+    "not_found",
+]
+
 # Identifiant de table : non vide et borné (gabarit `Tag` de
 # `transactions/schemas.py`). Le `min_length=1` ferme la `table=""` au niveau wire
 # — le dispatcher (S13.3) la rejetterait de toute façon faute de sous-handler.
@@ -62,18 +79,16 @@ class WriteError(BaseModel):
     """Erreur d'une mutation — forme wire FIGÉE en S13.2 (`CONTEXT.md` §WriteResult :
     `{success, error?: {code, message}}` ; ADR 0014 « WriteResult.error typé »).
 
-    `code` : chaîne libre en S13.2, resserrée en `Literal[...]` (vocabulaire fermé
-    `validation_error` / `immutable_field_violation` / `auth_denied` / …) en
-    S13.6 / P13.6.3 (D6). Figer la FORME maintenant (et ne différer que le
-    VOCABULAIRE) évite au client un changement de contrat wire en S13.6.
-    `message` : texte humain — NE DOIT JAMAIS porter de détail interne
-    (`str(exc)`, SQL, chemin, PII du payload) ; le mapping discipliné vit en
-    S13.4 / S13.6 (review Sécu F2). La séparation `code` (sûr) / `message` borne
-    la surface de fuite.
+    `code` : `WriteErrorCode` — vocabulaire FERMÉ (`Literal`) depuis S13.6 / P13.6.3
+    (D6 ; S13.2 le déclarait `str` libre). Le contrat wire client est ainsi stable et
+    auditable. `message` : texte humain STATIQUE par code — NE DOIT JAMAIS porter de
+    détail interne (`str(exc)`, SQL, chemin, PII du payload), review Sécu F2 ; la
+    séparation `code` (sûr) / `message` borne la surface de fuite. La table de
+    correspondance exception → code vit dans `sync.service.errors` (`to_write_error`).
     """
 
     model_config = ConfigDict(extra="forbid")
-    code: str
+    code: WriteErrorCode
     message: str
 
 

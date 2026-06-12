@@ -19,8 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from backend.modules.auth.models import User
-from backend.modules.debts.models import Debt, ShareRequest
-from backend.modules.debts.public import ShareRequestNotFoundError, compute_remaining
+from backend.modules.debts.models import Debt, Settlement, ShareRequest
+from backend.modules.debts.public import compute_remaining
 from tests.integration._debts_helpers import Scenario, debt_count, seed, share_request_count
 from tests.integration.sync._sync_helpers import mut as _mut
 from tests.integration.sync._sync_helpers import run_one as _run
@@ -52,6 +52,12 @@ async def test_share_request_insert_materializes_debt(
     assert result.success is True
     assert await share_request_count(household_singleton, tx_id=sc.tx_id) == 1
     assert await debt_count(household_singleton, tx_id=sc.tx_id) == 1  # matérialisé in-transaction
+    sr_id = (
+        await household_singleton.execute(
+            select(ShareRequest.id).where(ShareRequest.source_transaction_id == sc.tx_id)
+        )
+    ).scalar_one()
+    assert result.server_values == {"id": str(sr_id)}  # ack étape 10 : id généré serveur
 
 
 async def test_share_request_delete_revokes_and_removes_debt(
@@ -76,14 +82,16 @@ async def test_share_request_delete_revokes_and_removes_debt(
     )
 
     assert result.success is True
+    assert result.server_values is None  # delete : pas de server_values
     assert await debt_count(household_singleton, tx_id=sc.tx_id) == 0  # Debt retiré
 
 
-async def test_share_request_revoke_not_owner_raises(
+async def test_share_request_revoke_not_owner_rejected(
     household_singleton: AsyncSession, bound_transaction_factories: _TxFactories
 ) -> None:
     """Bob (≠ requested_by) tente de révoquer la SR d'Alice → `ShareRequestNotFoundError`
-    (404 uniforme, anti-oracle) PROPAGE (D-I)."""
+    (404 uniforme, anti-oracle) CAPTURÉE par la frontière par-mutation (S13.6) →
+    `success=False`, code typé `not_found` (P13.6.3)."""
     alice, sc = await _seed_expense(household_singleton, bound_transaction_factories)
     insert_payload = {
         "transaction_id": str(sc.tx_id),
@@ -103,8 +111,12 @@ async def test_share_request_revoke_not_owner_raises(
         await debt_count(household_singleton, tx_id=sc.tx_id) == 1
     )  # matérialisé avant la tentative
 
-    with pytest.raises(ShareRequestNotFoundError):
-        await _run(household_singleton, bob, _mut("share_requests", "delete", {"id": str(sr_id)}))
+    result = await _run(
+        household_singleton, bob, _mut("share_requests", "delete", {"id": str(sr_id)})
+    )
+    assert result.success is False
+    assert result.error is not None
+    assert result.error.code == "not_found"
 
 
 @pytest.mark.parametrize(
@@ -178,6 +190,12 @@ async def test_settlement_insert_creates_with_lines(
 
     assert result.success is True
     assert await compute_remaining(household_singleton, debt_id=debt_id) == 0
+    settlement_id = (
+        await household_singleton.execute(
+            select(Settlement.id).where(Settlement.linked_transaction_id == tx_id)
+        )
+    ).scalar_one()
+    assert result.server_values == {"id": str(settlement_id)}  # ack étape 10 : id généré serveur
 
 
 async def test_settlement_update_unsupported_denied(

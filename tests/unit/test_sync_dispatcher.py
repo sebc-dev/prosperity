@@ -3,16 +3,21 @@
 `process_batch` route chaque mutation vers le sous-handler de sa `table` DANS
 L'ORDRE DU TABLEAU (ADR 0014). On teste le routage en ISOLATION : les sous-
 handlers sont MOCKÉS (`AsyncMock`) et injectés via le paramètre `handlers` —
-aucune dépendance aux handlers réels (S13.4). La session est un SENTINEL opaque
-threadé au handler : la voie routage ne touche PAS la DB (anti-pattern repo : on
-ne mocke jamais une session SQLA, on la passe au handler mocké).
+aucune dépendance aux handlers réels (S13.4).
+
+La session de routage est un `_NoopSession` : la frontière par-mutation (S13.6)
+appelle `expunge`/`record_processed`→`flush`/`commit`/`rollback` dessus, qui sont
+des no-op ici — on n'y teste PAS la persistance (couverte en intégration), juste le
+routage/ordre. On ne mocke jamais le comportement de REQUÊTE d'une session SQLA
+(anti-oracle), seulement le no-op de la frontière d'écriture.
 """
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator, Mapping
-from unittest.mock import AsyncMock, sentinel
+from typing import cast
+from unittest.mock import AsyncMock
 
 from hypothesis import given, settings
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +42,25 @@ def _user() -> User:
         display_name="U",
         role=UserRole.MEMBER,
     )
+
+
+class _NoopSession:
+    """Stub de session pour les tests de ROUTAGE : la frontière par-mutation (S13.6 —
+    `record_processed`→`flush`, `commit`, `refresh`) est un no-op ici. On n'y vérifie
+    pas la persistance (couverte en intégration), seulement le routage/ordre — donc
+    aucune REQUÊTE n'est simulée (pas d'oracle mocké), juste le boundary d'écriture."""
+
+    def __contains__(self, _obj: object) -> bool:
+        return False  # `user` jamais dans cette session-stub → pas d'expunge
+
+    def add(self, _obj: object) -> None: ...
+    async def flush(self) -> None: ...
+    async def commit(self) -> None: ...
+    async def rollback(self) -> None: ...
+
+
+def _noop_session() -> AsyncSession:
+    return cast("AsyncSession", _NoopSession())
 
 
 def _mutation(table: str = "transactions") -> Mutation:
@@ -109,9 +133,10 @@ async def test_routes_known_table_to_handler() -> None:
     m = _mutation("transactions")
     ack = WriteResult(client_request_id=m.client_request_id, success=True)
     handler = AsyncMock(return_value=ack)
+    session = _noop_session()
 
     results = await process_batch(
-        sentinel.session,
+        session,
         user,
         BatchUpload(mutations=[m]),
         handlers={"transactions": handler},
@@ -119,7 +144,7 @@ async def test_routes_known_table_to_handler() -> None:
         is_processed=_never_processed,
     )
 
-    handler.assert_awaited_once_with(sentinel.session, user, m)
+    handler.assert_awaited_once_with(session, user, m)
     assert results == [ack]
 
 
@@ -131,7 +156,7 @@ async def test_default_registry_rejects_unmapped_table() -> None:
     assert "definitely_not_a_sync_table" not in HANDLERS  # garde anti-false-green
     m = _mutation("definitely_not_a_sync_table")
 
-    [result] = await process_batch(sentinel.session, _user(), BatchUpload(mutations=[m]))
+    [result] = await process_batch(_noop_session(), _user(), BatchUpload(mutations=[m]))
 
     assert result.success is False
     assert result.error is not None and result.error.code == "unknown_table"
@@ -145,7 +170,7 @@ async def test_unknown_table_yields_typed_error() -> None:
     handler = AsyncMock()
 
     [result] = await process_batch(
-        sentinel.session, _user(), BatchUpload(mutations=[m]), handlers={"transactions": handler}
+        _noop_session(), _user(), BatchUpload(mutations=[m]), handlers={"transactions": handler}
     )
 
     assert result.success is False
@@ -166,7 +191,7 @@ async def test_ordering_preserved_and_continue_on_error() -> None:
     handler = AsyncMock(side_effect=_echo)
 
     results = await process_batch(
-        sentinel.session,
+        _noop_session(),
         _user(),
         BatchUpload(mutations=[m1, m_bad, m3]),
         handlers={"transactions": handler},
@@ -189,7 +214,7 @@ async def test_empty_batch_returns_empty_list() -> None:
     handler = AsyncMock()
 
     results = await process_batch(
-        sentinel.session, _user(), BatchUpload(mutations=[]), handlers={"transactions": handler}
+        _noop_session(), _user(), BatchUpload(mutations=[]), handlers={"transactions": handler}
     )
 
     assert results == []
@@ -204,7 +229,7 @@ async def test_property_one_result_per_mutation_in_order(batch: BatchUpload) -> 
     même `client_request_id`, même ordre). Complète — sans dupliquer — la property
     de convergence/permutation S13.9."""
     results = await process_batch(
-        sentinel.session,
+        _noop_session(),
         _user(),
         batch,
         handlers=_AllowAllHandlers(),

@@ -3,7 +3,9 @@
 Route `categories` ET `budgets` vers `budget.public`. Vérifie les allowlists FERMÉES
 (aucun `setattr` aveugle hors `{name,color,icon}` / `{amount_cents,carry_over_remainder}`),
 le routage `update→move_category` sur changement de parent, le forçage `created_by`/
-`user_id`. Oracle = état DB / code d'erreur / `pytest.raises` (cas « propage »).
+`user_id`. Oracle = état DB / `result.error.code` (les exceptions domaine sont MAPPÉES
+par le dispatcher depuis S13.6 / P13.6.3) ; les `pytest.raises` résiduels assertent une
+`ValidationError` Pydantic (payload mal formé, étape 3 — propage → 500, hors mapping).
 """
 
 from __future__ import annotations
@@ -17,7 +19,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.auth.models import User
-from backend.modules.budget.domain import CategoryCycleError
 from backend.modules.budget.models import Budget, BudgetContributor, Category
 from backend.modules.sync.public import BatchUpload, Mutation, WriteResult
 from backend.modules.sync.service.dispatcher import process_batch
@@ -49,6 +50,7 @@ async def test_category_insert_creates(
         await initialized_household.execute(select(Category).where(Category.name == "Courses"))
     ).scalar_one()
     assert cat.archived_at is None
+    assert result.server_values == {"id": str(cat.id)}  # ack étape 10 : id généré serveur
 
 
 async def test_category_update_renames(
@@ -111,21 +113,25 @@ async def test_category_update_parent_none_routes_move_to_root(
     assert refreshed.parent_id is None  # déplacé à la racine (≠ parent inchangé)
 
 
-async def test_category_move_cycle_raises(
+async def test_category_move_cycle_rejected(
     initialized_household: AsyncSession,
     bound_user_factory: _UserFactory,
     bound_category_factory: _CategoryFactory,
 ) -> None:
-    """Un re-parentage qui fermerait un cycle PROPAGE `CategoryCycleError` (D-I)."""
+    """Un re-parentage qui fermerait un cycle (`CategoryCycleError`) est CAPTURÉ par la
+    frontière par-mutation (S13.6) → `success=False`, code typé `validation_error`
+    (P13.6.3 : la famille `CategoryError` collapse en `validation_error`)."""
     user = await bound_user_factory(email="cat4@ex.com")
     a = await bound_category_factory(name="A")
     b = await bound_category_factory(name="B", parent_id=a.id)
-    with pytest.raises(CategoryCycleError):
-        await _run(
-            initialized_household,
-            user,
-            _mut("categories", "update", {"id": str(a.id), "parent_id": str(b.id)}),
-        )
+    result = await _run(
+        initialized_household,
+        user,
+        _mut("categories", "update", {"id": str(a.id), "parent_id": str(b.id)}),
+    )
+    assert result.success is False
+    assert result.error is not None
+    assert result.error.code == "validation_error"
 
 
 async def test_category_update_rejects_non_allowlisted(
@@ -187,6 +193,7 @@ async def test_budget_insert_creates_with_contributors(
         await initialized_household.execute(select(Budget).where(Budget.category_id == cat.id))
     ).scalar_one()
     assert budget.created_by == user.id
+    assert result.server_values == {"id": str(budget.id)}  # ack étape 10 : id généré serveur
     contributors = (
         await initialized_household.execute(
             select(func.count())
@@ -228,11 +235,12 @@ async def test_budget_update_amount(
         await initialized_household.execute(select(Budget).where(Budget.category_id == cat.id))
     ).scalar_one()
 
-    await _run(
+    upd = await _run(
         initialized_household,
         user,
         _mut("budgets", "update", {"id": str(budget.id), "amount_cents": 45000}),
     )
+    assert upd.server_values is None  # update : l'id vient du client, pas de server_values
     await initialized_household.refresh(budget)
     assert budget.amount_cents == 45000
 

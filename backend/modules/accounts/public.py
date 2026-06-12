@@ -13,7 +13,7 @@ RBAC code in E04).
 
 from __future__ import annotations
 
-from backend.modules.accounts.domain import AccountType, MemberShare
+from backend.modules.accounts.domain import AccountType, AccountValidationError, MemberShare
 from backend.modules.accounts.events import (
     AccountMemberAdded,
     AccountMemberRemoved,
@@ -49,6 +49,7 @@ __all__ = [
     "AccountMemberAdded",
     "AccountMemberRemoved",
     "AccountType",
+    "AccountValidationError",
     "HOUSEHOLD_ID",
     "HouseholdNotInitializedError",
     "MemberShare",

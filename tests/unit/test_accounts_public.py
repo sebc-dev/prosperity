@@ -33,6 +33,7 @@ def test_public_exports_exact_set() -> None:
         "AccountMemberAdded",
         "AccountMemberRemoved",
         "AccountType",
+        "AccountValidationError",
         "HouseholdNotInitializedError",
         "MemberShare",
         "ShareRatioUpdated",
@@ -112,6 +113,9 @@ def test_public_names_are_identical_objects_to_internals() -> None:
     # The S13.4 param-types re-export the real `accounts.domain` symbols.
     assert accounts_public.AccountType is _domain.AccountType
     assert accounts_public.MemberShare is _domain.MemberShare
+    # The S13.6 (P13.6.3) error-base re-exports the real `accounts.domain` symbol
+    # (consumed by `sync.service.errors` to map account validation → `validation_error`).
+    assert accounts_public.AccountValidationError is _domain.AccountValidationError
 
 
 def test_exception_is_a_plain_exception_subclass() -> None:

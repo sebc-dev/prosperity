@@ -12,7 +12,7 @@ aveugle des services `update_category`/`update_budget`.
 
 from __future__ import annotations
 
-from typing import assert_never
+from typing import Any, assert_never
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,7 +37,7 @@ from backend.modules.sync.handlers.payloads import (
 from backend.modules.sync.schemas import Mutation, WriteResult
 
 
-def _ack(mutation: Mutation, *, server_values: dict[str, object] | None = None) -> WriteResult:
+def _ack(mutation: Mutation, *, server_values: dict[str, Any] | None = None) -> WriteResult:
     """Ack étape 10 ; `server_values` reporte l'`id` généré serveur pour un `insert`."""
     return WriteResult(
         client_request_id=mutation.client_request_id, success=True, server_values=server_values

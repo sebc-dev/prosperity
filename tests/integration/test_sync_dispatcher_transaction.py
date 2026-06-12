@@ -146,6 +146,8 @@ async def test_auth_denied_does_not_rollback_prior_success(
     assert denied.error is not None and denied.error.code == "auth_denied"
     assert ok2.success is True
     assert await _draft_count(household_singleton, account_id) == 2
+    # le refus (étape 1) ne journalise RIEN : seuls les 2 writes réussis sont loggés.
+    assert await _log_count(household_singleton, user_id=owner.id) == 2
 
 
 # ── append du journal (étape 9, DANS la transaction du write) ───────────────────
@@ -299,6 +301,8 @@ async def test_prior_successes_committed_when_later_fails(committed_engine: Asyn
             BatchUpload(mutations=[_insert(account_id), failing, _insert(account_id)]),
         )
         assert [ok1.success, fail.success, ok2.success] == [True, False, True]
+        # le code typé survit au commit réel (pas seulement au release de SAVEPOINT).
+        assert fail.error is not None and fail.error.code == "immutable_field_violation"
 
     async with sm() as session:  # session DISTINCTE → snapshot post-commit
         drafts = (
@@ -315,3 +319,60 @@ async def test_prior_successes_committed_when_later_fails(committed_engine: Asyn
             )
         ).scalar_one()
         assert splits == 2  # la jambe refusée n'a rien laissé (form-B factory = 2 jambes)
+
+
+def _seed_committed_unbalanced(s: Session) -> tuple[uuid.UUID, uuid.UUID, uuid.UUID]:
+    """Seed (commit-réel) un owner + compte + une tx DRAFT DÉSÉQUILIBRÉE (1 jambe) :
+    cible d'une transition `planned` qui lèvera `UnbalancedTransactionError` (erreur
+    domaine typée, donc `continue` — pas un re-raise)."""
+    for factory in (UserFactory, AccountFactory, CategoryFactory, TransactionFactory, SplitFactory):
+        factory._meta.sqlalchemy_session = s  # type: ignore[attr-defined]
+    s.add(Household(name="Committed Household", base_currency="EUR"))  # singleton (ADR 0010)
+    s.flush()
+    owner = UserFactory(email="durable-typed@example.com")
+    account = AccountFactory(owner_id=owner.id, name="Perso")
+    tx = TransactionFactory(account_id=account.id, created_by=owner.id, splits=False)
+    SplitFactory(transaction_id=tx.id, account_id=account.id, amount_cents=500)  # 1 jambe
+    return owner.id, account.id, tx.id
+
+
+@pytest.mark.usefixtures("_clean_committed_db")
+async def test_typed_error_continues_and_commits_neighbors_on_committed_engine(
+    committed_engine: AsyncEngine,
+) -> None:
+    """Sur des commits RÉELS : une erreur domaine TYPÉE (`unbalanced_transaction`) au
+    milieu d'un batch `[insert OK, planned déséquilibré, insert OK]` est `continue` (pas
+    un re-raise) — les DEUX inserts encadrants sont PERSISTÉS, lus depuis une session
+    DISTINCTE. Prouve le chemin `continue` typé au-delà du release de SAVEPOINT (le code
+    survit à un vrai commit, et `expire_on_commit=False` reflète la prod)."""
+    sm = async_sessionmaker(committed_engine, expire_on_commit=False)
+
+    async with sm() as session:
+        owner_id, account_id, unbalanced_id = await session.run_sync(_seed_committed_unbalanced)
+        await session.commit()
+
+    async with sm() as session:
+        owner = await session.get(User, owner_id)
+        assert owner is not None
+        plan = _mut("transactions", "update", {"id": str(unbalanced_id), "state": "planned"})
+        ok1, fail, ok2 = await process_batch(
+            session,
+            owner,
+            BatchUpload(mutations=[_insert(account_id), plan, _insert(account_id)]),
+        )
+        assert [ok1.success, fail.success, ok2.success] == [True, False, True]
+        assert fail.error is not None and fail.error.code == "unbalanced_transaction"
+
+    async with sm() as session:  # session DISTINCTE → snapshot post-commit
+        drafts = (
+            await session.execute(
+                select(func.count())
+                .select_from(Transaction)
+                .where(Transaction.account_id == account_id, Transaction.state == "draft")
+            )
+        ).scalar_one()
+        assert drafts == 3  # le seed (transition rollback → reste draft) + les 2 inserts
+        still_draft = (
+            await session.execute(select(Transaction.state).where(Transaction.id == unbalanced_id))
+        ).scalar_one()
+        assert still_draft == "draft"  # la mutation N a bien rollback (transition annulée)

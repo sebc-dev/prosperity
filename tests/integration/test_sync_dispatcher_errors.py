@@ -18,11 +18,14 @@ import uuid
 from collections.abc import Awaitable, Callable
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from backend.modules.auth.models import User
+from backend.modules.sync.models import SyncRequestLog
 from backend.modules.sync.public import BatchUpload, Mutation, WriteResult
 from backend.modules.sync.schemas import MutationOp
 from backend.modules.sync.service.dispatcher import (
@@ -153,3 +156,82 @@ async def test_unknown_exception_propagates_500_and_keeps_prior_commits(
         )
     ).scalar_one()
     assert drafts == 1  # le write committé AVANT le 500 a survécu (1..N-1 committées)
+
+
+async def test_invalid_payload_propagates_500_and_keeps_prior_commits(
+    household_singleton: AsyncSession, bound_transaction_factories: _TxFactories
+) -> None:
+    """CHEMIN RÉEL d'une `pydantic.ValidationError` (payload étape 3 mal formé) : un
+    `categories/insert {}` passe l'auth (membre actif) mais échoue à `model_validate`
+    dans le handler. `to_write_error` renvoie `None` (hors domaine) → le dispatcher
+    RE-RAISE → 500 (D-I), JAMAIS un faux `success` ni un code typé. L'insert précédent,
+    déjà committé, survit."""
+    user_f, account_f, _, _ = await bound_transaction_factories()
+
+    def _seed(_s: Session) -> tuple[User, uuid.UUID]:
+        owner = user_f(email="badpayload@ex.com")
+        return owner, account_f(owner_id=owner.id).id
+
+    owner, account_id = await household_singleton.run_sync(_seed)
+    # m1 = insert valide (commit) ; m2 = categories/insert SANS `name` → ValidationError handler.
+    batch = BatchUpload(mutations=[_insert(account_id), _mut("categories", "insert", {})])
+
+    with pytest.raises(ValidationError):
+        await process_batch(household_singleton, owner, batch)
+
+    drafts = (
+        await household_singleton.execute(
+            select(func.count())
+            .select_from(Transaction)
+            .where(Transaction.account_id == account_id, Transaction.state == "draft")
+        )
+    ).scalar_one()
+    assert drafts == 1  # le write committé AVANT le 500 a survécu
+
+
+async def _dup_pk(session: AsyncSession, user: User, mutation: Mutation) -> WriteResult:
+    """Handler qui force une violation d'intégrité DB au `flush` (deux lignes au MÊME
+    PK composite `sync_request_log`) → `IntegrityError` (erreur INFRA, hors domaine)."""
+    for table in ("a", "b"):
+        session.add(
+            SyncRequestLog(
+                user_id=user.id, client_request_id=mutation.client_request_id, table_name=table
+            )
+        )
+    await session.flush()  # PK (user_id, client_request_id) en double → IntegrityError
+    raise AssertionError  # pragma: no cover — le flush ci-dessus lève toujours
+
+
+async def test_db_integrity_error_propagates_500_and_keeps_prior_commits(
+    household_singleton: AsyncSession, bound_transaction_factories: _TxFactories
+) -> None:
+    """Un échec AU FLUSH DB (`IntegrityError`, pas une exception domaine pré-flush) est
+    aussi une erreur INCONNUE → `to_write_error` `None` → re-raise → 500. Prouve que la
+    frontière par-mutation rollback proprement une transaction Postgres ABORTÉE (l'accès
+    suivant exigerait un nouveau cycle) et que 1..N-1 survivent."""
+    user_f, account_f, _, _ = await bound_transaction_factories()
+
+    def _seed(_s: Session) -> tuple[User, uuid.UUID]:
+        owner = user_f(email="integrity@ex.com")
+        return owner, account_f(owner_id=owner.id).id
+
+    owner, account_id = await household_singleton.run_sync(_seed)
+    handlers: dict[str, Handler] = dict(HANDLERS)
+    handlers["kaboom"] = _dup_pk
+    checks: dict[tuple[str, MutationOp], PermissionCheck] = dict(PERMISSION_CHECKS)
+    checks["kaboom", "insert"] = _allow
+    batch = BatchUpload(mutations=[_insert(account_id), _mut("kaboom", "insert", {})])
+
+    with pytest.raises(IntegrityError):
+        await process_batch(
+            household_singleton, owner, batch, handlers=handlers, permission_checks=checks
+        )
+
+    drafts = (
+        await household_singleton.execute(
+            select(func.count())
+            .select_from(Transaction)
+            .where(Transaction.account_id == account_id, Transaction.state == "draft")
+        )
+    ).scalar_one()
+    assert drafts == 1  # le write committé AVANT l'abort a survécu (rollback ciblé)

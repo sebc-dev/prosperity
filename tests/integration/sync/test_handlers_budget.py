@@ -3,7 +3,9 @@
 Route `categories` ET `budgets` vers `budget.public`. Vérifie les allowlists FERMÉES
 (aucun `setattr` aveugle hors `{name,color,icon}` / `{amount_cents,carry_over_remainder}`),
 le routage `update→move_category` sur changement de parent, le forçage `created_by`/
-`user_id`. Oracle = état DB / code d'erreur / `pytest.raises` (cas « propage »).
+`user_id`. Oracle = état DB / `result.error.code` (les exceptions domaine sont MAPPÉES
+par le dispatcher depuis S13.6 / P13.6.3) ; les `pytest.raises` résiduels assertent une
+`ValidationError` Pydantic (payload mal formé, étape 3 — propage → 500, hors mapping).
 """
 
 from __future__ import annotations

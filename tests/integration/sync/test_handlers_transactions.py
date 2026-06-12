@@ -2,8 +2,10 @@
 
 `process_batch` (handlers + checks RÉELS, vrai Postgres, rollback-isolé) route
 chaque `(op, payload)` vers `transactions.public` puis flush. Oracle = état DB lu
-dans la même session (les cas « lève » via `pytest.raises` autour de `process_batch`,
-D-I : pas de try/except dans le dispatcher en S13.4).
+dans la même session. Depuis S13.6 (P13.6.3) le dispatcher MAPPE les exceptions
+domaine en `result.error.code` (plus de propagation) ; les seuls `pytest.raises`
+résiduels assertent une `ValidationError` Pydantic (payload mal formé, étape 3 — AVANT
+le write, donc inconnue du mapping domaine : elle propage → 500, D-I).
 
 Les entités RÉFÉRENCÉES (tx, split) sont SEED via factories pour disposer d'un id
 connu. Depuis S13.6 (P13.6.2) chaque `insert` reporte aussi l'`id` généré serveur

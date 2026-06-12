@@ -10,9 +10,19 @@ poursuit) de l'erreur serveur (retry).
 `public.py` des modules métier (jamais leurs `*.domain`, contrat import-linter). On
 réutilise les `.code` (`ClassVar`) des familles `transactions` qui sont DÉJÀ dans le
 vocabulaire fermé (pas de duplication de chaîne) ; on collapse les familles de
-validation des autres modules en `validation_error` ; les `*NotFoundError` en
-`not_found` (uniforme, anti-oracle). `message` est STATIQUE par code — jamais
-`str(exc)`/SQL/PII (review Sécu F2).
+validation des autres modules en `validation_error`. `message` est STATIQUE par
+code — jamais `str(exc)`/SQL/PII (review Sécu F2).
+
+⚠️ Anti-oracle — la branche `not_found` est VOLONTAIREMENT restreinte. Seules les
+`*NotFoundError` d'une ressource « non sensible » (la tx / le split / la share-request /
+la dette que le client manipule, dont l'inexistence n'apprend rien à un attaquant)
+y figurent. Les sous-classes à nom « NotFound/NotAccessible » qui encodent une
+existence/accès CROSS-HOUSEHOLD — `CategoryNotFoundError`, `SourceTransactionNotFoundError`,
+`SettlementDebtNotAccessibleError` & co — retombent DÉLIBÉRÉMENT en `validation_error`.
+Le domaine est déjà 404-first/anti-oracle EN AMONT (existence et accès fusionnés en
+une seule exception) ; les promouvoir en `not_found` rouvrirait précisément l'oracle
+d'existence/accès qu'on ferme. NE PAS « corriger » l'apparente omission. Verrouillé
+par `test_sync_error_mapping` (cas explicites + balayage `__subclasses__` anti-fuite-500).
 """
 
 from __future__ import annotations
@@ -54,6 +64,10 @@ def to_write_error(exc: Exception) -> WriteError | None:
     """
     match exc:
         case (
+            # NE PAS ajouter ici les sous-classes existence/accès cross-household
+            # (`CategoryNotFoundError`, `SourceTransactionNotFoundError`,
+            # `SettlementDebtNotAccessibleError`…) : elles doivent rester `validation_error`
+            # (anti-oracle — cf. docstring du module). Uniquement des ressources non sensibles.
             TransactionNotFoundError()
             | SplitNotFoundError()
             | ShareRequestNotFoundError()
@@ -69,7 +83,13 @@ def to_write_error(exc: Exception) -> WriteError | None:
             # `.code` (ClassVar) est DÉJÀ dans le vocabulaire fermé — pas de duplication.
             code = cast("WriteErrorCode", exc.code)
         case (
-            TransactionError()  # base + `MultipleFundingLegsError` → validation générique
+            # Familles de validation + leurs sous-classes existence/accès sensibles
+            # (`CategoryNotFoundError(CategoryError)`, `SourceTransactionNotFoundError(
+            # ShareRequestError)`, `SettlementDebtNotAccessibleError`/`CrossHouseholdError`/
+            # `LinkedTransactionNotAccessibleError(SettlementServiceError)`) → `validation_error`
+            # DÉLIBÉRÉMENT (anti-oracle, cf. docstring). `MultipleFundingLegsError` (base
+            # `TransactionError`, `.code` hors vocab) y tombe aussi → validation générique.
+            TransactionError()
             | AccountValidationError()
             | CategoryError()
             | BudgetError()

@@ -101,11 +101,7 @@ async def list_split_ids(session: AsyncSession, *, tx_id: UUID) -> set[UUID]:
     rendu par `add_split`. Le handler diffe `list_split_ids` avant/après l'ajout
     pour isoler l'id à reporter au client (`server_values`)."""
     return set(
-        (
-            await session.execute(
-                select(SplitModel.id).where(SplitModel.transaction_id == tx_id)
-            )
-        )
+        (await session.execute(select(SplitModel.id).where(SplitModel.transaction_id == tx_id)))
         .scalars()
         .all()
     )

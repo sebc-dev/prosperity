@@ -9,12 +9,21 @@ immuable) : sans entrée `PERMISSION_CHECKS`, ils sont interceptés en `auth_den
 
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.auth.public import User
 from backend.modules.debts.public import create_settlement
 from backend.modules.sync.handlers.payloads import SettlementInsertPayload
 from backend.modules.sync.schemas import Mutation, WriteResult
+
+
+def _ack(mutation: Mutation, *, server_values: dict[str, Any] | None = None) -> WriteResult:
+    """Ack étape 10 ; `server_values` reporte l'`id` généré serveur pour un `insert`."""
+    return WriteResult(
+        client_request_id=mutation.client_request_id, success=True, server_values=server_values
+    )
 
 
 async def handle_settlement(session: AsyncSession, user: User, mutation: Mutation) -> WriteResult:
@@ -30,11 +39,7 @@ async def handle_settlement(session: AsyncSession, user: User, mutation: Mutatio
             lines=p.to_line_inputs(),
             by_user_id=user.id,
         )
-        return WriteResult(
-            client_request_id=mutation.client_request_id,
-            success=True,
-            server_values={"id": str(settlement.id)},  # id généré serveur (étape 10)
-        )
+        return _ack(mutation, server_values={"id": str(settlement.id)})  # id généré serveur
     # `update`/`delete` interceptés à l'étape 1 (D-G) — jamais atteints ici.
     msg = f"unsupported settlements op: {mutation.op}"  # pragma: no cover
     raise AssertionError(msg)  # pragma: no cover

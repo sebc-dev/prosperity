@@ -9,8 +9,9 @@ Deux tiers : le tier rollback-isolé (`household_singleton`, `db_session` en mod
 `create_savepoint` → le `commit()` par-mutation est un release de SAVEPOINT, isolation
 préservée) prouve la SÉQUENCE ; le tier commit-réel (`committed_engine` +
 `_clean_committed_db`) prouve la DURABILITÉ « 1..N-1 persistent » depuis une session
-DISTINCTE. Le code d'erreur des mutations qui lèvent est PROVISOIRE (`internal_error`)
-en P13.6.1 ; la table typée arrive en P13.6.3.
+DISTINCTE. Le code d'erreur des mutations qui lèvent est typé par `to_write_error`
+(P13.6.3) ; la table de correspondance exhaustive est verrouillée séparément
+(`test_sync_error_mapping`, `test_sync_dispatcher_errors`).
 """
 
 from __future__ import annotations
@@ -72,10 +73,9 @@ async def test_failed_mutation_rolls_back_only_itself(
     household_singleton: AsyncSession, bound_transaction_factories: _TxFactories
 ) -> None:
     """Batch `[insert OK, splits/insert qui lève, insert OK]` : la mutation du milieu
-    (un `add_split` sur une tx CONFIRMÉE → `ImmutableFieldViolation`) est capturée et
-    rollback ; les deux inserts l'encadrant committent. `results == [ok, error, ok]`,
-    le split refusé est ABSENT, deux drafts neufs présents. Code PROVISOIRE `internal_error`
-    en P13.6.1 (typé `immutable_field_violation` en P13.6.3)."""
+    (un `add_split` sur une tx CONFIRMÉE → `ImmutableFieldViolation`) est capturée,
+    mappée (`immutable_field_violation`) et rollback ; les deux inserts l'encadrant
+    committent. `results == [ok, error, ok]`, le split refusé est ABSENT, deux drafts neufs."""
     user_f, account_f, tx_f, _ = await bound_transaction_factories()
 
     def _seed(_s: Session) -> tuple[User, uuid.UUID, uuid.UUID]:
@@ -109,7 +109,7 @@ async def test_failed_mutation_rolls_back_only_itself(
 
     assert ok1.success is True
     assert fail.success is False
-    assert fail.error is not None and fail.error.code == "internal_error"
+    assert fail.error is not None and fail.error.code == "immutable_field_violation"
     assert ok2.success is True
     assert await _draft_count(household_singleton, account_id) == 2  # les 2 inserts committés
     splits_after = (

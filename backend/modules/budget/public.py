@@ -20,7 +20,13 @@ module, pas re-exportée ici (aucun consommateur cross-module à ce jour).
 
 from __future__ import annotations
 
-from backend.modules.budget.domain import BudgetConsumption, PeriodKind, Scope
+from backend.modules.budget.domain import (
+    BudgetConsumption,
+    BudgetError,
+    CategoryError,
+    PeriodKind,
+    Scope,
+)
 from backend.modules.budget.events import (
     BudgetCreatedEvent,
     BudgetThresholdEvent,
@@ -60,9 +66,11 @@ from backend.modules.budget.service.threshold_detector import on_transaction_con
 __all__ = [
     "BudgetConsumption",
     "BudgetCreatedEvent",
+    "BudgetError",
     "BudgetThresholdEvent",
     "BudgetUpdatedEvent",
     "BudgetWithConsumption",
+    "CategoryError",
     "OverflowBudgetContext",
     "PeriodKind",
     "Scope",

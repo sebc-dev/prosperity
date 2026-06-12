@@ -27,7 +27,6 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import Protocol, cast
 from uuid import UUID
 
-from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.accounts.public import accessible_account_ids, account_is_accessible
@@ -43,8 +42,10 @@ from backend.modules.sync.schemas import (
     Mutation,
     MutationOp,
     WriteError,
+    WriteErrorCode,
     WriteResult,
 )
+from backend.modules.sync.service.errors import to_write_error
 from backend.modules.sync.service.idempotency import already_processed, record_processed
 from backend.modules.transactions.public import get_transaction
 
@@ -303,9 +304,8 @@ PERMISSION_CHECKS: dict[tuple[str, MutationOp], PermissionCheck] = {
 }
 
 
-_UNKNOWN_TABLE = "unknown_table"  # vocabulaire ADR 0014 (resserré Literal en P13.6.3/D6)
-_AUTH_DENIED = "auth_denied"  # vocabulaire ADR 0014
-_INTERNAL_ERROR = "internal_error"  # PROVISOIRE P13.6.1 — remplacé par la table typée en P13.6.3
+_UNKNOWN_TABLE: WriteErrorCode = "unknown_table"  # vocabulaire fermé ADR 0014 (D6)
+_AUTH_DENIED: WriteErrorCode = "auth_denied"  # vocabulaire fermé ADR 0014 (D6)
 
 
 async def process_batch(  # noqa: PLR0913 — 3 coutures de test keyword-only injectables
@@ -395,21 +395,19 @@ async def process_batch(  # noqa: PLR0913 — 3 coutures de test keyword-only in
             # `success=True`). Pas de `rollback()` non plus : il n'y a aucun write à
             # défaire, et un `commit` ultérieur du batch (ou de `get_db`) absorbera les
             # lectures read-only. Le résultat de refus est appendu tel quel.
-        except ValidationError:
-            # Échec de la validation Pydantic par-table (étape 3, payload mal formé) :
-            # bug de contrat wire, PAS une erreur domaine récupérable → on rollback et on
-            # PROPAGE (le route S13.8 en fera un 422). Reste un re-raise en P13.6.3 (D-I).
-            await session.rollback()
-            raise
-        except Exception:  # noqa: BLE001 — capture large PROVISOIRE (typée en P13.6.3)
+        except Exception as exc:
             await session.rollback()  # rollback de N SEUL (1..N-1 committées)
+            error = to_write_error(exc)  # exception domaine CONNUE → code typé (P13.6.3)
+            if error is None:
+                # Inconnue (erreur serveur, OU `ValidationError` de payload étape 3) :
+                # PAS un faux `success` — on PROPAGE → 500 (retry PowerSync, D-H/D-I).
+                # Les mutations 1..N-1 sont déjà committées (skip au retry, idempotence).
+                raise
             results.append(
                 WriteResult(
-                    client_request_id=mutation.client_request_id,
-                    success=False,
-                    error=WriteError(code=_INTERNAL_ERROR, message="Mutation failed."),
+                    client_request_id=mutation.client_request_id, success=False, error=error
                 )
             )
-            continue  # on poursuit N+1
+            continue  # erreur récupérable : le client purge la mutation, on poursuit N+1
         results.append(result)
     return results

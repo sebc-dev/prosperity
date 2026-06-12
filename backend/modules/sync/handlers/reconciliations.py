@@ -12,9 +12,9 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.auth.public import User
-from backend.modules.sync.schemas import Mutation, WriteError, WriteResult
+from backend.modules.sync.schemas import Mutation, WriteError, WriteErrorCode, WriteResult
 
-_NOT_IMPLEMENTED = "not_implemented_yet"
+_NOT_IMPLEMENTED: WriteErrorCode = "not_implemented_yet"
 
 
 async def handle_reconciliation(

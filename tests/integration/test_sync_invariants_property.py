@@ -56,8 +56,7 @@ from tests.integration.sync._sync_helpers import (
 from tests.strategies import (
     BatchSpec,
     OpSpec,
-    cross_user_batch_strategy,
-    independent_inserts_strategy,
+    mutation_batch_strategy,
     op_is_attack,
     permutation_pair_strategy,
 )
@@ -134,6 +133,12 @@ def _seed_isolation_sync(s: Session) -> Seeded:
         account_id=bob_account.id, date=dt.date(2026, 1, 1), state="draft", created_by=bob.id
     )
     s.add(bob_tx)
+    s.flush()
+    # Une jambe seedée sur la tx de B : rend l'oracle `n_splits` du `_victim_snapshot`
+    # NON aveugle face au vecteur `splits/delete` cross-user (review Nit sécu).
+    s.add(
+        Split(transaction_id=bob_tx.id, account_id=bob_account.id, amount_cents=100, currency="EUR")
+    )
     s.flush()
 
     carol = User(email="carol@ex.com", password_hash="x", display_name="C", role="member")
@@ -219,7 +224,7 @@ def test_convergence_under_permutation_property(
 
 
 # ── Property 2 — idempotence (replay = no-op, AC idempotence) ───────────────────
-@given(spec=independent_inserts_strategy())
+@given(spec=mutation_batch_strategy("independent"))
 @_PROP_SETTINGS
 def test_idempotence_replay_is_noop_property(sync_prop_socle: str, spec: BatchSpec) -> None:
     batch = realize(spec)  # crids FIXES, réutilisés au replay
@@ -239,7 +244,7 @@ def test_idempotence_replay_is_noop_property(sync_prop_socle: str, spec: BatchSp
 
 
 # ── Property 3 — isolation cross-user (AC isolation, D-ISO-SCOPE) ───────────────
-@given(spec=cross_user_batch_strategy())
+@given(spec=mutation_batch_strategy("cross_user"))
 @_PROP_SETTINGS
 def test_cross_user_isolation_property(sync_prop_socle: str, spec: BatchSpec) -> None:
     async def _body(session: AsyncSession, seeded: Seeded) -> None:

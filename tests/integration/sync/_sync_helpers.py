@@ -72,9 +72,9 @@ def _resolve(value: object, ctx: RealizeCtx) -> object:
             return str(uuid.uuid4())
         return str(sentinels[value]) if value in sentinels else value
     if isinstance(value, list):
-        return [_resolve(v, ctx) for v in value]  # type: ignore[arg-type]
+        return [_resolve(v, ctx) for v in cast("list[object]", value)]
     if isinstance(value, dict):
-        return {k: _resolve(v, ctx) for k, v in value.items()}  # type: ignore[arg-type]
+        return {k: _resolve(v, ctx) for k, v in cast("dict[str, object]", value).items()}
     return value
 
 

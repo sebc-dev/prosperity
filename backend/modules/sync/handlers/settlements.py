@@ -21,7 +21,7 @@ async def handle_settlement(session: AsyncSession, user: User, mutation: Mutatio
     """`settlements/insert` → `create_settlement`."""
     if mutation.op == "insert":
         p = SettlementInsertPayload.model_validate(mutation.payload)
-        await create_settlement(
+        settlement = await create_settlement(
             session,
             settlement_type=p.settlement_type,
             linked_transaction_id=p.linked_transaction_id,
@@ -30,7 +30,11 @@ async def handle_settlement(session: AsyncSession, user: User, mutation: Mutatio
             lines=p.to_line_inputs(),
             by_user_id=user.id,
         )
-        return WriteResult(client_request_id=mutation.client_request_id, success=True)
+        return WriteResult(
+            client_request_id=mutation.client_request_id,
+            success=True,
+            server_values={"id": str(settlement.id)},  # id généré serveur (étape 10)
+        )
     # `update`/`delete` interceptés à l'étape 1 (D-G) — jamais atteints ici.
     msg = f"unsupported settlements op: {mutation.op}"  # pragma: no cover
     raise AssertionError(msg)  # pragma: no cover

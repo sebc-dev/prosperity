@@ -25,7 +25,7 @@ async def handle_share_request(
     """`share_requests/{insert,delete}` → `debts.public`."""
     if mutation.op == "insert":
         ins = ShareRequestInsertPayload.model_validate(mutation.payload)
-        await create_share_request(
+        share_request = await create_share_request(
             session,
             transaction_id=ins.transaction_id,
             requested_from=ins.requested_from,
@@ -33,10 +33,15 @@ async def handle_share_request(
             short_label=ins.short_label,
             by_user_id=user.id,
         )
-    elif mutation.op == "delete":
+        return WriteResult(
+            client_request_id=mutation.client_request_id,
+            success=True,
+            server_values={"id": str(share_request.id)},  # id généré serveur (étape 10)
+        )
+    if mutation.op == "delete":
         dele = ShareRequestDeletePayload.model_validate(mutation.payload)
         await revoke_share_request(session, share_request_id=dele.id, by_user_id=user.id)
-    else:  # pragma: no cover — `share_requests/update` non supporté → rejeté à l'étape 1 (D-G)
-        msg = f"unsupported share_requests op: {mutation.op}"
-        raise AssertionError(msg)
-    return WriteResult(client_request_id=mutation.client_request_id, success=True)
+        return WriteResult(client_request_id=mutation.client_request_id, success=True)
+    # pragma: no cover — `share_requests/update` non supporté → rejeté à l'étape 1 (D-G)
+    msg = f"unsupported share_requests op: {mutation.op}"  # pragma: no cover
+    raise AssertionError(msg)  # pragma: no cover

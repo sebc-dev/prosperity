@@ -28,6 +28,7 @@ from backend.modules.transactions.public import (
     create_draft,
     get_transaction,
     is_transfer,
+    list_split_ids,
     list_transactions,
     remove_split,
     transition_to_confirmed,
@@ -56,6 +57,7 @@ _EXPECTED = {
     "create_draft",
     "get_transaction",
     "is_transfer",
+    "list_split_ids",
     "list_transactions",
     "remove_split",
     "transition_to_confirmed",
@@ -79,6 +81,7 @@ def test_service_functions_are_identical_re_exports() -> None:
     assert void is _lifecycle.void
     assert get_transaction is _queries.get_transaction
     assert list_transactions is _queries.list_transactions
+    assert list_split_ids is _queries.list_split_ids  # S13.6 (P13.6.2) : ack server-id split
     assert is_transfer is _domain.is_transfer
 
 

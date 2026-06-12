@@ -92,6 +92,25 @@ async def get_transaction(session: AsyncSession, *, tx_id: UUID) -> domain.Trans
     return _to_domain(tx, list(splits))
 
 
+async def list_split_ids(session: AsyncSession, *, tx_id: UUID) -> set[UUID]:
+    """Les `id` (générés serveur, `uuid4`) des splits de `tx_id` — set, sans ordre.
+
+    Exposé pour le write upload handler (S13.6 / P13.6.2) : `domain.Split` est un
+    value object SANS `id` (l'identité de l'agrégat est la `Transaction`), donc
+    l'ack d'un `splits/insert` ne peut PAS lire l'id du split neuf depuis l'agrégat
+    rendu par `add_split`. Le handler diffe `list_split_ids` avant/après l'ajout
+    pour isoler l'id à reporter au client (`server_values`)."""
+    return set(
+        (
+            await session.execute(
+                select(SplitModel.id).where(SplitModel.transaction_id == tx_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
 async def list_transactions(  # noqa: PLR0913 — flat, keyword-only filter surface
     session: AsyncSession,
     *,

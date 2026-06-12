@@ -31,12 +31,19 @@ from backend.modules.sync.handlers.payloads import (
 from backend.modules.sync.schemas import Mutation, WriteResult
 
 
+def _ack(mutation: Mutation, *, server_values: dict[str, object] | None = None) -> WriteResult:
+    """Ack étape 10 ; `server_values` reporte l'`id` généré serveur pour un `insert`."""
+    return WriteResult(
+        client_request_id=mutation.client_request_id, success=True, server_values=server_values
+    )
+
+
 async def handle_account(session: AsyncSession, user: User, mutation: Mutation) -> WriteResult:
     """`accounts/{insert,update,delete}` → `accounts.public`."""
     if mutation.op == "insert":
         if "members" in mutation.payload:  # compte commun (D-M : appartenance vérifiée étape 1)
             shared = AccountInsertSharedPayload.model_validate(mutation.payload)
-            await create_shared(
+            account = await create_shared(
                 session,
                 members=shared.to_member_shares(),
                 name=shared.name,
@@ -45,19 +52,20 @@ async def handle_account(session: AsyncSession, user: User, mutation: Mutation) 
             )
         else:  # compte personnel : owner forcé `user.id`
             personal = AccountInsertPersonalPayload.model_validate(mutation.payload)
-            await create_personal(
+            account = await create_personal(
                 session,
                 owner_id=user.id,
                 name=personal.name,
                 type=personal.type,
                 currency=personal.currency,
             )
-    elif mutation.op == "update":
+        return _ack(mutation, server_values={"id": str(account.id)})  # id généré serveur
+    if mutation.op == "update":
         upd = AccountUpdatePayload.model_validate(mutation.payload)
         await rename(session, account_id=upd.id, user_id=user.id, name=upd.name)
-    elif mutation.op == "delete":
+        return _ack(mutation)
+    if mutation.op == "delete":
         dele = AccountDeletePayload.model_validate(mutation.payload)
         await archive(session, account_id=dele.id, user_id=user.id)
-    else:  # pragma: no cover — op ∉ enum impossible (Pydantic `MutationOp`, D-O)
-        assert_never(mutation.op)
-    return WriteResult(client_request_id=mutation.client_request_id, success=True)
+        return _ack(mutation)
+    assert_never(mutation.op)  # pragma: no cover — op ∉ enum (Pydantic `MutationOp`, D-O)

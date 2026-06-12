@@ -49,7 +49,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_CEILING, Decimal
-from typing import Final, Literal
+from typing import Final, Literal, cast
 from uuid import UUID, uuid4
 
 import hypothesis.strategies as st
@@ -936,3 +936,148 @@ def batch_upload_strategy(draw: st.DrawFn, *, max_mutations: int = 8) -> BatchUp
     round-trip n'a pas besoin de la borne haute, exercée par un test à l'exemple.
     """
     return BatchUpload(mutations=draw(st.lists(mutation_strategy(), max_size=max_mutations)))
+
+
+# ── S13.9 : batches ABSTRAITS pour les properties du write upload handler ──────
+# `OpSpec`/`BatchSpec` décrivent un batch de façon ABSTRAITE — des SENTINELLES
+# (`$victim_account`…) tiennent lieu des ids serveur/seedés, inconnus à la
+# génération (D-SPEC, contrainte « ids générés serveur » de S13.8 D1). La couche
+# de réalisation (`tests/integration/sync/_sync_helpers.realize`) les résout en
+# `BatchUpload` concret. DISTINCT de `mutation_strategy`/`batch_upload_strategy`
+# ci-dessus (S13.2, payloads OPAQUES aléatoires pour les tests de schéma) : ici les
+# batches sont VALIDES et COHÉRENTS (D-VALID), pour prouver convergence /
+# idempotence / isolation contre `process_batch` (S13.9). `tests/strategies.py`
+# importe déjà `sync.schemas` (l.67) : ces specs n'introduisent aucun import sync.
+
+VICTIM_ACCOUNT: Final = "$victim_account"
+VICTIM_TX: Final = "$victim_tx"
+VICTIM_USER: Final = "$victim_user"
+OWN_TX: Final = "$own_tx"
+THIRD_USER: Final = "$third_user"
+RANDOM_ID: Final = "$random"
+
+# Sentinelles qui désignent une ressource de la VICTIME → marqueur « attaque
+# cross-user » (`op_is_attack`). `OWN_TX`/`RANDOM_ID` n'en sont pas (compte/ressource
+# du caller, ou id aléatoire) : un `splits/insert` D-N est attaque via `VICTIM_ACCOUNT`.
+_ATTACK_SENTINELS: Final = frozenset({VICTIM_ACCOUNT, VICTIM_TX, VICTIM_USER})
+
+
+@dataclass(frozen=True, slots=True)
+class OpSpec:
+    """Une mutation ABSTRAITE. `fields` porte des littéraux OU des sentinelles
+    (résolues récursivement par `realize`, y compris dans une liste `members`)."""
+
+    table: str
+    op: str
+    fields: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class BatchSpec:
+    ops: tuple[OpSpec, ...]
+
+
+def _contains_sentinel(value: object, sentinels: frozenset[str]) -> bool:
+    """Vrai ssi `value` (récursif : str / list / dict) contient une sentinelle."""
+    if isinstance(value, str):
+        return value in sentinels
+    if isinstance(value, list):
+        return any(_contains_sentinel(v, sentinels) for v in cast("list[object]", value))
+    if isinstance(value, dict):
+        return any(
+            _contains_sentinel(v, sentinels) for v in cast("dict[str, object]", value).values()
+        )
+    return False
+
+
+def op_is_attack(op: OpSpec) -> bool:
+    """Vrai ssi l'op cible une ressource de la victime (sert le filtre de non-vacuité P3)."""
+    return any(_contains_sentinel(v, _ATTACK_SENTINELS) for v in op.fields.values())
+
+
+@st.composite
+def independent_inserts_strategy(draw: st.DrawFn, *, min_n: int = 2, max_n: int = 6) -> BatchSpec:
+    """Batch d'inserts INDÉPENDANTS (comptes perso + catégories), valides et
+    COMMUTANTS — noms uniques par index pour un snapshot multiset déterministe."""
+    ops: list[OpSpec] = []
+    for i in range(draw(st.integers(min_value=min_n, max_value=max_n))):
+        if draw(st.booleans()):
+            ops.append(
+                OpSpec(
+                    "accounts", "insert", {"name": f"acc-{i}", "type": "courant", "currency": "EUR"}
+                )
+            )
+        else:
+            ops.append(OpSpec("categories", "insert", {"name": f"cat-{i}"}))
+    return BatchSpec(tuple(ops))
+
+
+@st.composite
+def permutation_pair_strategy(draw: st.DrawFn) -> tuple[BatchSpec, BatchSpec]:
+    """`(spec, permuté)` — l'ordre alternatif est tiré ICI (pas de paramètre `data`)."""
+    spec = draw(independent_inserts_strategy())
+    return spec, BatchSpec(tuple(draw(st.permutations(spec.ops))))
+
+
+# Catalogue des vecteurs d'isolation NIVEAU-DISPATCHER (tous → `auth_denied`,
+# D-ISO-SCOPE). Couvre `splits/insert` *jambe glissée* (D-N), `splits/delete`,
+# `transactions/update`, et `accounts/insert` commun EXCLUANT le caller.
+_ATTACKS: Final[list[OpSpec]] = [
+    OpSpec("accounts", "update", {"id": VICTIM_ACCOUNT, "name": "pwned"}),
+    OpSpec("accounts", "delete", {"id": VICTIM_ACCOUNT}),
+    OpSpec("transactions", "insert", {"account_id": VICTIM_ACCOUNT}),
+    OpSpec("transactions", "update", {"id": VICTIM_TX, "state": "void"}),
+    OpSpec("transactions", "delete", {"id": VICTIM_TX}),
+    OpSpec(
+        "splits",
+        "insert",
+        {
+            "transaction_id": VICTIM_TX,
+            "account_id": VICTIM_ACCOUNT,
+            "amount_cents": 100,
+            "currency": "EUR",
+        },
+    ),
+    OpSpec(
+        "splits",
+        "insert",  # D-N : parent accessible (own_tx), jambe vers le compte d'autrui
+        {
+            "transaction_id": OWN_TX,
+            "account_id": VICTIM_ACCOUNT,
+            "amount_cents": 100,
+            "currency": "EUR",
+        },
+    ),
+    OpSpec("splits", "delete", {"transaction_id": VICTIM_TX, "id": RANDOM_ID}),
+    OpSpec(
+        "accounts",
+        "insert",
+        {
+            "name": "entre-tiers",
+            "type": "courant",
+            "currency": "EUR",
+            "members": [
+                {"user_id": VICTIM_USER, "ratio": "0.5"},
+                {"user_id": THIRD_USER, "ratio": "0.5"},
+            ],
+        },
+    ),
+]
+
+
+@st.composite
+def cross_user_batch_strategy(draw: st.DrawFn) -> BatchSpec:
+    """≥1 attaque cross-user (du catalogue) + inserts perso valides intercalés,
+    ordre mélangé. Le `min_size=1` garantit la non-vacuité de P3."""
+    attacks = draw(st.lists(st.sampled_from(_ATTACKS), min_size=1, max_size=5))
+    own = [
+        OpSpec("accounts", "insert", {"name": f"own-{i}", "type": "courant", "currency": "EUR"})
+        for i in range(draw(st.integers(min_value=0, max_value=3)))
+    ]
+    return BatchSpec(tuple(draw(st.permutations([*attacks, *own]))))
+
+
+def mutation_batch_strategy(kind: str = "independent") -> st.SearchStrategy[BatchSpec]:
+    """Factory PARAPLUIE (nom de l'AC #194) : `"independent"` (convergence /
+    idempotence) | `"cross_user"` (isolation). Délègue aux strategies spécialisées."""
+    return cross_user_batch_strategy() if kind == "cross_user" else independent_inserts_strategy()

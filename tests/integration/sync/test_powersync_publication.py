@@ -24,7 +24,11 @@ from sqlalchemy import Engine, create_engine, text
 from testcontainers.postgres import PostgresContainer
 
 from alembic import command
-from tests._powersync_tables import PUBLISHED_TABLES
+from tests._powersync_tables import (
+    DEBTS_SERVER_ONLY_COLUMN,
+    PUBLISHED_TABLES,
+    debts_published_columns,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 ALEMBIC_INI = REPO_ROOT / "alembic.ini"
@@ -141,8 +145,56 @@ def test_replication_role_has_least_privilege(published_engine: Engine) -> None:
                 )
             )
         }
-    # SELECT is scoped to exactly the published tables — no broad GRANT.
+    # Every published table (including `debts`) has a table-level SELECT and
+    # nothing broader is granted. `debts` needs TABLE-level SELECT — not a
+    # column-level grant — because PowerSync's initial snapshot runs
+    # `SELECT * FROM debts`, which a column-level grant would deny (verified
+    # against the live PowerSync Service: a column grant breaks replication with
+    # "permission denied for table debts"). materialization_trace is kept out of
+    # what clients receive by the PUBLICATION column-list (asserted below) plus
+    # the explicit-column sync rules — not by the grant.
     assert granted == set(PUBLISHED_TABLES), (
         f"SELECT grant drift — unexpected: {granted - PUBLISHED_TABLES}, "
         f"missing: {PUBLISHED_TABLES - granted}"
     )
+
+
+def test_debts_published_with_column_list_excluding_materialization_trace(
+    published_engine: Engine,
+) -> None:
+    # D-MAT — the heart of the column-list publication: `materialization_trace`
+    # (server-only) must NEVER be in the published columns of `debts`, and every
+    # column that SHOULD be published must be present (a future `debts` column
+    # silently dropped from the list would break the owner's sync).
+    with published_engine.connect() as conn:
+        published_cols = {
+            r[0]
+            for r in conn.execute(
+                text(
+                    "SELECT a.attname "
+                    "FROM pg_publication_tables pt "
+                    "JOIN pg_class c ON c.relname = pt.tablename "
+                    "JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = pt.schemaname "
+                    "JOIN pg_attribute a ON a.attrelid = c.oid "
+                    "  AND a.attname = ANY(pt.attnames) "
+                    "WHERE pt.pubname = 'powersync' "
+                    "  AND pt.schemaname = 'public' AND pt.tablename = 'debts'"
+                )
+            )
+        }
+    assert DEBTS_SERVER_ONLY_COLUMN not in published_cols, (
+        f"server-only column {DEBTS_SERVER_ONLY_COLUMN!r} leaked into the debts publication"
+    )
+    expected = debts_published_columns()
+    assert published_cols == set(expected), (
+        f"debts column-list drift — unexpected: {published_cols - expected}, "
+        f"missing: {expected - published_cols}"
+    )
+
+
+def test_settlements_table_is_not_published(published_engine: Engine) -> None:
+    # D-SET fail-closed: `settlements` (free-text PII note) must stay REST-only.
+    # `settlement_lines` IS published; this guards the deliberate asymmetry.
+    published = _published_tables(published_engine)
+    assert "settlements" not in published, "settlements must stay unpublished (D-SET)"
+    assert "settlement_lines" in published, "settlement_lines must be published"

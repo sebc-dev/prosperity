@@ -423,3 +423,83 @@ class Invitation(Base):
         # Lowercase + strip so the functional `lower(email)` partial index
         # can never disagree with the stored column value (gabarit `User`).
         return value.strip().lower()
+
+
+class UsersPublic(Base):
+    """Non-PII identity projection of `users`, synced household-wide (ADR 0003).
+
+    The sync channel must let every member resolve a `from_user_id` /
+    `requested_by` to a human name + role, but must NEVER carry `email` or
+    `password_hash`. Rather than mask those columns per-query in the sync rules
+    (fragile — a new PII column on `users` would silently leak until someone
+    remembers to exclude it), we project a deliberately tiny read-model:
+    `{user_id, display_name, role}`. Adding any column here is a conscious act,
+    so PII cannot drift in.
+
+    **Maintained by a Postgres trigger** (D-UP, gabarit `admin_audit_logs`):
+    `sync_users_public()` upserts the projection on every INSERT/UPDATE of
+    `users.display_name` / `users.role`. A trigger (not a service write) makes
+    the projection robust to EVERY write path — even a raw SQL UPDATE — and adds
+    zero coupling to the auth service / zero import-linter arc (it is DB-level).
+    ADR 0015 (commit-in-service) does not apply: this is a read-model
+    denormalisation, not a security-effect commit. The migration backfills it.
+
+    `role` reuses the existing `user_role` PG enum (`create_type=False` — the
+    `users` table owns its lifecycle); `user_id` is the PK and an
+    `ON DELETE CASCADE` FK to `users.id` (the projection has no meaning without
+    its user). `avatar_url` is deferred until a profile epic adds it to `users`.
+    """
+
+    __tablename__ = "users_public"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+            name="fk_users_public_user_id_users",
+        ),
+        primary_key=True,
+    )
+    display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    role: Mapped[UserRole] = mapped_column(
+        Enum(
+            UserRole,
+            name="user_role",
+            values_callable=_user_role_values,
+            create_type=False,
+        ),
+        nullable=False,
+    )
+
+
+# Trigger that keeps `users_public` in lock-step with `users` (D-UP). The
+# function upserts the 3 projected columns; the trigger fires AFTER INSERT and
+# AFTER UPDATE OF the projected source columns only (a password rotation does not
+# touch the projection, so it does not fire). `CREATE OR REPLACE` keeps both
+# statements idempotent under the per-test transactional fixture's repeated
+# `create_all`.
+#
+# Declared here (DDL events on the table) so `Base.metadata.create_all` in the
+# test schema installs the SAME trigger migration 0020 installs in prod — the
+# create_all/Alembic parity (A-B1). Without it `users_public` would stay empty in
+# the integration tier and the visibility tests would be false-green. The events
+# are listened on `UsersPublic.__table__` (created AFTER `users` via the FK
+# dependency), so `users_public` exists when the trigger function runs.
+_SYNC_USERS_PUBLIC_FUNCTION_DDL = DDL(
+    "CREATE OR REPLACE FUNCTION sync_users_public() "
+    "RETURNS trigger LANGUAGE plpgsql AS $$ "
+    "BEGIN "
+    "INSERT INTO users_public (user_id, display_name, role) "
+    "VALUES (NEW.id, NEW.display_name, NEW.role) "
+    "ON CONFLICT (user_id) DO UPDATE "
+    "SET display_name = EXCLUDED.display_name, role = EXCLUDED.role; "
+    "RETURN NEW; END; $$"
+)
+_SYNC_USERS_PUBLIC_TRIGGER_DDL = DDL(
+    "CREATE OR REPLACE TRIGGER trg_sync_users_public "
+    "AFTER INSERT OR UPDATE OF display_name, role ON users "
+    "FOR EACH ROW EXECUTE FUNCTION sync_users_public()"
+)
+event.listen(UsersPublic.__table__, "after_create", _SYNC_USERS_PUBLIC_FUNCTION_DDL)
+event.listen(UsersPublic.__table__, "after_create", _SYNC_USERS_PUBLIC_TRIGGER_DDL)

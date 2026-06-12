@@ -295,3 +295,10 @@ table users
   col role: user_role NOT NULL
   pk pk_users(id)
   idx uq_users_email_lower UNIQUE: lower((email)::text)
+
+table users_public
+  col display_name: VARCHAR(120) NOT NULL
+  col role: user_role NOT NULL
+  col user_id: UUID NOT NULL
+  pk pk_users_public(user_id)
+  fk fk_users_public_user_id_users: (user_id) -> users(id) ON DELETE CASCADE

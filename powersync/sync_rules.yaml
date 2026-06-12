@@ -1,14 +1,138 @@
 # yaml-language-server: $schema=https://unpkg.com/@powersync/service-sync-rules@latest/schema/sync_rules.json
 #
-# PLACEHOLDER for S13.1 — its only job is to prove the service can publish an
-# initial state over an active replication slot. The real buckets (the 4 ADR
-# 0003 families + column-level filters) are defined in S13.7.
+# PowerSync sync rules — the DOWNLOAD flow (S13.7, ADR 0003). This file is the
+# sync-side security boundary: every row a client ever receives is selected by
+# one of the buckets below. A bucket that is too broad leaks another household
+# member's accounts, so the column projections and WHERE clauses are part of the
+# threat model, not cosmetic.
 #
-# The bucket name is DELIBERATELY out-of-vocabulary (`_connectivity_check`, not
-# `household`/`account_shared`/`user_personal`/`user_debt`) so it preempts NO
-# S13.7 decision. It selects only `categories`, which IS in the `powersync`
-# publication (compose/initdb/10_powersync_publication.sql).
+# Six bucket families materialise the ADR 0003 partitioning:
+#   - user_personal     : a user's OWN personal accounts + their tx/splits.
+#   - account_shared    : SHARED accounts the user is a member of + tx/splits +
+#                         account_members.
+#   - user_budget       : budgets the user contributes to (perso + commun),
+#                         routed by `budget_contributors` (D-BUD — `budgets`
+#                         carries no `account_id`).
+#   - user_debt         : debts/share_requests where the user is a party, with a
+#                         PER-RECIPIENT COLUMN MASK (the heart of this story).
+#   - user_settlement   : settlement_lines of the user's debts (mono-hop by
+#                         debt_id). `settlements` is NOT published (fail-closed,
+#                         D-SET — `settlements.note` is free-text PII and the
+#                         per-participant routing is not expressible mono-table).
+#   - household         : household-wide reference data (categories) + the
+#                         non-PII identity projection `users_public`.
+#
+# PowerSync sync rules are NOT arbitrary SQL. Data queries are MONO-TABLE
+# (no JOIN, no sub-SELECT against another table); a parameter query yields one
+# bucket instance per row. The SELECT list accepts expressions, which is how the
+# debtor mask projects `NULL AS <col>`.
+#
+# `materialization_trace` (debts, server-only) is excluded at the PUBLICATION
+# level (D-MAT, compose/initdb/10_powersync_publication.sql) — it is never
+# replicated, so it cannot appear here even by accident.
 bucket_definitions:
-  _connectivity_check:
+  # --- Personal accounts: one bucket instance per account the user OWNS. ------
+  # `transactions.account_id` / `splits.account_id` are denormalised (ADR 0003)
+  # → mono-table filter, no JOIN. Archived accounts (archived_at) still sync:
+  # the client must see history (explicit decision, not an oversight).
+  user_personal:
+    parameters: SELECT id AS account_id FROM accounts WHERE owner_id = request.user_id()
+    data:
+      - SELECT * FROM accounts     WHERE id = bucket.account_id
+      - SELECT * FROM transactions WHERE account_id = bucket.account_id
+      - SELECT * FROM splits       WHERE account_id = bucket.account_id
+
+  # --- Shared accounts: one bucket instance per account the user is a MEMBER of.
+  account_shared:
+    parameters: SELECT account_id FROM account_members WHERE user_id = request.user_id()
+    data:
+      - SELECT * FROM accounts        WHERE id = bucket.account_id
+      - SELECT * FROM transactions    WHERE account_id = bucket.account_id
+      - SELECT * FROM splits          WHERE account_id = bucket.account_id
+      - SELECT * FROM account_members WHERE account_id = bucket.account_id
+
+  # --- Budgets (perso AND commun) routed by contributor (D-BUD). `budgets` has
+  # no account_id, so a shared budget cannot be routed via account_shared; the
+  # budget<->user link only exists through budget_contributors. A personal budget
+  # has exactly one contributor (the owner), a shared one has >=2.
+  user_budget:
+    parameters: SELECT budget_id FROM budget_contributors WHERE user_id = request.user_id()
+    data:
+      - SELECT * FROM budgets             WHERE id = bucket.budget_id
+      - SELECT * FROM budget_contributors WHERE budget_id = bucket.budget_id
+
+  # --- Debts + share_requests with the per-recipient column mask (CORE). -------
+  # The roadmap's `:user NOT IN (SELECT owner_id FROM accounts ...)` is a
+  # cross-table sub-SELECT, FORBIDDEN by PowerSync. We exploit a structural
+  # equivalence instead: for a `personal_share_request` debt the owner of the
+  # source account == requested_by == to_user_id (the CREDITOR); the CHECK
+  # `no_self_debt` (from_user_id <> to_user_id) makes a user the creditor XOR
+  # the debtor of any one row, so the two data queries never collide intra-bucket.
+  #
+  # The DEBTOR view masks `account_id` AND `source_transaction_id` to NULL
+  # UNCONDITIONALLY (D-MASK, fail-safe): the debtor is never the owner of the
+  # source account, so there is nothing legitimate to reveal, and an
+  # unconditional NULL can never fail-open on a future `origin` value. For an
+  # overflow debt the (shared) source account already reaches the debtor through
+  # account_shared, so masking it here loses nothing.
+  #
+  # The CREDITOR view is ALSO unconditional: it reveals the real columns to the
+  # creditor of ANY debt, overflow included. This is a DELIBERATE divergence from
+  # the REST channel (GET /debts, `_reader_owns_source`), which in V1 masks both
+  # columns for overflow debts pending the E11 ownership logic. It is safe here
+  # because the creditor of an overflow debt is by construction a member of the
+  # shared source account and already receives that account + its source
+  # transaction through `account_shared` -- so the sync channel reveals nothing
+  # `account_shared` did not already carry. Keeping the creditor view
+  # unconditional is what lets D-MASK stay CASE-free on both sides (fail-safe).
+  user_debt:
+    parameters: SELECT request.user_id() AS user_id
+    data:
+      # CREDITOR view (to_user_id): real columns -- the owner must receive them.
+      # Unconditional on `origin` by design (see overflow note above).
+      - SELECT id, from_user_id, to_user_id, amount_cents, currency,
+               account_id, source_transaction_id, origin, share_ratio, created_at
+        FROM debts WHERE to_user_id = bucket.user_id
+      # DEBTOR view (from_user_id): account_id + source_transaction_id masked.
+      - SELECT id, from_user_id, to_user_id, amount_cents, currency,
+               NULL AS account_id, NULL AS source_transaction_id,
+               origin, share_ratio, created_at
+        FROM debts WHERE from_user_id = bucket.user_id
+      # share_requests, OWNER view (requested_by): real source_transaction_id.
+      - SELECT id, source_transaction_id, requested_by, requested_from,
+               ratio, short_label, created_at, revoked_at
+        FROM share_requests WHERE requested_by = bucket.user_id
+      # share_requests, DEBTOR view (requested_from): source_transaction_id NULL
+      # (D-SR -- every SR is by nature a personal_share_request). `short_label` is
+      # INTENTIONALLY kept: it labels the REQUEST, not the source transaction.
+      - SELECT id, NULL AS source_transaction_id, requested_by, requested_from,
+               ratio, short_label, created_at, revoked_at
+        FROM share_requests WHERE requested_from = bucket.user_id
+
+  # --- Settlement lines of the user's debts (mono-hop by debt_id, D-SET). ------
+  # `settlements` itself is fail-closed (NOT published): its per-participant
+  # routing is a multi-hop (settlement->lines->debts->user) inexpressible
+  # mono-table, and `settlements.note` is free-text PII. Settlement lines carry
+  # no PII and route mono-hop off the indexed `debt_id`; both parties to a debt
+  # legitimately see them.
+  user_settlement:
+    parameters: SELECT id AS debt_id FROM debts
+                WHERE from_user_id = request.user_id() OR to_user_id = request.user_id()
+    data:
+      - SELECT * FROM settlement_lines WHERE debt_id = bucket.debt_id
+
+  # --- Household-wide reference data + non-PII identity projection. ------------
+  # GLOBAL bucket (no `parameters`): synced to every authenticated client, like
+  # the S13.1 placeholder. A parameter query would force each data query to
+  # filter by that parameter (PowerSync: "query must cover all bucket
+  # parameters"), which is wrong here — categories + identities are household-
+  # wide, not per-user.
+  #
+  # `users_public` is the trigger-maintained projection of `users` -- NEVER email
+  # or password_hash (ADR 0003). Its PK is `user_id`, so it is aliased to the
+  # `id` column PowerSync requires every data query to return; {display_name,
+  # role} ride along (the client row is {id == user_id, display_name, role}).
+  household:
     data:
       - SELECT * FROM categories
+      - SELECT user_id AS id, display_name, role FROM users_public

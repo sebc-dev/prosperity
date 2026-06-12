@@ -226,6 +226,102 @@ def test_baseline_migration_round_trip(postgres_container: PostgresContainer) ->
     assert "table sync_request_log" not in post, (
         f"sync_request_log table leaked after downgrade:\n{post}"
     )
+    assert "table users_public" not in post, f"users_public table leaked after downgrade:\n{post}"
+
+
+def test_users_public_isolated_downgrade(postgres_container: PostgresContainer) -> None:
+    """`0020.downgrade()` drops `users_public` + its trigger/function while
+    KEEPING `users` (the projected source, its FK parent).
+
+    The global round-trip only exercises `downgrade base`, where the table
+    disappears anyway when `0001` drops `users`. Step down EXACTLY one revision
+    (head → `0019`) to assert `0020`'s downgrade removes its table specifically
+    and also drops the `sync_users_public` trigger/function (a leftover would
+    error the next time `users` is updated), then return the shared container to
+    `base` for sibling tests.
+    """
+    async_dsn = postgres_container.get_connection_url()
+    sync_dsn = async_dsn.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+    cfg = _alembic_config(async_dsn)
+
+    command.upgrade(cfg, "head")
+    command.downgrade(cfg, "0019")  # undo ONLY 0020
+    engine = create_engine(sync_dsn)
+    try:
+        insp = inspect(engine)
+        tables = insp.get_table_names()
+        assert "users" in tables  # FK parent survives the partial downgrade
+        assert "users_public" not in tables  # 0020 dropped just its table
+        with engine.connect() as conn:
+            fn = conn.execute(
+                text("SELECT 1 FROM pg_proc WHERE proname = 'sync_users_public'")
+            ).first()
+            assert fn is None, "sync_users_public function leaked after 0020 downgrade"
+            trg = conn.execute(
+                text("SELECT 1 FROM pg_trigger WHERE tgname = 'trg_sync_users_public'")
+            ).first()
+            assert trg is None, "trg_sync_users_public trigger leaked after 0020 downgrade"
+    finally:
+        engine.dispose()
+
+    command.downgrade(cfg, "base")  # leave the container clean (round-trip end state)
+
+
+def test_users_public_backfill_seeds_preexisting_users(
+    postgres_container: PostgresContainer,
+) -> None:
+    """`0020.upgrade()` BACKFILLS `users` that predate the trigger.
+
+    The `*_backfill.py` convention (Stratégie de tests §4.6 niveau 2) requires a
+    test of the `INSERT ... SELECT FROM users` path — which ONLY the migration
+    runs (the trigger covers writes FROM revision 0020 ON, never pre-existing
+    rows). The trigger tests run on the `create_all` tier and so cannot exercise
+    it. Here we stop at 0019 (no `users_public` yet, no trigger), seed a user
+    DIRECTLY, then upgrade to head: the row must land in `users_public` via the
+    backfill alone. Disabled users are seeded too (their name still labels old
+    debts — they must be projected).
+    """
+    async_dsn = postgres_container.get_connection_url()
+    sync_dsn = async_dsn.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+    cfg = _alembic_config(async_dsn)
+
+    command.upgrade(cfg, "0019")  # users exists, users_public + trigger do NOT yet
+    engine = create_engine(sync_dsn)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO users "
+                    "(id, email, password_hash, display_name, role, created_at, disabled_at) "
+                    "VALUES "
+                    "('00000000-0000-0000-0000-000000000001', 'alice@x.test', 'h', "
+                    "'Alice', 'member', now(), NULL), "
+                    "('00000000-0000-0000-0000-000000000002', 'bob@x.test', 'h', "
+                    "'Bob', 'admin', now(), now())"  # Bob is disabled — still projected
+                )
+            )
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, "head")  # 0020 creates the table + trigger + BACKFILLS
+
+    engine = create_engine(sync_dsn)
+    try:
+        with engine.connect() as conn:
+            rows = {
+                str(r[0]): (r[1], r[2])
+                for r in conn.execute(
+                    text("SELECT user_id, display_name, role FROM users_public")
+                ).all()
+            }
+        assert rows == {
+            "00000000-0000-0000-0000-000000000001": ("Alice", "member"),
+            "00000000-0000-0000-0000-000000000002": ("Bob", "admin"),
+        }, f"backfill did not project pre-existing users: {rows}"
+    finally:
+        engine.dispose()
+
+    command.downgrade(cfg, "base")  # leave the container clean for sibling tests
 
 
 def test_sync_request_log_isolated_downgrade(postgres_container: PostgresContainer) -> None:

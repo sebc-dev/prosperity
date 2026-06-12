@@ -11,9 +11,11 @@ import uuid
 from collections.abc import Awaitable, Callable
 
 import pytest
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.auth.models import User
+from backend.modules.sync.models import SyncRequestLog
 from backend.modules.sync.public import BatchUpload, Mutation, WriteResult
 from backend.modules.sync.service.dispatcher import process_batch
 
@@ -52,3 +54,26 @@ async def test_passes_step1_then_handler_runs(
     assert result.error is not None
     assert result.error.code != "auth_denied"
     assert result.error.code != "unknown_table"
+
+
+async def test_refusal_is_not_journaled_and_replays(
+    household_singleton: AsyncSession, bound_user_factory: _UserFactory
+) -> None:
+    """Un refus du handler SANS exception (`not_implemented_yet`) n'écrit AUCUNE ligne
+    `sync_request_log` (S13.6) — sinon un replay l'ack-erait à tort `success=True`. Une
+    seconde tentative du MÊME `client_request_id` ré-exécute donc le handler (même refus),
+    au lieu d'un ack idempotent trompeur."""
+    user = await bound_user_factory(email="rec-replay@ex.com")
+    mutation = _mut("insert")
+
+    first = await _run(household_singleton, user, mutation)
+    assert first.success is False
+    rows = (
+        await household_singleton.execute(select(func.count()).select_from(SyncRequestLog))
+    ).scalar_one()
+    assert rows == 0  # aucune journalisation d'un refus
+
+    second = await _run(household_singleton, user, mutation)  # même crid
+    assert second.success is False
+    assert second.error is not None
+    assert second.error.code == "not_implemented_yet"  # pas un ack idempotent (success=True)

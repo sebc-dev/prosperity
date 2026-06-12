@@ -4,9 +4,11 @@
 préservé, ADR 0014 ; pas de parallélisation) et matérialise la séquence par
 mutation. S13.3 pose les étapes 0-2 : routage (sous-handler de `table` ou
 `unknown_table`) → étape 1 auth/RBAC (P13.3.2) → étape 2 idempotence (P13.3.3).
-Les étapes 3-10 (validation, write, matérialisation, events, commit, append log,
-ack) vivent dans les sous-handlers (S13.4) et la frontière transactionnelle
-(S13.6) ; ici les handlers sont une COUTURE injectable (mockés en test).
+Les étapes 3-7 (validation, write, matérialisation, events) vivent dans les
+sous-handlers (S13.4, flush-only) ; la FRONTIÈRE TRANSACTIONNELLE par mutation —
+étape 8 `commit`, étape 9 append `sync_request_log`, étape 10 ack — est posée ICI
+(S13.6) autour de chaque handler. Les handlers restent une COUTURE injectable
+(mockés en test).
 
 Registres CENTRAUX (ADR 0014 : auditables d'un seul endroit) :
 - HANDLERS    : `table -> Handler` (vide en S13.3, peuplé par S13.4).
@@ -25,6 +27,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from typing import Protocol, cast
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.accounts.public import accessible_account_ids, account_is_accessible
@@ -42,7 +45,7 @@ from backend.modules.sync.schemas import (
     WriteError,
     WriteResult,
 )
-from backend.modules.sync.service.idempotency import already_processed
+from backend.modules.sync.service.idempotency import already_processed, record_processed
 from backend.modules.transactions.public import get_transaction
 
 
@@ -300,8 +303,9 @@ PERMISSION_CHECKS: dict[tuple[str, MutationOp], PermissionCheck] = {
 }
 
 
-_UNKNOWN_TABLE = "unknown_table"  # vocabulaire ADR 0014 (resserré Literal en S13.6/D8)
+_UNKNOWN_TABLE = "unknown_table"  # vocabulaire ADR 0014 (resserré Literal en P13.6.3/D6)
 _AUTH_DENIED = "auth_denied"  # vocabulaire ADR 0014
+_INTERNAL_ERROR = "internal_error"  # PROVISOIRE P13.6.1 — remplacé par la table typée en P13.6.3
 
 
 async def process_batch(  # noqa: PLR0913 — 3 coutures de test keyword-only injectables
@@ -322,13 +326,24 @@ async def process_batch(  # noqa: PLR0913 — 3 coutures de test keyword-only in
        config, pas un laissez-passer) ;
     2. idempotence : `client_request_id` déjà dans `sync_request_log` (scopé user)
        → ack `success=True` SANS appeler le handler (replay d'un write déjà commité) ;
-    puis délégation au handler (mocké S13.3).
+    puis, pour une mutation neuve, frontière transactionnelle PAR MUTATION
+    (S13.6) : handler (étapes 3-7) → append `sync_request_log` (étape 9) →
+    `commit()` (étape 8) → ack (étape 10). Un échec rollback la mutation N SEULE ;
+    1..N-1 restent committées et la boucle poursuit N+1 (ADR 0014).
 
-    La session (UoW de l'appelant, ADR 0015) est threadée aux checks et au
-    handler ; AUCUN `commit()` ici (la frontière par-mutation est S13.6).
-    `handlers` / `permission_checks` / `is_processed` injectables = couture de test
-    + point d'enregistrement S13.4 (défaut = registres / lookup module).
+    La session (UoW de l'appelant, ADR 0015) est threadée aux checks, au handler,
+    à l'append et au `commit()` par mutation. `handlers` / `permission_checks` /
+    `is_processed` injectables = couture de test + point d'enregistrement S13.4
+    (défaut = registres / lookup module).
     """
+    # `user` est DÉTACHÉ de la session avant la boucle : un `session.rollback()`
+    # par-mutation (échec de N) EXPIRE sinon tous les objets persistants, et l'accès
+    # SYNCHRONE à `user.id` au tour N+1 (étape 1) déclencherait un lazy-load →
+    # `MissingGreenlet`. `get_current_user` charge la ligne complète (`session.get`,
+    # `expire_on_commit=False`), donc l'objet détaché garde tous ses attributs en
+    # mémoire (lecture sans IO) — seul `user.id` (UUID) est consommé en aval.
+    if user in session:
+        session.expunge(user)
     results: list[WriteResult] = []
     for mutation in batch.mutations:  # ordre préservé, séquentiel
         handler = handlers.get(mutation.table)
@@ -354,9 +369,47 @@ async def process_batch(  # noqa: PLR0913 — 3 coutures de test keyword-only in
         if await is_processed(
             session, user_id=user.id, client_request_id=mutation.client_request_id
         ):
-            # Replay d'une mutation déjà commitée (étape 9, S13.6) : ack SANS
-            # ré-écrire (handler NON appelé) — idempotence stricte, scopée user.
+            # Replay d'une mutation déjà commitée (étape 9) : ack SANS ré-écrire
+            # (handler NON appelé) — idempotence stricte, scopée user.
             results.append(WriteResult(client_request_id=mutation.client_request_id, success=True))
             continue
-        results.append(await handler(session, user, mutation))
+        # Frontière transactionnelle PAR MUTATION (étape 8, ADR 0014 / D-A) : le write
+        # (handler flush-only, étapes 3-7) + l'append du journal (étape 9, DANS la même
+        # transaction, D-B) sont committés ENSEMBLE. Un échec rollback la mutation N
+        # SEULE (1..N-1 restent committées) et la boucle poursuit N+1.
+        # Hook delivery post-commit (email/push) = no-op tant que `notifications` est un
+        # stub (aucun subscriber) : pas de `BackgroundTasks` ici (l'endpoint est S13.8, D-J).
+        try:
+            result = await handler(session, user, mutation)  # étapes 3-7 (flush-only)
+            if result.success:
+                await record_processed(  # étape 9 (in-tx, avant commit)
+                    session,
+                    user_id=user.id,
+                    client_request_id=mutation.client_request_id,
+                    table_name=mutation.table,
+                )
+                await session.commit()  # étape 8 (commit par mutation)
+            # else : refus du handler SANS exception (ex. `reconciliations` →
+            # `not_implemented_yet`). Contrat : un tel refus n'écrit RIEN. On NE
+            # journalise pas et on NE committe pas (sinon un replay l'ack-erait à tort
+            # `success=True`). Pas de `rollback()` non plus : il n'y a aucun write à
+            # défaire, et un `commit` ultérieur du batch (ou de `get_db`) absorbera les
+            # lectures read-only. Le résultat de refus est appendu tel quel.
+        except ValidationError:
+            # Échec de la validation Pydantic par-table (étape 3, payload mal formé) :
+            # bug de contrat wire, PAS une erreur domaine récupérable → on rollback et on
+            # PROPAGE (le route S13.8 en fera un 422). Reste un re-raise en P13.6.3 (D-I).
+            await session.rollback()
+            raise
+        except Exception:  # noqa: BLE001 — capture large PROVISOIRE (typée en P13.6.3)
+            await session.rollback()  # rollback de N SEUL (1..N-1 committées)
+            results.append(
+                WriteResult(
+                    client_request_id=mutation.client_request_id,
+                    success=False,
+                    error=WriteError(code=_INTERNAL_ERROR, message="Mutation failed."),
+                )
+            )
+            continue  # on poursuit N+1
+        results.append(result)
     return results

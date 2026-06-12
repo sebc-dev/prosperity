@@ -39,6 +39,7 @@ from backend.modules.auth.models import User
 from backend.modules.auth.service.jwt import issue_access_token
 from backend.modules.debts.models import Debt
 from backend.modules.sync.models import SyncRequestLog
+from backend.modules.sync.public import WriteResult
 from backend.modules.sync.schemas import MAX_MUTATIONS
 from backend.modules.transactions.models import Split, Transaction
 
@@ -309,6 +310,13 @@ async def test_upload_mixed_valid_invalid_returns_typed_errors_no_500(
     # Variante DOMAINE : une tx à une seule jambe (déséquilibrée) dont on demande la
     # transition draft → planned → `unbalanced_transaction` typé (le contrôle Σ == 0
     # se joue à la transition, cf. handler S13.4).
+    # NB : le plan v2 §3.3.3 citait `uncategorized_expense` comme exemple, mais ce code
+    # n'est PAS atteignable via `splits/insert` — `leg_role` est DÉRIVÉ de `category_id`
+    # (NULL → `funding`, jamais `classification`), donc le flat-split ne peut pas
+    # produire une jambe de dépense sans catégorie (cf. `domain.is_transfer` /
+    # `assert_expenses_categorized`). `unbalanced_transaction` est l'erreur domaine
+    # REPRÉSENTATIVE réellement joignable par la route ; la table de correspondance
+    # exception → code exhaustive est verrouillée séparément (S13.6, `test_sync_error_mapping`).
     acc = (
         await _post_one(
             async_client,
@@ -433,12 +441,15 @@ async def test_upload_empty_batch_is_noop_200(
     assert await _count(auth_schema, SyncRequestLog, SyncRequestLog.user_id == alice.id) == 0
 
 
-# ── 3.3.8 — la route est enregistrée au composition root ────────────────────────
+# ── 3.3.8 — la route est enregistrée au composition root, avec le bon contrat ───
 def test_sync_router_registered_at_composition_root() -> None:
-    """Verrou que `include_router(sync_router)` n'a pas été oublié dans `main`."""
+    """Verrou que `include_router(sync_router)` n'a pas été oublié dans `main`, ET que
+    le contrat de réponse est bien `list[WriteResult]` (response_model dérivé de
+    l'annotation de retour, D7) — pas seulement un 200 opaque."""
     route = next((r for r in app.router.routes if getattr(r, "path", None) == "/sync/upload"), None)
     assert route is not None, "POST /sync/upload absent de l'app"
     assert "POST" in route.methods  # type: ignore[attr-defined]
+    assert route.response_model == list[WriteResult]  # type: ignore[attr-defined]
 
 
 # ── 3.3.9 — idempotence scopée par user (ferme l'oracle cross-user) ─────────────

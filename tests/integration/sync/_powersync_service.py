@@ -8,6 +8,19 @@ roles/publication SQL. The download-flow visibility work (S13.8) and the upload
 handler (E14) reuse this exact stack, so it lives here rather than inline in a
 single test.
 
+DEFERRED to S13.8 (needs the JWT download client this stack stubs out). The
+following per-recipient stream assertions from the S13.7 plan are NOT covered
+here and are owed once the authenticated client lands — they cannot be expressed
+without observing a real download stream:
+  - debtor stream lacks account_id/source_transaction_id; creditor's carries them
+    (incl. the overflow case: real columns both sides, ADR 0003 consequences);
+  - share_request source_transaction_id masked for `requested_from`, real for
+    `requested_by`;
+  - third party sees no debt; settlement_lines visible to debt participants only;
+  - edge cases: archived personal account still syncs, revoked share_request
+    still visible, shared budget routed by contributor (not account_id).
+Until then masking rests on the structural pin (unit) + boot-time compilation.
+
 Underscore prefix → pytest does not collect this as a test module.
 """
 
@@ -241,6 +254,19 @@ class PowerSyncStack:
             if self._probe("/probes/readiness"):
                 return True
             time.sleep(2)
+        return False
+
+    def wait_for_log(self, marker: str, timeout: int = 30) -> bool:
+        """Poll the service logs until `marker` appears or `timeout` elapses.
+
+        Deterministic replacement for a fixed `sleep`: replication markers land a
+        little after readiness, so callers that grep the logs wait on the marker
+        itself rather than guessing a delay (flaky under CI load)."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if marker in self.service_logs():
+                return True
+            time.sleep(1)
         return False
 
     def service_logs(self) -> str:

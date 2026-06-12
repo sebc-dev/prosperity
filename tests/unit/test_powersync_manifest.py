@@ -240,6 +240,24 @@ def test_sync_rules_mask_debtor_columns_on_debts() -> None:
     assert re.search(r"\bsource_transaction_id\b", creditor), creditor
 
 
+def test_sync_rules_creditor_view_is_unconditional_for_all_origins() -> None:
+    # Guards the DELIBERATE sync ⇄ REST divergence on overflow debts (ADR 0003
+    # consequences). The creditor query reveals the real columns for EVERY debt
+    # regardless of `origin` (no CASE, no `origin` predicate) -- including
+    # `shared_account_overflow`, which REST still masks in V1. Safe because the
+    # overflow creditor already receives the shared account + its source tx via
+    # `account_shared`. This is also what keeps D-MASK CASE-free on both sides.
+    # If a future change reintroduces an origin-conditioned creditor view, this
+    # goes red so the divergence is re-decided on purpose, not by accident.
+    data = _yaml.load(SYNC_RULES.read_text())
+    debt_queries = data["bucket_definitions"]["user_debt"]["data"]
+    creditor = next(q for q in debt_queries if "to_user_id = bucket.user_id" in q)
+    assert "case" not in creditor.lower(), "creditor view must stay unconditional (no CASE)"
+    assert "origin =" not in creditor.lower(), (
+        "creditor view must not filter on origin (overflow is revealed by design)"
+    )
+
+
 def test_sync_rules_mask_share_request_source_tx_for_debtor() -> None:
     # D-SR: the share_requests query addressed to the DEBTOR (requested_from)
     # masks source_transaction_id; the OWNER query (requested_by) keeps it.

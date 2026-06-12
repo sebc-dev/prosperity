@@ -75,10 +75,21 @@ bucket_definitions:
   # unconditional NULL can never fail-open on a future `origin` value. For an
   # overflow debt the (shared) source account already reaches the debtor through
   # account_shared, so masking it here loses nothing.
+  #
+  # The CREDITOR view is ALSO unconditional: it reveals the real columns to the
+  # creditor of ANY debt, overflow included. This is a DELIBERATE divergence from
+  # the REST channel (GET /debts, `_reader_owns_source`), which in V1 masks both
+  # columns for overflow debts pending the E11 ownership logic. It is safe here
+  # because the creditor of an overflow debt is by construction a member of the
+  # shared source account and already receives that account + its source
+  # transaction through `account_shared` -- so the sync channel reveals nothing
+  # `account_shared` did not already carry. Keeping the creditor view
+  # unconditional is what lets D-MASK stay CASE-free on both sides (fail-safe).
   user_debt:
     parameters: SELECT request.user_id() AS user_id
     data:
       # CREDITOR view (to_user_id): real columns -- the owner must receive them.
+      # Unconditional on `origin` by design (see overflow note above).
       - SELECT id, from_user_id, to_user_id, amount_cents, currency,
                account_id, source_transaction_id, origin, share_ratio, created_at
         FROM debts WHERE to_user_id = bucket.user_id

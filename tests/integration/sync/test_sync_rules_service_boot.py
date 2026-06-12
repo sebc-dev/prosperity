@@ -21,11 +21,20 @@ debt, and assert:
 Heavy (boots two containers + a service) and Docker-gated, like the publication
 test. The container plumbing is factored into `_powersync_service.py` so S13.8 /
 E14 (client auth, upload handler) can reuse the same stack.
+
+SCOPE — what this does and does NOT prove. The per-recipient column mask (D-MASK)
+is pinned here ONLY structurally (the YAML projections, asserted cheaply in
+`tests/unit/test_powersync_manifest.py`) and at the COMPILATION / replication
+layer (the rules deploy in the real engine and `debts` snapshots without a
+permission error). It does NOT yet prove END-TO-END that a real debtor's download
+stream lacks `account_id`/`source_transaction_id` while the creditor's carries
+them: that needs a JWT-authenticated download client, which lands in S13.8 (the
+JWKS auth this stack stubs out). Until then, the masking guarantee rests on the
+structural pin + the engine honouring the YAML — NOT on an observed client stream.
 """
 
 from __future__ import annotations
 
-import time
 from collections.abc import Iterator
 
 import pytest
@@ -58,8 +67,10 @@ def booted_stack() -> Iterator[PowerSyncStack]:
             "PowerSync service never became ready — replication likely failed:\n"
             + stack.service_logs()[-4000:]
         )
-        # Let a couple more replication ticks land in the logs.
-        time.sleep(3)
+        # Wait on the replication-engine marker itself rather than a fixed sleep:
+        # the log-grep assertions below need it present, and a deadline-bounded
+        # poll is deterministic where a `sleep(3)` is a CI-flaky guess.
+        stack.wait_for_log("Successfully started Replication Engine", timeout=30)
         yield stack
 
 

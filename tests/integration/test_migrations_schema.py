@@ -267,6 +267,63 @@ def test_users_public_isolated_downgrade(postgres_container: PostgresContainer) 
     command.downgrade(cfg, "base")  # leave the container clean (round-trip end state)
 
 
+def test_users_public_backfill_seeds_preexisting_users(
+    postgres_container: PostgresContainer,
+) -> None:
+    """`0020.upgrade()` BACKFILLS `users` that predate the trigger.
+
+    The `*_backfill.py` convention (Stratégie de tests §4.6 niveau 2) requires a
+    test of the `INSERT ... SELECT FROM users` path — which ONLY the migration
+    runs (the trigger covers writes FROM revision 0020 ON, never pre-existing
+    rows). The trigger tests run on the `create_all` tier and so cannot exercise
+    it. Here we stop at 0019 (no `users_public` yet, no trigger), seed a user
+    DIRECTLY, then upgrade to head: the row must land in `users_public` via the
+    backfill alone. Disabled users are seeded too (their name still labels old
+    debts — they must be projected).
+    """
+    async_dsn = postgres_container.get_connection_url()
+    sync_dsn = async_dsn.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
+    cfg = _alembic_config(async_dsn)
+
+    command.upgrade(cfg, "0019")  # users exists, users_public + trigger do NOT yet
+    engine = create_engine(sync_dsn)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "INSERT INTO users "
+                    "(id, email, password_hash, display_name, role, created_at, disabled_at) "
+                    "VALUES "
+                    "('00000000-0000-0000-0000-000000000001', 'alice@x.test', 'h', "
+                    "'Alice', 'member', now(), NULL), "
+                    "('00000000-0000-0000-0000-000000000002', 'bob@x.test', 'h', "
+                    "'Bob', 'admin', now(), now())"  # Bob is disabled — still projected
+                )
+            )
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, "head")  # 0020 creates the table + trigger + BACKFILLS
+
+    engine = create_engine(sync_dsn)
+    try:
+        with engine.connect() as conn:
+            rows = {
+                str(r[0]): (r[1], r[2])
+                for r in conn.execute(
+                    text("SELECT user_id, display_name, role FROM users_public")
+                ).all()
+            }
+        assert rows == {
+            "00000000-0000-0000-0000-000000000001": ("Alice", "member"),
+            "00000000-0000-0000-0000-000000000002": ("Bob", "admin"),
+        }, f"backfill did not project pre-existing users: {rows}"
+    finally:
+        engine.dispose()
+
+    command.downgrade(cfg, "base")  # leave the container clean for sibling tests
+
+
 def test_sync_request_log_isolated_downgrade(postgres_container: PostgresContainer) -> None:
     """`0019.downgrade()` drops `sync_request_log` while KEEPING `users`.
 

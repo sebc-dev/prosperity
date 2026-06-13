@@ -54,7 +54,7 @@ Ordre topologique. Chaque epic ne démarre qu'après ses dépendances.
 | [E10](./E10-settlements.md) | Settlements | F09 partie 2 : `Settlement` multi-line (ADR 0011) + 3 types + invariants Hypothesis | E09 | not started |
 | [E11](./E11-debts-overflow.md) | Debts overflow F10 | `debt_generation_override` + `DebtCalculator` matérialisation excédent | E08.5, E10 | not started |
 | [E12](./E12-ofx-import.md) | OFX import | F04 partie 1 : `OFXProvider` + wrapper défensif + preview hybride + `bank_account_external_refs` | E05, E07 | not started |
-| [E13](./E13-sync-write-upload-handler.md) | Sync module + write upload handler | ADR 0014 : module `sync` + dispatcher + 10 étapes + idempotence + `WriteResult.error` typé | E07, E09, E11 | not started |
+| [E13](./E13-sync-write-upload-handler.md) | Sync module + write upload handler | ADR 0014 : module `sync` + dispatcher + 10 étapes + idempotence + `WriteResult.error` typé | E07, E09, E11 | done |
 | [E14](./E14-frontend-bootstrap.md) | Frontend bootstrap | Capacitor 8 + React 19 + Vite 6 + Drizzle + Tailwind + shadcn scaffolding + PowerSync client setup | E13 | not started |
 | [E15](./E15-ui-mvp.md) | UI MVP (~15 écrans) | Login + dashboard solde réel + comptes + transactions + budgets + dettes + settings + invitation accept | E14 | not started |
 | [E16](./E16-deployment.md) | Deployment | Podman Quadlet + Caddy + Cloudflare Tunnel + Tailscale + Restic→B2 + runbooks | E15 | not started |

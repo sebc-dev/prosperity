@@ -1,7 +1,7 @@
 # E13 — Sync module + write upload handler (PowerSync)
 
 > **Durée estimée** : 8-12 jours
-> **Statut** : not started
+> **Statut** : done
 > **Dépend de** : E07, E09, E11
 > **Bloque** : E14 (frontend doit se brancher à PowerSync)
 > **ADRs activés** : 0003 (bucket design appliqué via sync rules YAML), 0014 (séquence 10 étapes)

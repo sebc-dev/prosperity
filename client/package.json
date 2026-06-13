@@ -19,6 +19,8 @@
     "vite": "$vite"
   },
   "dependencies": {
+    "@powersync/drizzle-driver": "^0.7.3",
+    "@powersync/react": "^1.10.0",
     "@tanstack/react-router": "^1.170.15",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

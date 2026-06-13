@@ -1,0 +1,32 @@
+name: setup-node-cached
+description: >
+  Setup Node + cache npm + cache de client/node_modules (incl. l'addon natif better-sqlite3).
+  Structure de cache frontend posée par S18.1 (E18), CONSOMMÉE par les jobs frontend de
+  S14.7 (#211). Non utilisée par S18.1 (aucun job frontend ici).
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      with:
+        node-version-file: client/.nvmrc
+        cache: npm
+        cache-dependency-path: client/package-lock.json
+
+    # Cache de node_modules → évite la RECOMPILATION de l'addon natif better-sqlite3
+    # (cf. S14.3 #207). La key inclut .nvmrc (version Node ≈ ABI) : un node_modules
+    # compilé pour une autre ABI ne sera pas restauré par erreur.
+    - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      id: node-modules
+      with:
+        path: client/node_modules
+        key: ${{ runner.os }}-client-nm-${{ hashFiles('client/.nvmrc') }}-${{ hashFiles('client/package-lock.json') }}
+        # restore-key borné à la MÊME version Node (≈ ABI) : sur changement de lockfile, réhydrate
+        # un node_modules proche (cache-hit reste false → `npm ci` reconcilie) sans risque d'ABI.
+        restore-keys: |
+          ${{ runner.os }}-client-nm-${{ hashFiles('client/.nvmrc') }}-
+
+    - if: steps.node-modules.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: client
+      run: npm ci

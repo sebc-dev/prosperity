@@ -9,7 +9,7 @@ name = Directional graph respected
 type = layers
 layers =
     backend.modules.mcp
-    backend.modules.sync | backend.modules.savings
+    backend.modules.sync | backend.modules.savings | backend.modules.sse
     backend.modules.reconciliation | backend.modules.forecasting | backend.modules.debts | backend.modules.notifications
     backend.modules.banking | backend.modules.transactions | backend.modules.budget
     backend.modules.accounts
@@ -844,6 +844,117 @@ ignore_imports =
     backend.modules.debts.public -> backend.modules.debts.service.share_request
 unmatched_ignore_imports_alerting = error
 
+[importlinter:contract:2-sse]
+name = sse must not import peer modules' internals
+type = forbidden
+# Sse-as-source mirrors the `2-sync` / `2-banking` split: S17.1 gives `sse` its own
+# internals (`service/broadcaster`, `service/delivery`, `transports/http`, `events`),
+# so `sse` cannot sit in contract:2's `source_modules` (it would share a descendant
+# with `backend.modules.*.{service,models,...}` -> grimp's shared-descendants error).
+# Intra-module imports (sse.transports.http -> sse.service.broadcaster, etc.) stay
+# legitimate; peer modules' internals are enumerated explicitly so `sse`'s own never
+# appear here. `sse` sits at the TOP of the directional graph (contract 1, couche
+# `sync | savings | sse`, just under `mcp`), so it may import every peer's `.public`
+# freely -- reaching into their internals stays forbidden. The `ignore_imports` block
+# is the nine `auth.public -> auth.X` second-hops: `sse.transports.http` imports
+# `get_current_user` / `User` / `issue_sse_token` / `verify_sse_token` / `InvalidTokenError`
+# from `auth.public` (P17.1.2), so `find_shortest_chains` would otherwise surface
+# `sse -> auth.public -> auth.X` as broken chains. Ignoring the *second hop* keeps the
+# direct-import protection intact (a hypothetical `sse.service.Y -> auth.models` would
+# still be flagged). The arc `auth.public -> auth.service.jwt` covers the
+# `issue/verify_sse_token` re-exports (S17.1). No `notifications` second-hop: its
+# `.public` surface is EMPTY, so an ignore arc would be unmatched and break
+# `unmatched_ignore_imports_alerting = error` (public-surface cascade).
+source_modules =
+    backend.modules.sse
+forbidden_modules =
+    backend.modules.auth.service
+    backend.modules.auth.models
+    backend.modules.auth.domain
+    backend.modules.auth.repository
+    backend.modules.auth.transports
+    backend.modules.auth.handlers
+    backend.modules.accounts.service
+    backend.modules.accounts.models
+    backend.modules.accounts.domain
+    backend.modules.accounts.repository
+    backend.modules.accounts.transports
+    backend.modules.accounts.handlers
+    backend.modules.banking.service
+    backend.modules.banking.models
+    backend.modules.banking.domain
+    backend.modules.banking.repository
+    backend.modules.banking.transports
+    backend.modules.banking.handlers
+    backend.modules.budget.service
+    backend.modules.budget.models
+    backend.modules.budget.domain
+    backend.modules.budget.repository
+    backend.modules.budget.transports
+    backend.modules.budget.handlers
+    backend.modules.debts.service
+    backend.modules.debts.models
+    backend.modules.debts.domain
+    backend.modules.debts.repository
+    backend.modules.debts.transports
+    backend.modules.debts.handlers
+    backend.modules.forecasting.service
+    backend.modules.forecasting.models
+    backend.modules.forecasting.domain
+    backend.modules.forecasting.repository
+    backend.modules.forecasting.transports
+    backend.modules.forecasting.handlers
+    backend.modules.mcp.service
+    backend.modules.mcp.models
+    backend.modules.mcp.domain
+    backend.modules.mcp.repository
+    backend.modules.mcp.transports
+    backend.modules.mcp.handlers
+    backend.modules.notifications.service
+    backend.modules.notifications.models
+    backend.modules.notifications.domain
+    backend.modules.notifications.repository
+    backend.modules.notifications.transports
+    backend.modules.notifications.handlers
+    backend.modules.reconciliation.service
+    backend.modules.reconciliation.models
+    backend.modules.reconciliation.domain
+    backend.modules.reconciliation.repository
+    backend.modules.reconciliation.transports
+    backend.modules.reconciliation.handlers
+    backend.modules.savings.service
+    backend.modules.savings.models
+    backend.modules.savings.domain
+    backend.modules.savings.repository
+    backend.modules.savings.transports
+    backend.modules.savings.handlers
+    backend.modules.sync.service
+    backend.modules.sync.models
+    backend.modules.sync.domain
+    backend.modules.sync.repository
+    backend.modules.sync.transports
+    backend.modules.sync.handlers
+    backend.modules.transactions.service
+    backend.modules.transactions.models
+    backend.modules.transactions.domain
+    backend.modules.transactions.repository
+    backend.modules.transactions.transports
+    backend.modules.transactions.handlers
+# The nine `auth.public -> auth.X` arcs are the same block as `2-sync`/`2-accounts`;
+# they all exist in `auth.public` independently of `sse`, so each is "matched"
+# (`unmatched_ignore_imports_alerting = error`).
+ignore_imports =
+    backend.modules.auth.public -> backend.modules.auth.domain
+    backend.modules.auth.public -> backend.modules.auth.models
+    backend.modules.auth.public -> backend.modules.auth.service.audit
+    backend.modules.auth.public -> backend.modules.auth.service.invitations
+    backend.modules.auth.public -> backend.modules.auth.service.jwt
+    backend.modules.auth.public -> backend.modules.auth.service.refresh_tokens
+    backend.modules.auth.public -> backend.modules.auth.service.roles
+    backend.modules.auth.public -> backend.modules.auth.service.users
+    backend.modules.auth.public -> backend.modules.auth.transports.dependencies
+unmatched_ignore_imports_alerting = error
+
 [importlinter:contract:3]
 name = shared imports nothing of modules
 type = forbidden
@@ -938,6 +1049,7 @@ source_modules =
     backend.modules.notifications
     backend.modules.savings
     backend.modules.sync
+    backend.modules.sse
     backend.modules.mcp
     backend.shared
 forbidden_modules =

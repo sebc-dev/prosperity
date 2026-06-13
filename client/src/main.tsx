@@ -1,7 +1,8 @@
+import { RouterProvider } from '@tanstack/react-router'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
-import { App } from './App'
+import { router } from './app/router'
 
 // StrictMode dès le bootstrap (D9) : révèle les double-exécutions d'effets de
 // React 19 en dev, avant l'arrivée des hooks PowerSync (S14.4).
@@ -12,6 +13,6 @@ if (!rootElement) {
 
 createRoot(rootElement).render(
   <StrictMode>
-    <App />
+    <RouterProvider router={router} />
   </StrictMode>,
 )

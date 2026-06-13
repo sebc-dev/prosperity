@@ -5,8 +5,10 @@ import { expect, test } from 'vitest'
 // de futurs tests d'auth/sync pourraient devenir faux-verts en laissant filer un
 // appel réseau non mocké. Ne pas retirer.
 test('un appel sans handler MSW est rejeté (onUnhandledRequest=error)', async () => {
-  // URL absolue (résolue contre l'origine) : garantit que la rejection vient bien de
-  // MSW (mode 'error'), et non d'un échec de parsing d'URL relative sous undici.
+  // On assert le MESSAGE de MSW, pas un throw générique : un `.rejects.toThrow()` nu
+  // passerait AUSSI en mode 'warn'/'bypass' (rien n'écoutant sur l'origine de test, le
+  // fetch échouerait par ECONNREFUSED) → faux-vert. Le message « error strategy » n'est
+  // émis QUE par le mode 'error', donc il discrimine réellement la régression visée.
   const url = new URL('/api/__unhandled__', window.location.origin)
-  await expect(fetch(url)).rejects.toThrow()
+  await expect(fetch(url)).rejects.toThrow(/\[MSW\].*error.*strategy/i)
 })

@@ -15,6 +15,9 @@ export default defineConfig({
       target: 'react',
       routesDirectory: './src/pages',
       generatedRouteTree: './src/routeTree.gen.ts',
+      // Les tests co-localisés sous src/pages ne sont pas des routes → on les exclut du
+      // scan pour éviter les warnings « does not export a Route » à chaque build.
+      routeFileIgnorePattern: '\\.test\\.tsx?$',
     }),
     react(),
     tsconfigPaths(),

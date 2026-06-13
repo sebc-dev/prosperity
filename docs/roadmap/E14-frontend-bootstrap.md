@@ -27,7 +27,7 @@ Livrable agrégé : `npm run dev` démarre Vite, l'app charge, on peut se login,
 | Phase | Description | Diff |
 |---|---|---|
 | **P14.1.1** | `client/` : init Vite + React 19 + TypeScript strict + ESLint + Prettier config. Tests : `npm run build` passe, `npm run lint` passe, app vide affiche "Hello" | ~150 |
-| **P14.1.2** | Router (TanStack Router ou React Router 7) + structure `app/`, `pages/`, `features/`, `components/business/`, `components/ui/`, `lib/`, `hooks/`, `types/`. README expliquant la structure et le mapping vers ADRs | ~120 |
+| **P14.1.2** | Router **TanStack Router** (file-based ; choix tranché en S14.1 vs React Router 7 — bundle statique Capacitor sans SSR + search params typés, cf. plan §D3) + structure `app/`, `pages/`, `features/`, `components/business/`, `components/ui/`, `lib/`, `hooks/`, `types/`. README expliquant la structure et le mapping vers ADRs | ~120 |
 | **P14.1.3** | **(Delta A)** Harness de test : Vitest + `@testing-library/react` + `user-event` + MSW. `tests/setup.ts` (jsdom + matchers + serveur MSW), `tests/msw/handlers.ts`, helpers fixture. Tests : un rendu composant + un appel intercepté MSW | ~120 |
 
 ---

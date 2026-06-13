@@ -6,15 +6,19 @@ injectée. C'est la vraie réponse au `request.is_disconnected()` non fiable sou
 `httpx.ASGITransport` : ici aucun transport, le disconnect/expiration sont pilotés
 à la main. Couvre replay/resync/heartbeat/expiration-mid-stream/désinscription/aclose."""
 
+# Le test pilote des helpers internes du transport (`_event_stream`, `_format`,
+# `_parse_last_event_id`) — désactivation `reportPrivateUsage` au fichier (convention repo).
+# pyright: reportPrivateUsage=false
+
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from uuid import uuid4
 
 import pytest
 
-from backend.modules.sse.service.broadcaster import SseFrame
+from backend.modules.sse.service.broadcaster import OVERFLOW_FRAME, SseFrame
 from backend.modules.sse.transports.http import _event_stream, _format, _parse_last_event_id
 
 
@@ -51,7 +55,7 @@ def _gen(  # noqa: PLR0913 — fabrique de test paramétrable
     exp: int = 10_000,
     heartbeat: float = 0.01,
     conn: asyncio.Queue[SseFrame] | None = None,
-) -> tuple[AsyncIterator[str], asyncio.Queue[SseFrame], _SpyBroadcaster]:
+) -> tuple[AsyncGenerator[str], asyncio.Queue[SseFrame], _SpyBroadcaster]:
     queue: asyncio.Queue[SseFrame] = conn if conn is not None else asyncio.Queue()
     bc = _SpyBroadcaster()
     gen = _event_stream(
@@ -102,6 +106,17 @@ async def test_stream_closes_when_token_expired() -> None:
     with pytest.raises(StopAsyncIteration):
         await anext(gen)
     assert bc.disconnects  # fermeture + désinscription
+
+
+async def test_overflow_frame_closes_stream() -> None:
+    # Consommateur trop lent : le broadcaster pousse OVERFLOW_FRAME → le flux se ferme
+    # (le client rouvre et resync) et la désinscription a lieu (finally).
+    queue: asyncio.Queue[SseFrame] = asyncio.Queue()
+    gen, _q, bc = _gen(replay=[], conn=queue)
+    queue.put_nowait(OVERFLOW_FRAME)
+    with pytest.raises(StopAsyncIteration):
+        await anext(gen)
+    assert bc.disconnects  # fermeture + désinscription, jamais d'émission de la sentinelle
 
 
 async def test_aclose_runs_disconnect() -> None:

@@ -9,7 +9,11 @@ from uuid import uuid4
 
 import pytest
 
-from backend.modules.sse.service.broadcaster import Broadcaster, TooManyConnections
+from backend.modules.sse.service.broadcaster import (
+    OVERFLOW_FRAME,
+    Broadcaster,
+    TooManyConnections,
+)
 
 
 class _Clock:
@@ -31,6 +35,36 @@ def test_broadcast_reaches_all_connections_of_a_user() -> None:
     bc.publish(user, "notification", '{"id": 1}')
     assert q1.get_nowait().data == '{"id": 1}'
     assert q2.get_nowait().data == '{"id": 1}'
+
+
+def test_disconnect_of_one_tab_does_not_affect_the_other() -> None:
+    # Piège fan-out multi-onglets : déconnecter une queue ne doit PAS couper l'autre.
+    bc = _bc(_Clock())
+    user = uuid4()
+    q1, q2 = bc.connect(user), bc.connect(user)
+    bc.disconnect(user, q1)
+    bc.publish(user, "n", '{"id": 1}')
+    assert q1.qsize() == 0  # l'onglet fermé ne reçoit plus rien
+    assert q2.get_nowait().data == '{"id": 1}'  # l'onglet resté ouvert reçoit toujours
+
+
+def test_slow_consumer_overflow_is_disconnected_and_poisoned() -> None:
+    # File de fan-out bornée (anti-DoS slow consumer) : au-delà de `max_queue`, la
+    # connexion lente est retirée du fan-out et reçoit OVERFLOW_FRAME (→ fermeture + resync).
+    bc = _bc(_Clock(), max_queue=2)
+    user = uuid4()
+    slow = bc.connect(user)
+    for i in range(5):  # 5 publications, file de 2 jamais drainée
+        bc.publish(user, "n", str(i))
+    drained = []
+    while slow.qsize():
+        drained.append(slow.get_nowait())
+    assert OVERFLOW_FRAME in drained  # sentinelle poussée au consommateur trop lent
+    # La connexion morte ne reçoit plus rien (retirée du fan-out) ; un nouvel onglet, lui, reçoit.
+    fresh = bc.connect(user)
+    bc.publish(user, "n", "after")
+    assert slow.qsize() == 0
+    assert fresh.get_nowait().data == "after"
 
 
 def test_publish_is_isolated_per_user() -> None:

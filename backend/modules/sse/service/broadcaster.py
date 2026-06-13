@@ -32,6 +32,11 @@ from uuid import UUID
 _BUFFER_TTL_SECONDS = 300.0  # 5 min (ADR 0012)
 _BUFFER_MAX_EVENTS = 100  # 100 events par user (ADR 0012)
 _MAX_CONNS_PER_USER = 8  # plafond anti-DoS (multi-onglets bornés)
+# Borne la file de fan-out PAR connexion (anti-DoS « slow consumer ») : un client qui
+# ne draine pas accumulerait sinon sans limite. Au-delà, le client a plus d'un ring
+# buffer de retard → il ne peut de toute façon plus être rejoué de façon contiguë
+# (gap → resync) ; on le déconnecte donc plutôt que d'accumuler (cf. `_UserChannel.publish`).
+_MAX_QUEUE_PER_CONN = _BUFFER_MAX_EVENTS
 
 
 class TooManyConnections(Exception):
@@ -50,6 +55,12 @@ class SseFrame:
     data: str
 
 
+# Frame sentinelle « overflow » poussée dans la file d'un consommateur trop lent : le
+# générateur la reconnaît (par identité) et ferme le flux → le client rouvre et resync.
+# `id < 0` la distingue sans ambiguïté des frames réelles (ids monotones ≥ 1).
+OVERFLOW_FRAME = SseFrame(id=-1, event="_overflow", data="")
+
+
 class _UserChannel:
     """Ring buffer horodaté + connexions d'un user. PUR, `now_fn` injectable."""
 
@@ -60,10 +71,12 @@ class _UserChannel:
         ttl_seconds: float = _BUFFER_TTL_SECONDS,
         max_events: int = _BUFFER_MAX_EVENTS,
         max_conns: int = _MAX_CONNS_PER_USER,
+        max_queue: int = _MAX_QUEUE_PER_CONN,
     ) -> None:
         self._now_fn = now_fn
         self._ttl = ttl_seconds
         self._max_conns = max_conns
+        self._max_queue = max_queue
         self._counter = 0  # dernier id attribué (monotone, jamais réinitialisé)
         self._buffer: deque[tuple[SseFrame, float]] = deque(maxlen=max_events)
         self._conns: set[asyncio.Queue[SseFrame]] = set()
@@ -79,9 +92,25 @@ class _UserChannel:
         frame = SseFrame(id=self._counter, event=event, data=data)
         self._evict()
         self._buffer.append((frame, self._now_fn()))
-        for q in self._conns:
-            q.put_nowait(frame)  # fan-out non bloquant (queue non bornée par conn)
+        for q in list(self._conns):  # snapshot : `_disconnect_slow` mute `_conns`
+            try:
+                q.put_nowait(frame)  # fan-out non bloquant, file bornée par conn
+            except asyncio.QueueFull:
+                self._disconnect_slow(q)  # consommateur trop lent → fermeture + resync
         return frame
+
+    def _disconnect_slow(self, q: asyncio.Queue[SseFrame]) -> None:
+        """Déconnecte un consommateur dont la file déborde : on le retire du fan-out et on
+        lui pousse `OVERFLOW_FRAME` (le générateur ferme alors le flux, le client rouvre et
+        resync). On libère une place au préalable (la frame perdue est sans importance : le
+        client va resync depuis le ring buffer / REST), plutôt que de dropper silencieusement
+        une frame live — ce qui créerait un gap invisible cassant l'exactly-once."""
+        self._conns.discard(q)
+        try:
+            q.get_nowait()  # libère une place pour la sentinelle
+        except asyncio.QueueEmpty:  # pragma: no cover — la file est pleine par construction
+            pass
+        q.put_nowait(OVERFLOW_FRAME)
 
     def replay_after(self, last_id: int | None) -> list[SseFrame] | None:
         """Frames à rejouer pour un `Last-Event-ID`.
@@ -107,7 +136,7 @@ class _UserChannel:
     def connect(self) -> asyncio.Queue[SseFrame]:
         if len(self._conns) >= self._max_conns:
             raise TooManyConnections
-        q: asyncio.Queue[SseFrame] = asyncio.Queue()
+        q: asyncio.Queue[SseFrame] = asyncio.Queue(maxsize=self._max_queue)
         self._conns.add(q)
         return q
 
@@ -168,6 +197,6 @@ def get_broadcaster() -> Broadcaster:
 
 
 def set_broadcaster(broadcaster: Broadcaster) -> None:
-    """**Test-only** : substitue le singleton (un autouse fixture restaure l'original)."""
+    """**Test-only** : substitue le singleton (une fixture restaure ensuite l'original)."""
     global _broadcaster  # noqa: PLW0603 — couture de test assumée (cf. D9)
     _broadcaster = broadcaster

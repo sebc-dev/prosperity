@@ -8,6 +8,8 @@ un `exp` absent/non-int donne 401)."""
 
 from __future__ import annotations
 
+import base64
+import json
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -27,6 +29,10 @@ from backend.modules.auth.service.jwt import (
 
 _SECRET = SecretStr("test-secret-do-not-use-in-prod-only-tests-okay!")
 _OMIT = object()
+
+
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
 
 def _settings(*, jwt_sse_ttl_seconds: int = 300, jwt_issuer: str = "prosperity-auth") -> Settings:
@@ -94,6 +100,43 @@ def test_corrupted_signature_is_rejected() -> None:
     token = issue_sse_token(uuid4(), settings=settings)
     with pytest.raises(InvalidTokenError):
         verify_sse_token(token + "x", settings=settings)
+
+
+def test_sse_token_with_none_algorithm_is_rejected() -> None:
+    # Régression HS256/`alg=none` : même structurellement valide, un token NON signé
+    # doit être rejeté car `verify_sse_token` épingle la whitelist à `["HS256"]`
+    # (parité avec `verify_access_token`).
+    settings = _settings()
+    header = _b64url(json.dumps({"alg": "none", "typ": "JWT"}).encode("utf-8"))
+    payload = _b64url(
+        json.dumps(
+            {"sub": str(uuid4()), "aud": settings.jwt_sse_audience, "iss": settings.jwt_issuer}
+        ).encode("utf-8")
+    )
+    unsigned = f"{header}.{payload}."
+    with pytest.raises(InvalidTokenError):
+        verify_sse_token(unsigned, settings=settings)
+
+
+def test_sse_token_with_future_iat_outside_leeway_is_rejected() -> None:
+    # iat = now + 60s, au-delà des 30s de leeway → token antidaté (horloge forgée).
+    # Rejeté en Invalid (pas Expired : `exp` est aussi dans le futur, seul `iat` est anormal).
+    settings = _settings()
+    now_ts = int(datetime.now(tz=UTC).timestamp())
+    forged = _forge_sse({"sub": str(uuid4()), "iat": now_ts + 60, "exp": now_ts + 900}, settings)
+    with pytest.raises(InvalidTokenError) as excinfo:
+        verify_sse_token(forged, settings=settings)
+    assert not isinstance(excinfo.value, ExpiredTokenError)
+
+
+def test_sse_token_with_future_iat_within_leeway_is_accepted() -> None:
+    # iat = now + 5s, dans la tolérance de 30s (client à l'horloge légèrement en avance).
+    settings = _settings()
+    now_ts = int(datetime.now(tz=UTC).timestamp())
+    uid = uuid4()
+    forged = _forge_sse({"sub": str(uid), "iat": now_ts + 5, "exp": now_ts + 900}, settings)
+    user_id, _exp = verify_sse_token(forged, settings=settings)
+    assert user_id == uid
 
 
 def test_expired_sse_token_raises_expired() -> None:

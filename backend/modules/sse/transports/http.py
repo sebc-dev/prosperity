@@ -14,13 +14,14 @@ stream n'est protégé que par le token query (pas de header custom requis).
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from backend.config import Settings, get_settings
 from backend.modules.auth.public import (
@@ -31,6 +32,7 @@ from backend.modules.auth.public import (
     verify_sse_token,
 )
 from backend.modules.sse.service.broadcaster import (
+    OVERFLOW_FRAME,
     Broadcaster,
     SseFrame,
     TooManyConnections,
@@ -43,17 +45,24 @@ CurrentUser = Annotated[User, Depends(get_current_user)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
+class SseTokenResponse(BaseModel):
+    """Réponse de `POST /sse/token` : le token SSE scopé + sa durée de vie (s)."""
+
+    token: str
+    expires_in: int
+
+
 @sse_router.post("/token")
-async def issue_token(user: CurrentUser, settings: SettingsDep) -> dict[str, object]:
+async def issue_token(user: CurrentUser, settings: SettingsDep) -> SseTokenResponse:
     """Émet un token SSE scopé 5 min pour le user authentifié (ADR 0012).
 
     Le client ouvre ensuite `GET /sse/stream?token=<token>`. Le token a l'audience
     `prosperity-sse` (cloisonnée de l'access token, ADR 0016) et expire en 5 min.
     """
-    return {
-        "token": issue_sse_token(user.id, settings=settings),
-        "expires_in": settings.jwt_sse_ttl_seconds,
-    }
+    return SseTokenResponse(
+        token=issue_sse_token(user.id, settings=settings),
+        expires_in=settings.jwt_sse_ttl_seconds,
+    )
 
 
 def _format(frame: SseFrame) -> str:
@@ -83,12 +92,13 @@ async def _event_stream(  # noqa: PLR0913 — générateur pur paramétré pour 
     now_fn: Callable[[], int],
     heartbeat_s: float,
     replay: list[SseFrame] | None,
-) -> AsyncIterator[str]:
+) -> AsyncGenerator[str]:
     """Générateur `text/event-stream`. PUR et paramétré (D9) : testable hors HTTP avec
     un `request` espion (`is_disconnected` contrôlable), un `broadcaster`/`now_fn`
     injectés. Rejoue `replay` (ou un frame `resync` si hors fenêtre), puis stream live
     avec heartbeat ; se ferme au disconnect OU à l'expiration du token (anti slow-loris).
-    `finally: disconnect` garantit la désinscription même sur `aclose()` (anti-fuite)."""
+    Le type de retour `AsyncGenerator` (et non `AsyncIterator`) expose `aclose()`, dont
+    le `finally: disconnect` garantit la désinscription même sur fermeture serveur."""
     try:
         if replay is None:
             yield "event: resync\ndata: {}\n\n"  # hors fenêtre → le client re-sync REST
@@ -101,6 +111,8 @@ async def _event_stream(  # noqa: PLR0913 — générateur pur paramétré pour 
                 break  # token expiré → fermeture du flux (durée de vie ≤ TTL)
             try:
                 frame = await asyncio.wait_for(conn.get(), timeout=min(heartbeat_s, remaining))
+                if frame is OVERFLOW_FRAME:
+                    break  # consommateur trop lent → fermeture ; le client rouvre et resync
                 yield _format(frame)
             except TimeoutError:
                 yield ": heartbeat\n\n"  # commentaire SSE = heartbeat (sous l'idle timeout)

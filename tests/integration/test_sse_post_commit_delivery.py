@@ -5,6 +5,10 @@ savepoint, où `commit()` est un *release* de SAVEPOINT qui ferait fire `after_c
 à tort et masquerait l'invariant « après, pas avant ». Broadcaster espionné
 (`set_broadcaster`)."""
 
+# Le test pilote des helpers internes (`_PENDING`) — c'est le rôle d'un test unitaire
+# du module ; on désactive `reportPrivateUsage` à l'échelle du fichier (convention repo).
+# pyright: reportPrivateUsage=false
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -15,7 +19,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from backend.modules.sse.events import SseSignal
-from backend.modules.sse.service.broadcaster import Broadcaster, get_broadcaster, set_broadcaster
+from backend.modules.sse.service.broadcaster import (
+    Broadcaster,
+    SseFrame,
+    get_broadcaster,
+    set_broadcaster,
+)
 from backend.modules.sse.service.delivery import _PENDING, register_sse_delivery
 from backend.shared.events import clear_subscribers, dispatch
 
@@ -25,7 +34,7 @@ class _SpyBroadcaster(Broadcaster):
         super().__init__()
         self.published: list[tuple[UUID, str, str]] = []
 
-    def publish(self, user_id: UUID, event: str, data: str) -> object:
+    def publish(self, user_id: UUID, event: str, data: str) -> SseFrame:
         self.published.append((user_id, event, data))
         return super().publish(user_id, event, data)
 

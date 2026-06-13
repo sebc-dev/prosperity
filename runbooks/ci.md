@@ -1,0 +1,81 @@
+# Runbook — CI (workflows GitHub Actions)
+
+> Story S18.1 (E18 DevX/CI). `.github/workflows/push.yml` est **path-scopé** : seuls les jobs
+> pertinents au périmètre changé tournent, et `ci-required` est l'**unique required check**.
+> Logique de gating : `.github/scripts/decide.sh` (testée par `.github/scripts/decide.test.sh`).
+
+## ⚠️ Branch protection — action manuelle (sinon le gating est neutralisé)
+
+Le gating ne sert à rien tant que les *branch protection rules* exigent les jobs individuels :
+un job `skipped` (PR docs-only) laisse un check requis « en attente » → **PR bloquée non-mergeable**.
+
+**À faire une fois, sur GitHub** (*Settings → Branches → `main` → Require status checks*) :
+
+1. **Retirer** des checks requis : `backend-lint`, `backend-unit`, `backend-integration`,
+   `backend-e2e`, `backend-sync`, `backend-migrations` (et tout autre job individuel).
+2. **Ajouter** comme **seul** check requis : **`ci-required`**.
+
+`ci-required` (`needs:` tous les jobs, `if: always()`) passe si chaque job est `success` **ou**
+`skipped`, et échoue (allow-list) dès qu'un job requis est `failure`/`cancelled`. Il inclut
+`changes` et `ci-selftest` dans son `needs:` → une panne du **gating lui-même** fait échouer le
+check (pas de fail-open silencieux).
+
+## Matrice de déclenchement (sur une PR)
+
+`changes` (job) classe les fichiers modifiés via `dorny/paths-filter`, puis `decide.sh` décide :
+
+| Fichiers modifiés (PR) | `backend` | `frontend` (S14.7) | Jobs backend |
+|---|---|---|---|
+| `backend/**`, `tests/**`, `alembic/**`, `pyproject.toml`, `uv.lock`, `compose/**`, `compose.dev.yml`, `.env.example`, `powersync/**`, `scripts/**` | ✅ | — | **tournent** |
+| `client/**` uniquement | — | ✅ | **skipped** |
+| `**/*.md`, `docs/**` uniquement | — | — | **skipped** (`ci-required` vert) |
+| `.github/workflows/**`, `.github/actions/**`, `.github/scripts/**` | ✅ | ✅ | **full run** (un changement de CI se re-teste) |
+| chemin **non classé** (ex. `Makefile`), seul **ou mêlé** à du classé | ✅ (fail-safe) | selon | **tournent** |
+| **push `main`** / `workflow_dispatch` | ✅ | ✅ | **full run** (filet post-merge) |
+
+Notes :
+- `'**/*.md'` matche aussi `backend/README.md` → une PR ne touchant qu'un README backend skippe
+  les jobs backend (volontaire : un README ne casse pas les tests).
+- **Fail-safe** : `decide.sh` lance `backend` dès que le filtre `unknown` (négation : tout ce qui
+  n'est dans aucune catégorie) est vrai — y compris quand un fichier non classé accompagne un
+  fichier `client/**` (on lance plutôt que skipper).
+
+## Ajouter / modifier un périmètre
+
+1. Étendre les filtres de `changes` dans `push.yml` (et la liste de **négations** du filtre
+   `unknown` en miroir — sinon un nouveau chemin classé déclencherait le fail-safe à tort).
+2. Ajuster `decide.sh` si une nouvelle sortie est nécessaire ; **ajouter le cas** dans
+   `decide.test.sh` (couvert par `ci-selftest`).
+3. Ajouter le nouveau job au `needs:` de **`ci-required`** (sinon il ne gate pas le required check).
+
+### Coordination S14.7 (#211) — jobs frontend
+
+Les jobs frontend (`frontend-lint`/`unit`/`build`) sont livrés par **S14.7**. Ils doivent :
+- être gatés par `if: needs.changes.outputs.frontend == 'true'` (l'output est déjà câblé) ;
+- utiliser la composite action `./.github/actions/setup-node-cached` (cache npm + node_modules) ;
+- être ajoutés au `needs:` de `ci-required`.
+
+## Cache
+
+- **Backend (`uv`)** : `astral-sh/setup-uv` `enable-cache: true` + `cache-dependency-glob: uv.lock`
+  sur chaque job → cache hit visible dans les logs.
+- **Frontend (npm)** : composite action `setup-node-cached` (cache `~/.npm` + `client/node_modules`).
+  ⚠️ **Cache-poisoning** : `node_modules` contient l'addon natif compilé `better-sqlite3`. Les jobs
+  qui le restaurent ne tournent que sur `pull_request` (token **read-only**, pas de secrets) et le
+  scoping de cache GHA isole les caches PR de ceux de la base — l'impact est borné. La `key` inclut
+  `.nvmrc` (version Node ≈ ABI) pour ne pas restaurer un binaire d'une autre ABI. Observable au
+  **premier job frontend de S14.7**.
+- **Docker (`powersync-smoke`, nightly)** : les jobs compose **pullent** des images (pas de build).
+  **Décision (D6)** : par défaut, **pin par digest** des images dans `compose.dev.yml` (déterminisme) ;
+  un cache `save/load` keyé sur les digests résolus n'est ajouté **que si** une mesure prouve un gain
+  de pull-time net (sur GitHub les images communes sont souvent déjà chaudes). **Statut** : non
+  implémenté (aucune mesure réalisée) — à reprendre comme suivi mesuré.
+
+## Validation d'un changement de CI
+
+- **Forme** : `actionlint .github/workflows/*.yml` (local ; gate dur = job `ci-selftest`).
+- **Logique de gating** : `bash .github/scripts/decide.test.sh` (8 branches ; local + `ci-selftest`).
+- **Comportement** : PRs synthétiques (docs-only / `client/`-only / backend-only / `.github`-only /
+  mixte `client/`+non-classé). Pour valider la branche **échec** de `ci-required` : introduire une
+  faute (ex. lint) dans `backend/**`, observer `ci-required` **rouge** + PR non-mergeable, puis revert.
+- Toute PR touchant `.github/**` force un **full run** (auto-validation).

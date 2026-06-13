@@ -58,6 +58,9 @@ Ordre topologique. Chaque epic ne démarre qu'après ses dépendances.
 | [E14](./E14-frontend-bootstrap.md) | Frontend bootstrap | Capacitor 8 + React 19 + Vite 6 + Drizzle + Tailwind + shadcn scaffolding + PowerSync client setup | E13 | not started |
 | [E15](./E15-ui-mvp.md) | UI MVP (~15 écrans) | Login + dashboard solde réel + comptes + transactions + budgets + dettes + settings + invitation accept | E14 | not started |
 | [E16](./E16-deployment.md) | Deployment | Podman Quadlet + Caddy + Cloudflare Tunnel + Tailscale + Restic→B2 + runbooks | E15 | not started |
+| [E17](./E17-realtime-sse-backend.md) | Realtime backend (SSE) | ADR 0012 : `POST /sse/token` + `GET /sse/stream` + heartbeat 30 s + buffer/resume `Last-Event-ID` | E02, E04 | not started |
+
+> **Hors-séquence** : E17 (backend SSE) a été ajouté après coup — gap découvert à la création des stories E14 (#205-#211). Topologiquement il **précède E14 S14.7** (#211, qui en dépend) ; son numéro ne reflète pas l'ordre d'exécution.
 
 **Volume estimé** : ~80-120 stories et ~250-400 phases pour le MVP complet.
 

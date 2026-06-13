@@ -12,3 +12,7 @@ L'API navigateur `EventSource` ne supporte pas d'envoyer des headers HTTP custom
 - Tests d'intégration spécifiques : reconnexion avec `Last-Event-ID` après simulation de drop, dépassement du buffer 5min, expiration du token 5min en cours de flux (refresh côté client requis).
 - Multi-onglets : un même utilisateur a N connexions SSE actives (une par onglet), broadcast à chacune. Charge mémoire serveur acceptable pour un foyer (~ N×100 events buffered en pic).
 - Cohérent avec ADR 0003 (pending_actions server-only, lecture via API + SSE).
+
+## Addendum (S17.1) — le scope `sse_subscribe` se concrétise par l'audience `aud`
+
+L'implémentation backend (E17 / S17.1) réalise le « token scopé `sse_subscribe` » par un **JWT HS256 dont le claim `aud` vaut `prosperity-sse`** (réglage `jwt_sse_audience`), distinct de l'audience des access tokens (`prosperity-api`, ADR 0016). Le cloisonnement passe donc par le claim **`aud`** — vérifié par PyJWT au `decode` (`audience=`), qui rejette un token d'audience différente *ou sans `aud`*. Il n'y a **pas** de claim `scope` séparé : un claim custom ne serait pas vérifié par la lib et donnerait un faux sentiment de cloisonnement. Le token reste stateless (HS256, même secret) : « révocation rapide » = **expiration 5 min** (`jwt_sse_ttl_seconds`), pas une révocation active.

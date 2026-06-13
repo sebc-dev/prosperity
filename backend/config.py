@@ -76,6 +76,26 @@ class Settings(BaseSettings):
         default=900,
         description="Access-token lifetime in seconds (15 minutes — see roadmap E02).",
     )
+    # SSE stream token (S17.1, ADR 0012): a SEPARATE audience is the only
+    # cloisonnement between an SSE token and an access token (same `jwt_secret`
+    # is shared, ADR 0016). A token minted for `prosperity-sse` is rejected by
+    # `verify_access_token` (which pins `prosperity-api`) and vice-versa. TTL is
+    # deliberately distinct from `jwt_access_ttl_seconds` (the SSE token lives
+    # 5 min, not 15 — short window because it travels in the query param).
+    jwt_sse_audience: str = Field(
+        default="prosperity-sse",
+        description="Expected `aud` claim on SSE stream tokens. Override via JWT_SSE_AUDIENCE.",
+    )
+    jwt_sse_ttl_seconds: int = Field(
+        default=300,
+        description="SSE stream-token lifetime in seconds (5 minutes — ADR 0012).",
+    )
+    # SSE heartbeat period (S17.1): server pings every 30s, under Cloudflare's
+    # 100s idle timeout (ADR 0012). Parametrable so tests use a short value.
+    sse_heartbeat_seconds: float = Field(
+        default=30.0,
+        description="SSE heartbeat period in seconds (ADR 0012). Env: SSE_HEARTBEAT_SECONDS.",
+    )
     refresh_token_ttl_seconds: int = Field(
         # The DB stores `expires_at = issued_at + ttl`, so changing this at
         # runtime only affects newly-issued tokens — existing rows keep

@@ -41,6 +41,8 @@ from backend.modules.debts.transports.http import (
     share_requests_router,
     tx_share_requests_router,
 )
+from backend.modules.sse.service.delivery import register_sse_delivery
+from backend.modules.sse.transports.http import sse_router
 from backend.modules.sync.transports.http import sync_router
 from backend.modules.transactions.public import (
     TransactionConfirmedEvent,
@@ -111,6 +113,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     async with db_lifespan(app):
         await bootstrap_initial_admin_from_env(app.state.sessionmaker, get_settings())
         _register_event_subscribers()
+        register_sse_delivery()  # S17.1 : diffusion SSE post-commit (idempotent)
         yield
 
 
@@ -130,6 +133,7 @@ app.include_router(debts_router)
 app.include_router(settlements_router)
 app.include_router(imports_router)
 app.include_router(sync_router)
+app.include_router(sse_router)
 
 
 @app.get("/healthz")

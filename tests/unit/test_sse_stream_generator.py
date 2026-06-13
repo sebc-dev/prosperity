@@ -15,7 +15,16 @@ from uuid import uuid4
 import pytest
 
 from backend.modules.sse.service.broadcaster import SseFrame
-from backend.modules.sse.transports.http import _event_stream, _format
+from backend.modules.sse.transports.http import _event_stream, _format, _parse_last_event_id
+
+
+def test_parse_last_event_id_is_defensive() -> None:
+    # Un `Last-Event-ID` valide est parsé ; absent ou forgé/malformé → None (jamais d'exception).
+    assert _parse_last_event_id("5") == 5
+    assert _parse_last_event_id("-3") == -3
+    assert _parse_last_event_id(None) is None
+    assert _parse_last_event_id("abc") is None
+    assert _parse_last_event_id("") is None
 
 
 class _SpyRequest:

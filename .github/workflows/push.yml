@@ -1,12 +1,14 @@
 name: push
 
-# Mirrors docs/Stratégie de tests §9.2: parallel jobs, target < 5 min total.
-# Triggers on every push and PR so feature branches + PRs share one run via
-# the concurrency group below.
+# CI path-scopée (S18.1, E18) : un job `changes` détecte le périmètre touché par la PR et
+# `gate` chaque job lourd ; `ci-required` est l'unique required check (stable même quand des
+# jobs sont `skipped`). Sur push `main`/dispatch/changement de CI → full run (filet).
+# Cf. runbooks/ci.md (matrice de déclenchement + branch protection rules).
 
 on:
-  push:
   pull_request:
+  push:
+    branches: [main] # PR + push main uniquement (retire le double-run feature-branch)
   workflow_dispatch:
 
 # Least-privilege default for GITHUB_TOKEN; jobs only check out and read.
@@ -18,12 +20,91 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Détecte le périmètre changé et décide quels jobs lancer (decide.sh, testé par ci-selftest).
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      backend: ${{ steps.decide.outputs.backend }}
+      frontend: ${{ steps.decide.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5 — pour decide.sh
+      - id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'tests/**'
+              - 'alembic/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'compose/**'
+              - 'compose.dev.yml'
+              - '.env.example'
+              - 'powersync/**'
+              - 'scripts/**'
+            frontend:
+              - 'client/**'
+            docs:
+              - '**/*.md'
+              - 'docs/**'
+            ci:
+              - '.github/workflows/**'
+              - '.github/actions/**'
+              - '.github/scripts/**'
+            unknown:
+              - '**'
+              - '!backend/**'
+              - '!tests/**'
+              - '!alembic/**'
+              - '!pyproject.toml'
+              - '!uv.lock'
+              - '!compose/**'
+              - '!compose.dev.yml'
+              - '!.env.example'
+              - '!powersync/**'
+              - '!scripts/**'
+              - '!client/**'
+              - '!docs/**'
+              - '!**/*.md'
+              - '!.github/**'
+      - id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          F_BACKEND: ${{ steps.filter.outputs.backend }}
+          F_FRONTEND: ${{ steps.filter.outputs.frontend }}
+          F_CI: ${{ steps.filter.outputs.ci }}
+          F_UNKNOWN: ${{ steps.filter.outputs.unknown }}
+        run: bash .github/scripts/decide.sh
+
+  # Auto-validation de la CI : lint des workflows + tests unitaires de la logique de gating.
+  ci-selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - name: actionlint
+        uses: raven-actions/actionlint@205b530c5d9fa8f44ae9ed59f341a0db994aa6f8 # v2
+      - name: Validate composite actions (YAML — actionlint ignore les action.yml)
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          for f in .github/actions/*/action.yml; do
+            python3 -c "import yaml; yaml.safe_load(open('$f'))" && echo "ok: $f"
+          done
+      - name: decide.sh unit tests
+        run: bash .github/scripts/decide.test.sh
+
   backend-lint:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -34,11 +115,13 @@ jobs:
       - run: uv run lint-imports
 
   backend-unit:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -46,11 +129,13 @@ jobs:
       - run: uv run pytest tests/unit/
 
   backend-integration:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -60,11 +145,13 @@ jobs:
       - run: uv run pytest tests/integration/ --ignore=tests/integration/test_migrations_schema.py
 
   backend-e2e:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -75,6 +162,8 @@ jobs:
       - run: uv run pytest tests/e2e/
 
   backend-sync:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -82,14 +171,51 @@ jobs:
       - run: echo "placeholder — backend-sync activates with E13 write upload handler tests"
 
   backend-migrations:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
       - run: uv sync --frozen
       # Niveau 1 schema check: alembic upgrade head + snapshot diff + downgrade base.
       - run: uv run pytest tests/integration/test_migrations_schema.py
+
+  # Unique required check (branch protection) : vert si chaque job lancé est success OU skipped,
+  # rouge dès qu'un job requis échoue/est annulé. `changes`/`ci-selftest` dans `needs:` → une
+  # panne du gating lui-même fait échouer ce check (pas de fail-open). Cf. runbooks/ci.md.
+  ci-required:
+    needs:
+      - changes
+      - ci-selftest
+      - backend-lint
+      - backend-unit
+      - backend-integration
+      - backend-e2e
+      - backend-sync
+      - backend-migrations
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Verify required jobs
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          set -euo pipefail
+          echo "results: $RESULTS"
+          for r in $RESULTS; do
+            # allow-list : seuls success/skipped sont acceptés (pas de fail-open silencieux).
+            case "$r" in
+              success | skipped) ;;
+              *)
+                echo "::error::job requis non OK ($r)"
+                exit 1
+                ;;
+            esac
+          done
+          echo "tous les jobs requis sont success ou skipped → OK"

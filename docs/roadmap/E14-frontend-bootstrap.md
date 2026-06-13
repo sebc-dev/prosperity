@@ -44,9 +44,11 @@ Livrable agrégé : `npm run dev` démarre Vite, l'app charge, on peut se login,
 
 ### S14.3 — Drizzle local schema
 
+> **Réconciliation roadmap ↔ sync rules (plan S14.3, #207).** La source de vérité du périmètre est `powersync/sync_rules.yaml` (S13.7) : il publie **11 tables**, pas 14. Sont **retirées** de P14.3.1 ci-dessous : `settlements` (fail-closed, non publiée — D-SET, seules `settlement_lines` le sont), `savings_goals` / `savings_goal_allocations` (inexistantes côté serveur ; future épopée *savings* — `splits.savings_goal_id` reste une colonne dormante), `notifications` (module vide ; livrées par **SSE**, ADR 0012, pas PowerSync). Ajout de `budget_contributors` (présent dans les sync rules, absent de la liste d'origine).
+
 | Phase | Description | Diff |
 |---|---|---|
-| **P14.3.1** | `lib/drizzle/` : schema TS qui mirror les tables sync server-side (transactions, splits, accounts, account_members, categories, budgets, debts, settlements, settlement_lines, share_requests, savings_goals, savings_goal_allocations, notifications, users_public). Tests : `drizzle-kit push` génère un schéma SQLite | ~250 |
+| **P14.3.1** | `lib/drizzle/` : schema TS qui mirror les **11 tables réellement synchronisées** par `powersync/sync_rules.yaml` (accounts, account_members, transactions, splits, categories, budgets, budget_contributors, debts, share_requests, settlement_lines, users_public). Colonnes alignées sur la **projection sync** — dont la nullabilité des colonnes masquées côté débiteur (`debts.account_id`/`source_transaction_id`, `share_requests.source_transaction_id` ; D-MASK/D-SR, ADR 0003). Tests : `drizzle-kit` génère un schéma SQLite ; introspection PRAGMA (tables/colonnes/nullabilité). | ~250 |
 | **P14.3.2** | Drizzle queries helpers : `useTransactions(filters)`, `useAccountBalance(account_id)`, `useDebtsForCurrentUser()`, etc. Hooks réactifs sur changements PowerSync. Tests Vitest | ~200 |
 
 ---

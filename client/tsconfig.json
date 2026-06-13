@@ -27,5 +27,5 @@
       "@tests/*": ["tests/*"]
     }
   },
-  "include": ["src", "tests", "vite.config.ts"]
+  "include": ["src", "tests", "vite.config.ts", "drizzle.config.ts"]
 }

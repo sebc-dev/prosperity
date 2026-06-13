@@ -1,20 +1,23 @@
 # E17 — Realtime backend (SSE : token + stream + resume)
 
-> **Durée estimée** : 3-4 jours
+> **Durée estimée** : 4-5 jours
 > **Statut** : not started
 > **Dépend de** : E02 (auth/JWT), E04 (notifications scaffolding via mini-bus)
 > **Bloque** : E14 (S14.7 — wrapper SSE client, #211)
-> **ADRs activés** : 0012 (SSE auth token court-lived + heartbeat 30s + resume `Last-Event-ID`), 0016 (JWT aud/iss), cohérence 0003 (`pending_actions` server-only)
+> **Lié** : S02.5 (#73 — stack rate-limit, pour `POST /sse/token`)
+> **ADRs activés** : 0012 (SSE token court-lived + heartbeat 30s + resume `Last-Event-ID`), 0016 (JWT aud/iss), cohérence 0003 (`pending_actions` server-only), 0005 (contrat import `2-sse`)
+
+> ♻️ **v2 — révisé suite à l'analyse 3-agents (archi/sécu/tests)** : fondement post-commit corrigé (mécanisme inexistant → listener `after_commit`), disponibilité bornée (anti-DoS), décisions techniques tranchées. Détail dans #214.
 
 ---
 
 ## Objectif
 
-Exposer le canal **push serveur → client** par Server-Sent Events (ADR 0012), aujourd'hui **absent** côté backend — gap découvert à la création des stories E14 (#205-#211), bloquant #211 / S14.7 (le wrapper SSE client).
+Exposer le canal **push serveur → client** par Server-Sent Events (ADR 0012), absent côté backend — gap découvert à la création des stories E14 (#205-#211), bloquant #211 / S14.7.
 
-Distinct d'E13 (PowerSync = sync de **données** download/upload) : la SSE pousse des **notifications / signaux** (ADR 0003 §`pending_actions` server-only « lecture via API + SSE »).
+Distinct d'E13 (PowerSync = sync de **données**) : la SSE pousse des **signaux** (ADR 0003 §`pending_actions`). **Invariant** : un event SSE ne transporte qu'un **signal/id, jamais de PII** ; le client re-fetch via REST authentifié.
 
-Livrable agrégé : un client authentifié appelle `POST /sse/token`, ouvre `GET /sse/stream?token=…`, reçoit un heartbeat 30 s, et après une coupure réémet `Last-Event-ID` pour rejouer les events manqués (buffer 5 min / 100 events par user).
+Livrable agrégé : `POST /sse/token` → `GET /sse/stream?token=…` (heartbeat 30 s), reconnexion `Last-Event-ID` → replay **exactly-once** depuis le buffer (5 min / 100 events par user).
 
 ---
 
@@ -24,11 +27,11 @@ Livrable agrégé : un client authentifié appelle `POST /sse/token`, ouvre `GET
 
 | Phase | Description | Diff |
 |---|---|---|
-| **P17.1.1** | Scaffolding `modules/sse/` (`public`/`service`/`transports`) + placement dans le graphe directionnel (ADR 0005) + contrat import-linter `2-sse` (gabarit `2-sync`). Tests d'archi : `lint-imports` vert, surface publique | ~120 |
-| **P17.1.2** | Token SSE scopé : `issue_sse_token` / `verify_sse_token` (audience dédiée `prosperity-sse`, TTL 5 min, ADR 0016) + `POST /sse/token` (auth JWT normal → token scopé). Tests : token valide 5 min, mauvaise audience rejetée, JWT requis | ~150 |
-| **P17.1.3** | Broadcaster in-memory : registre de connexions par user (multi-onglets), ring buffer 5 min / 100 events par user, `publish(user_id, event)` + `subscribe(user_id)`. Tests unitaires (broadcast, éviction 5 min, dépassement 100) | ~200 |
-| **P17.1.4** | `GET /sse/stream?token=…` : `text/event-stream`, auth via query token, heartbeat 30 s, replay post-`Last-Event-ID` puis stream live. Tests intégration (httpx streaming) : connexion, heartbeat, reconnect + `Last-Event-ID`, buffer dépassé, token expiré | ~250 |
-| **P17.1.5** | Câblage events → broadcaster en livraison **post-commit** (le mini-bus dispatche in-transaction, S13.6 ; la diffusion SSE sort post-commit via `BackgroundTasks`) + runbook `runbooks/sse.md` (redaction `?token=` logs Caddy/Cloudflare, idle timeouts). `notifications` étant un stub → câblage minimal/extensible. Tests | ~180 |
+| **P17.1.1** | Scaffolding `modules/sse/` + frontière d'imports : couche `sync \| savings \| sse` (contrat 1, sommet = `mcp`), nouveau contrat `2-sse` (mirror `2-sync`), `sse` dans contrats 5/6 ; `ignore_imports` = uniquement les 9 second-hops `auth.public → auth.X` (PAS de `notifications`, surface vide). Tests d'archi (`lint-imports`, `test_importlinter_coverage`, `test_sse_public_surface`) | ~250 |
+| **P17.1.2** | Token SSE scopé (ADR 0016) : settings `jwt_sse_audience="prosperity-sse"` + `jwt_sse_ttl_seconds=300` (distincts) ; `issue_sse_token`/`verify_sse_token` (imposent `audience`/`issuer`, rejettent l'absence de `aud`) + `POST /sse/token` (auth `get_current_user`). Tests : valide 5 min, **confusion d'audience bidirectionnelle**, sans `aud`, JWT requis | ~180 |
+| **P17.1.3** | Broadcaster + ring buffer **pur in-memory** : registre par user, ring 5 min / 100, **plafond connexions/user** (fail-closed), `publish`/`subscribe`/**désinscription**, **horloge injectable**. Tests unitaires DB-free + **property Hypothesis** (buffer pur, exception §4.2) : `replay_after(id)` = sous-séquence ordonnée strictement postérieure capée fenêtre (exactly-once) ; `@example` aux frontières (id=dernier, inconnu/forgé, buffer vide) | ~280 |
+| **P17.1.4** | `GET /sse/stream?token=…` : **`StreamingResponse` natif** + désinscription au disconnect (`request.is_disconnected()`), **heartbeat paramétrable**, **fermeture à l'expiration du token** (≤ 5 min, anti slow-loris) ; replay post-`Last-Event-ID` puis live ; hors fenêtre → frame `resync`. Tests intégration httpx streaming (broadcaster injectable) : heartbeat court, reconnect, désinscription, token expiré → fermé, hors-fenêtre → `resync`, multi-onglets, 401 (absent/sig/aud/expiré/user inexistant → pas 500) | ~280 |
+| **P17.1.5** | Livraison **POST-COMMIT** : listener SQLAlchemy `after_commit` (gabarit `accounts/service/setup.py:154`) collectant les events SSE produits in-transaction et les flush au broadcaster après commit + producteur minimal/seam de test (`notifications` stub). Runbook `runbooks/sse.md` (redaction `?token=` proxy **et** application, contrainte mono-process, idle timeouts, révocation = TTL). Tests : **rollback → AUCUNE diffusion**, **commit → exactly-once** (broadcaster espionné) | ~250 |
 
 ---
 
@@ -36,29 +39,33 @@ Livrable agrégé : un client authentifié appelle `POST /sse/token`, ouvre `GET
 
 | ID | Type | Diff | Cumul |
 |---|---|---|---|
-| S17.1 (5 phases) | SSE backend (token + stream + buffer/resume) | 900 | 900 |
-| **Total** | **1 story / 5 phases** | **~900 lignes** | |
+| S17.1 (5 phases) | SSE backend (token + stream + buffer/resume + post-commit) | 1240 | 1240 |
+| **Total** | **1 story / 5 phases** | **~1240 lignes** | |
 
 ---
 
 ## Critères d'acceptation
 
-- [ ] `POST /sse/token` (auth JWT normal) → token scopé `sse_subscribe`, TTL **5 min** ; sans JWT → 401
-- [ ] `GET /sse/stream?token=…` → `text/event-stream` ; 401 si token absent / invalide / mauvaise audience / expiré
-- [ ] **Heartbeat 30 s** (sous l'idle timeout 100 s Cloudflare)
-- [ ] `Last-Event-ID` → replay des events post-id depuis le buffer (5 min / 100 par user) ; au-delà → re-sync REST documenté
-- [ ] **Multi-onglets** : N connexions par user, broadcast à chacune
-- [ ] Livraison **post-commit** : un event n'est diffusé qu'après commit de sa transaction
-- [ ] Token `?token=` redacté dans les logs reverse proxy (runbook `runbooks/sse.md`)
-- [ ] `lint-imports` vert (nouveau contrat `2-sse`)
+- [ ] `POST /sse/token` (auth JWT) → token `prosperity-sse`, TTL **5 min** ; sans JWT → 401
+- [ ] **Confusion d'audience fermée des deux côtés** (+ token sans `aud` rejeté)
+- [ ] `GET /sse/stream?token=…` → `text/event-stream` ; 401 token absent/invalide/mauvaise audience/expiré ; user inexistant → jamais 500
+- [ ] **Heartbeat** (30 s prod, paramétrable) + **fermeture à l'expiration du token** (durée de vie ≤ 5 min)
+- [ ] **Plafond de connexions par user** (fail-closed) — anti-DoS/OOM
+- [ ] `Last-Event-ID` → replay **exactly-once** ; hors fenêtre → `resync` ; forgé/malformé → re-sync, jamais le buffer d'autrui
+- [ ] **Isolation cross-user** (filtre sur le `sub` du token)
+- [ ] **Multi-onglets** : N connexions (≤ plafond) par user, broadcast à chacune
+- [ ] **Livraison POST-COMMIT prouvée** : committée → diffusée une fois ; rollbackée → **jamais**
+- [ ] Token redacté (proxy **et** application) ; contrainte mono-process documentée
+- [ ] `lint-imports` vert (contrat `2-sse` + `sse` dans 1/5/6)
 
 ---
 
 ## Notes pour l'implémenteur
 
-- **Numérotation hors-séquence assumée** : E17 a été créé *après* E14 (gap SSE découvert à la création des stories E14). Topologiquement, **E17 précède E14 S14.7** (qui en dépend) — le numéro ne reflète pas l'ordre d'exécution. À faire avant l'intégration end-to-end de S14.7.
-- **Nouveau module `modules/sse/`** → place au **sommet** du graphe directionnel (ADR 0005, au-dessus de `notifications` qu'il consomme) + contrat `2-sse` (mirror `2-sync`) + *consumer-only* (contrats 5/6). `test_importlinter_coverage` doit voir `sse`.
-- **Token scopé (ADR 0016)** : audience distincte (`prosperity-sse`) + TTL 5 min ; `verify_sse_token` impose `audience=`/`issuer=`. Le query param est loggable → fenêtre limitée à 5 min + redaction proxy.
-- **Livraison POST-COMMIT** : le mini-bus dispatche **in-transaction** (S13.6) ; la diffusion SSE sort **post-commit** (hook `BackgroundTasks`, même chemin que le delivery email/push différé). Ne jamais diffuser depuis l'intérieur de la transaction.
-- **Buffer in-memory** (pas de migration) ; la table durable `pending_actions` (ADR 0003, inexistante) est un **concern séparé** à planifier avec le module notifications réel.
-- **`notifications` est un stub** : câblage minimal en P17.1.5, extensible.
+- **Numérotation hors-séquence assumée** : E17 a été créé après E14 (gap découvert) ; il **précède topologiquement** E14 S14.7 (#211, qui en dépend).
+- **Post-commit (correctif fondamental)** : aucun hook post-commit n'existe (`shared/events.py` in-transaction only ; `dispatcher.py:380` reporte le delivery). À **concevoir** via listener `after_commit` (gabarit `accounts/service/setup.py:154`) — ne jamais diffuser depuis l'intérieur de la transaction (rollback → event fantôme).
+- **Bornes de disponibilité** : plafond connexions/user + fermeture à l'expiration du token = critères (sinon OOM/slow-loris). **Rate-limit** `POST /sse/token` → câblé sur S02.5 (#73) ; en attendant, plafond + TTL sont les mitigations.
+- **Token (ADR 0016)** : `jwt_secret` partagé → l'**audience est l'unique cloisonnement** ; `verify_sse_token` impose `audience`/`issuer` + refuse l'absence de `aud`. « Révocation rapide » = expiration 5 min (JWT stateless).
+- **Import-linter** : sommet = `mcp` (pas `sync`) → placer `sse` dans la couche `sync | savings` ; `2-sse` mirror `2-sync` + contrats 5/6 ; **pas** de second-hop `notifications.public` (surface vide → casse `unmatched_ignore_imports_alerting`).
+- **Streaming** : `StreamingResponse` natif (pas de dép `sse-starlette`) → gérer à la main format SSE + heartbeat + **désinscription au disconnect** (piège n°1 du broadcaster in-memory).
+- **Buffer in-memory** (mono-process : multi-worker → backplane futur) ; `pending_actions` durable (ADR 0003, inexistante) = concern séparé.

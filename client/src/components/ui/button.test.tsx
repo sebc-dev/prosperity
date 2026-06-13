@@ -11,5 +11,7 @@ test('Button monte et applique le variant via cva', () => {
   render(<Button variant="secondary">OK</Button>)
   const button = screen.getByRole('button', { name: 'OK' })
   expect(button).toBeInTheDocument()
-  expect(button).toHaveAttribute('data-variant', 'secondary')
+  // On asserte une classe RÉELLEMENT produite par cva (sortie, pas un passe-plat
+  // de la prop) → couvre l'intégration cva sans être tautologique (§12).
+  expect(button).toHaveClass('bg-secondary')
 })

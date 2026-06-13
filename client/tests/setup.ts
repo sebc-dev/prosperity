@@ -8,7 +8,7 @@ import { server } from './msw/server'
 // jsdom n'implémente pas matchMedia : le ThemeProvider (readInitial) l'appelle.
 // Défaut « clair » (matches:false) ; surchargeable par test (branche fallback M3),
 // puis restauré en afterEach.
-function stubMatchMedia(matches = false) {
+export function stubMatchMedia(matches = false) {
   window.matchMedia = vi.fn().mockReturnValue({
     matches,
     media: '',

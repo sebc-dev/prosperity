@@ -55,3 +55,8 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Claude Code : artefacts runtime locaux (verrou de tâches planifiées, contenu
+# volatile pid/sessionId/timestamp) — le reste de .claude/ (commands, skills) est suivi.
+.claude/scheduled_tasks.lock
+.claude/*.lock

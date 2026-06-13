@@ -17,7 +17,6 @@ const Toaster = ({ ...props }: ToasterProps) => {
   const { theme } = useTheme()
   return (
     <Sonner
-      theme={theme}
       className="toaster group"
       icons={{
         success: <CircleCheckIcon className="size-4" />,
@@ -35,6 +34,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
         } as CSSProperties
       }
       {...props}
+      // `theme` après le spread : NOTRE `useTheme` prime sur un éventuel `theme`
+      // passé par l'appelant (cohérence du rendu Sonner avec le thème de l'app).
+      theme={theme}
     />
   )
 }

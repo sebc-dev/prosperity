@@ -19,6 +19,7 @@ function renderToggle(wrap: (node: React.ReactNode) => React.ReactNode = (n) => 
   )
 }
 
+// Le regex /thème/i est couplé à l'`aria-label="Basculer le thème"` du ThemeToggle.
 const clickToggle = (user: ReturnType<typeof userEvent.setup>) =>
   user.click(screen.getByRole('button', { name: /thème/i }))
 

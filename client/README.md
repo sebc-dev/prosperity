@@ -46,9 +46,25 @@ qui le peuplera.
 | `lib/storage/`         | JWT Secure Storage (mobile) / localStorage (web)                | S14.5                    |
 | `features/`            | parcours métier (confirmable, MCP confirm…)                     | ADR 0017 / 0004 — S14.6+ |
 | `components/business/` | composants métier **testés** (Vitest, §5.1)                     | Stratégie §5.1 — S14.2+  |
-| `components/ui/`       | primitives shadcn/ui (non testées en propre)                    | S14.2                    |
+| `components/ui/`       | primitives shadcn/ui (comportement interne Radix non re-testé)  | S14.2                    |
 | `hooks/`               | hooks transverses (`useAuth`…)                                  | S14.6                    |
 | `types/`               | types partagés                                                  | —                        |
+
+## Style — Tailwind 4 + shadcn/ui + thème
+
+- **Tailwind 4** via le plugin Vite officiel (`@tailwindcss/vite`, CSS-first) :
+  `@import "tailwindcss"` dans `src/index.css`, pas de `postcss.config`.
+- **shadcn/ui** (base color **neutral**) : les primitives sont **copiées** dans
+  `src/components/ui/` (éditables, versionnées — pas une dépendance) via
+  `npx shadcn@latest add <name>`. `components.json` mappe les alias sur l'arbo.
+  Les smokes Vitest prouvent le **montage de notre intégration** (alias `@/`, `cn`,
+  `cva`, portail) ; le comportement interne (Radix) n'est **pas re-testé**.
+- **Dark mode** piloté par la classe `.dark` sur `<html>` (`@custom-variant dark`),
+  pas par `prefers-color-scheme` — c'est ce qui rend le **toggle** explicite possible.
+- **Thème** : `ThemeProvider` (`app/`) + `useTheme` (`hooks/`) + `ThemeToggle`
+  (`components/`), persisté dans `localStorage` sous la clé **`prosperity-theme`**
+  (donnée non sensible → place définitive, distincte du Secure Storage JWT de S14.5).
+  Un script anti-FOUC inline (`index.html`) applique `.dark` avant le mount React.
 
 ## Sécurité (rappels)
 

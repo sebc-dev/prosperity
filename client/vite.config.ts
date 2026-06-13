@@ -1,3 +1,4 @@
+import tailwindcss from '@tailwindcss/vite'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
 import react from '@vitejs/plugin-react-swc'
 import tsconfigPaths from 'vite-tsconfig-paths'
@@ -19,6 +20,9 @@ export default defineConfig({
       // scan pour éviter les warnings « does not export a Route » à chaque build.
       routeFileIgnorePattern: '\\.test\\.tsx?$',
     }),
+    // Tailwind 4 via le plugin Vite officiel (CSS-first, pas de postcss.config) :
+    // `@import "tailwindcss"` dans src/index.css suffit (D1).
+    tailwindcss(),
     react(),
     tsconfigPaths(),
   ],

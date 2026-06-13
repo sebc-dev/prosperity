@@ -35,6 +35,18 @@ export default tseslint.config(
     },
   },
 
+  // Primitives shadcn/ui (vendored, D9) : code copié dans le repo mais maintenu
+  // upstream. Plusieurs fichiers mêlent dans un même module un composant ET un
+  // export non-composant (ex. `button.tsx` exporte `Button` + `buttonVariants`),
+  // ce qui déclenche `react-refresh/only-export-components` (fast-refresh cassé).
+  // On relâche cette règle sur ce SEUL périmètre, sans toucher au reste du projet.
+  {
+    files: ['src/components/ui/**'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
+
   // Fichiers de config JS (eslint.config.js) : hors type-check.
   {
     files: ['**/*.js'],

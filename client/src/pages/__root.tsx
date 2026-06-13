@@ -1,8 +1,22 @@
 import { createRootRoute, Outlet } from '@tanstack/react-router'
 
-// Layout racine du routeur (file-based). La nav réelle arrivera avec les features
-// (S14.6+) ; ici un simple Outlet + un 404 par défaut.
+import { ThemeProvider } from '@/app/theme-provider'
+import { ThemeToggle } from '@/components/theme-toggle'
+import { Toaster } from '@/components/ui/sonner'
+
+// Layout racine du routeur (file-based). Le ThemeProvider enveloppe toute l'app
+// (le toggle est visible partout) ; le Toaster (Sonner) y est monté une fois.
 export const Route = createRootRoute({
-  component: () => <Outlet />,
+  component: () => (
+    <ThemeProvider>
+      <header className="flex justify-end p-4">
+        <ThemeToggle />
+      </header>
+      <main className="p-4">
+        <Outlet />
+      </main>
+      <Toaster />
+    </ThemeProvider>
+  ),
   notFoundComponent: () => <p>Page introuvable (404)</p>,
 })

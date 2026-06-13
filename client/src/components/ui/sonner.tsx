@@ -8,12 +8,16 @@ import {
 import type { CSSProperties } from 'react'
 import { Toaster as Sonner, type ToasterProps } from 'sonner'
 
+import { useTheme } from '@/hooks/use-theme'
+
 // Adapté (D8/D4) : shadcn câble `next-themes` par défaut. On roule notre propre
-// thème (classe `.dark` sur <html>) → le Toaster est rendu neutre ici ; le thème
-// sera branché sur notre `useTheme` en P14.2.3.
+// thème (classe `.dark` sur <html>) → on consomme NOTRE `useTheme` pour aligner
+// le rendu Sonner (light/dark) sur le thème de l'app.
 const Toaster = ({ ...props }: ToasterProps) => {
+  const { theme } = useTheme()
   return (
     <Sonner
+      theme={theme}
       className="toaster group"
       icons={{
         success: <CircleCheckIcon className="size-4" />,

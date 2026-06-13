@@ -4,6 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Prosperity</title>
+    <!-- Anti-FOUC (D7) : applique `.dark` avant le mount React pour éviter un flash
+         clair→sombre. Script constant (aucune valeur localStorage interpolée → pas
+         d'injection) ; à protéger par hash CSP quand une CSP arrivera (issue E14). -->
+    <script>
+      try {
+        var t = localStorage.getItem('prosperity-theme')
+        if (t === 'dark' || (!t && matchMedia('(prefers-color-scheme: dark)').matches))
+          document.documentElement.classList.add('dark')
+      } catch (_) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

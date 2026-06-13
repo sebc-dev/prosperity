@@ -1,11 +1,19 @@
 // @vitest-environment node
-// better-sqlite3 = addon natif Node : on applique le DDL généré par drizzle-kit à une base
-// SQLite en mémoire et on introspecte via PRAGMA. jsdom ne sait pas exécuter SQLite (env node).
-// (tests/setup.ts garde ses accès DOM derrière `typeof document` → inerte ici.)
+// Deux niveaux d'assertion :
+//  1. le DDL généré par drizzle-kit (drizzle/*.sql) s'applique à SQLite sans erreur (AC#1) —
+//     via better-sqlite3 (addon natif Node ; jsdom n'exécute pas SQLite).
+//  2. la STRUCTURE (tables, colonnes, nullabilité du masquage, types) est introspectée
+//     directement sur `schema.ts` via getTableConfig — SOURCE DE VÉRITÉ. Ainsi un drift
+//     schema.ts↔SQL généré ne peut PAS masquer ces invariants (notamment le masquage D4),
+//     même sans la garde CI `git diff drizzle/` (déférée S14.7).
+// (tests/setup.ts garde ses accès DOM derrière `typeof document` → inerte en env node.)
 import { readFileSync, readdirSync } from 'node:fs'
 
 import Database from 'better-sqlite3'
-import { beforeAll, describe, expect, test } from 'vitest'
+import { type SQLiteTable, getTableConfig } from 'drizzle-orm/sqlite-core'
+import { describe, expect, test } from 'vitest'
+
+import * as schema from './schema'
 
 // Les 11 tables RÉELLEMENT publiées (download) par powersync/sync_rules.yaml.
 const EXPECTED_TABLES = [
@@ -36,54 +44,48 @@ const FORBIDDEN_TABLES = [
   'users',
 ]
 
-interface ColumnInfo {
-  name: string
-  type: string
-  notnull: number
-  pk: number
+// Introspection du schéma TS (pas du SQL figé) → source de vérité réellement consommée par
+// les types/hooks.
+const configs = (Object.values(schema) as SQLiteTable[]).map((t) => getTableConfig(t))
+
+function table(name: string) {
+  const cfg = configs.find((c) => c.name === name)
+  if (!cfg) throw new Error(`table ${name} absente du schéma`)
+  return cfg
 }
-
-let db: Database.Database
-
-function tableNames(): string[] {
-  const rows = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{
-    name: string
-  }>
-  return rows.map((r) => r.name).filter((n) => !n.startsWith('sqlite_'))
+function columnNames(name: string): string[] {
+  return table(name).columns.map((c) => c.name)
 }
-
-function tableInfo(table: string): ColumnInfo[] {
-  return db.prepare(`PRAGMA table_info(${table})`).all() as ColumnInfo[]
+function col(tableName: string, colName: string) {
+  const c = table(tableName).columns.find((column) => column.name === colName)
+  if (!c) throw new Error(`colonne ${tableName}.${colName} absente`)
+  return c
 }
-
-function columnNames(table: string): string[] {
-  return tableInfo(table).map((c) => c.name)
-}
-
-function col(table: string, name: string): ColumnInfo {
-  const found = tableInfo(table).find((c) => c.name === name)
-  if (!found) throw new Error(`colonne ${table}.${name} absente`)
-  return found
-}
-
-beforeAll(() => {
-  // Applique le SQL COMMITÉ (drizzle/*.sql) → prouve qu'il est valide (AC : « drizzle-kit
-  // génère un schéma SQLite sans erreur »). Un drift schema.ts↔SQL est détecté par la garde
-  // `git diff --exit-code drizzle/` (plan §5), pas par ce test.
-  const sqlFile = readdirSync('drizzle').find((f) => f.endsWith('.sql'))
-  if (!sqlFile) throw new Error('drizzle/*.sql introuvable — lancer `npm run db:generate`')
-  const ddl = readFileSync(`drizzle/${sqlFile}`, 'utf8')
-  db = new Database(':memory:')
-  db.exec(ddl) // throw si le DDL est invalide
-})
 
 describe('schéma Drizzle local — mirror des sync rules (P14.3.1)', () => {
-  test('déclare exactement les 11 tables synchronisées', () => {
-    expect(new Set(tableNames())).toEqual(new Set(EXPECTED_TABLES))
+  test('le DDL généré (drizzle/*.sql) est un schéma SQLite valide (AC#1)', () => {
+    const sqlFile = readdirSync('drizzle').find((f) => f.endsWith('.sql'))
+    if (!sqlFile) throw new Error('drizzle/*.sql introuvable — lancer `npm run db:generate`')
+    const ddl = readFileSync(`drizzle/${sqlFile}`, 'utf8')
+    const db = new Database(':memory:')
+    expect(() => db.exec(ddl)).not.toThrow()
+    const tables = (
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{
+        name: string
+      }>
+    )
+      .map((r) => r.name)
+      .filter((n) => !n.startsWith('sqlite_'))
+    expect(new Set(tables)).toEqual(new Set(EXPECTED_TABLES))
+    db.close()
+  })
+
+  test('schema.ts déclare exactement les 11 tables synchronisées', () => {
+    expect(new Set(configs.map((c) => c.name))).toEqual(new Set(EXPECTED_TABLES))
   })
 
   test('aucune table server-only / non publiée n’apparaît', () => {
-    const present = new Set(tableNames())
+    const present = new Set(configs.map((c) => c.name))
     for (const forbidden of FORBIDDEN_TABLES) {
       expect(present.has(forbidden)).toBe(false)
     }
@@ -99,19 +101,31 @@ describe('schéma Drizzle local — mirror des sync rules (P14.3.1)', () => {
     expect(columnNames('budgets')).toContain('carry_over_remainder')
   })
 
-  test('masquage débiteur (D4) : colonnes masquées NULLABLE', () => {
-    // 0 = nullable, 1 = NOT NULL (PRAGMA table_info).
-    expect(col('debts', 'account_id').notnull).toBe(0)
-    expect(col('debts', 'source_transaction_id').notnull).toBe(0)
-    expect(col('share_requests', 'source_transaction_id').notnull).toBe(0)
-    // Contre-exemple : une colonne non masquée reste NOT NULL.
-    expect(col('debts', 'amount_cents').notnull).toBe(1)
+  test('masquage débiteur (D4) : colonnes masquées NULLABLE, masquage CIBLÉ', () => {
+    // notNull=false → la colonne accepte NULL (vue débiteur des sync rules livre NULL AS …).
+    expect(col('debts', 'account_id').notNull).toBe(false)
+    expect(col('debts', 'source_transaction_id').notNull).toBe(false)
+    expect(col('share_requests', 'source_transaction_id').notNull).toBe(false)
+    // Contre-exemples : le masquage est CIBLÉ, pas global (sinon l'invariant serait trivial).
+    expect(col('debts', 'amount_cents').notNull).toBe(true)
+    expect(col('share_requests', 'short_label').notNull).toBe(true)
   })
 
-  test('debts = exactement 10 colonnes, materialization_trace ABSENTE', () => {
-    const cols = columnNames('debts')
-    expect(cols).toHaveLength(10)
-    expect(cols).not.toContain('materialization_trace')
+  test('debts = exactement les 10 colonnes projetées (materialization_trace ABSENTE)', () => {
+    expect(new Set(columnNames('debts'))).toEqual(
+      new Set([
+        'id',
+        'from_user_id',
+        'to_user_id',
+        'amount_cents',
+        'currency',
+        'account_id',
+        'source_transaction_id',
+        'origin',
+        'share_ratio',
+        'created_at',
+      ]),
+    )
   })
 
   test('users_public minimale {id, display_name, role} (anti-fuite PII)', () => {
@@ -119,11 +133,10 @@ describe('schéma Drizzle local — mirror des sync rules (P14.3.1)', () => {
   })
 
   test('affinités de type (D3) : montants integer, ratios Decimal en text', () => {
-    // PRAGMA renvoie le type DÉCLARÉ ; SQLite le normalise en majuscules → compare insensible à la casse.
-    const typeOf = (table: string, name: string) => col(table, name).type.toLowerCase()
-    expect(typeOf('debts', 'amount_cents')).toBe('integer')
-    expect(typeOf('debts', 'share_ratio')).toBe('text')
-    expect(typeOf('account_members', 'default_share_ratio')).toBe('text')
-    expect(typeOf('budgets', 'carry_over_remainder')).toBe('integer')
+    const sqlType = (t: string, n: string) => col(t, n).getSQLType().toLowerCase()
+    expect(sqlType('debts', 'amount_cents')).toBe('integer')
+    expect(sqlType('debts', 'share_ratio')).toBe('text')
+    expect(sqlType('account_members', 'default_share_ratio')).toBe('text')
+    expect(sqlType('budgets', 'carry_over_remainder')).toBe('integer')
   })
 })

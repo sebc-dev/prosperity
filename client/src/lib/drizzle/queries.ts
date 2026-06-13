@@ -30,6 +30,9 @@ export const selectTransactions = (db: SQLiteDatabase, f: TransactionFilters = {
 
 // Solde réel (D8) : Σ des splits du compte, joints aux transactions `confirmed` non annulées
 // (hypothèse mono-devise, ADR 0008). `coalesce(..., 0)` → 0 si aucun split.
+// `voided_at IS NULL` est une défense en profondeur : le backend pose `state='void'` ET
+// `voided_at` atomiquement, donc `state='confirmed'` implique déjà `voided_at IS NULL` —
+// mais aucune contrainte ne le garantit côté SQLite local (D5), d'où le second prédicat.
 export const selectAccountBalance = (db: SQLiteDatabase, accountId: string) =>
   db
     .select({ balanceCents: sql<number>`coalesce(sum(${splits.amount_cents}), 0)` })

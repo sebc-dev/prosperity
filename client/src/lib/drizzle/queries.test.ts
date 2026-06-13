@@ -101,13 +101,18 @@ describe('selectTransactions', () => {
 })
 
 describe('selectAccountBalance (D8)', () => {
-  test('ne somme que les splits confirmés non annulés', async () => {
+  test('ne somme que les splits confirmés non annulés (couvre les 4 états)', async () => {
     seedTx({ id: 'tc', account_id: 'a1', date: '2026-01-01', state: 'confirmed' })
     seedTx({ id: 'td', account_id: 'a1', date: '2026-01-02', state: 'draft' })
-    seedTx({ id: 'tv', account_id: 'a1', date: '2026-01-03', state: 'confirmed', voided_at: '2026-01-04' })
-    seedSplit({ id: 's1', transaction_id: 'tc', account_id: 'a1', amount_cents: 1000 })
-    seedSplit({ id: 's2', transaction_id: 'td', account_id: 'a1', amount_cents: 5000 }) // draft → exclu
-    seedSplit({ id: 's3', transaction_id: 'tv', account_id: 'a1', amount_cents: 9999 }) // void → exclu
+    seedTx({ id: 'tp', account_id: 'a1', date: '2026-01-03', state: 'planned' })
+    seedTx({ id: 'tx', account_id: 'a1', date: '2026-01-04', state: 'void', voided_at: '2026-01-04' })
+    // Arête : confirmed PUIS annulé (state reste 'confirmed' mais voided_at posé) → exclu par le 2e prédicat.
+    seedTx({ id: 'tcv', account_id: 'a1', date: '2026-01-05', state: 'confirmed', voided_at: '2026-01-06' })
+    seedSplit({ id: 's_c', transaction_id: 'tc', account_id: 'a1', amount_cents: 1000 })
+    seedSplit({ id: 's_d', transaction_id: 'td', account_id: 'a1', amount_cents: 5000 }) // draft → exclu
+    seedSplit({ id: 's_p', transaction_id: 'tp', account_id: 'a1', amount_cents: 7000 }) // planned → exclu
+    seedSplit({ id: 's_x', transaction_id: 'tx', account_id: 'a1', amount_cents: 8000 }) // void → exclu
+    seedSplit({ id: 's_cv', transaction_id: 'tcv', account_id: 'a1', amount_cents: 9999 }) // annulé → exclu
 
     const rows = await selectAccountBalance(db, 'a1')
     expect(rows[0]?.balanceCents).toBe(1000)
@@ -145,7 +150,9 @@ describe('selectDebtsForUser', () => {
   })
 })
 
-describe('réactivité au niveau requête (AC)', () => {
+// La factory reflète l'état courant de la base : c'est l'unité que le watch PowerSync
+// ré-invoque (réactivité réelle = S14.4). Ici on prouve la propriété de base, pas un re-render.
+describe('ré-exécution reflète l’état courant local', () => {
   test('ré-exécuter après INSERT reflète la nouvelle ligne (N → N+1)', async () => {
     seedTx({ id: 't1', account_id: 'a1', date: '2026-01-01', state: 'confirmed' })
     expect(await selectTransactions(db, { accountId: 'a1' })).toHaveLength(1)

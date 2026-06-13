@@ -21,6 +21,10 @@ runs:
       with:
         path: client/node_modules
         key: ${{ runner.os }}-client-nm-${{ hashFiles('client/.nvmrc') }}-${{ hashFiles('client/package-lock.json') }}
+        # restore-key borné à la MÊME version Node (≈ ABI) : sur changement de lockfile, réhydrate
+        # un node_modules proche (cache-hit reste false → `npm ci` reconcilie) sans risque d'ABI.
+        restore-keys: |
+          ${{ runner.os }}-client-nm-${{ hashFiles('client/.nvmrc') }}-
 
     - if: steps.node-modules.outputs.cache-hit != 'true'
       shell: bash

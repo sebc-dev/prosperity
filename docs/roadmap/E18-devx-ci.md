@@ -25,7 +25,7 @@ C'est un epic **transverse** (outillage), hors séquence fonctionnelle MVP — c
 | Phase | Description | Diff |
 |---|---|---|
 | **P18.1.1** | Job léger `changes` (filtre de chemins via `dorny/paths-filter`) exposant des outputs `backend`/`frontend`/`docs`/`ci` ; gating `if: needs.changes.outputs.X == 'true'` sur chaque job lourd ; **job agrégateur `ci-required`** (`needs:` tous les jobs, passe si chacun est `success` **ou** `skipped`) → c'est LUI le *required check* GitHub (les jobs skippés ne bloquent plus le merge). Sur push `main`, filet : full run. | ~120 |
-| **P18.1.2** | Cache & parallélisme : durcir le cache `uv` existant ; poser la **structure de cache frontend** (`actions/setup-node` `cache: npm` + cache du build natif `better-sqlite3`/`node_modules`) prête pour les jobs de S14.7 ; cache des images/layers Docker pour les jobs `compose` (`powersync-smoke`) ; fail-fast lint avant les jobs coûteux là où le gain > le coût de sérialisation. | ~90 |
+| **P18.1.2** | Cache & parallélisme : durcir le cache `uv` existant ; poser la **structure de cache frontend** (`actions/setup-node` `cache: npm` + cache du build natif `better-sqlite3`/`node_modules`) prête pour les jobs de S14.7 ; cache des images/layers Docker pour les jobs `compose` (`powersync-smoke` de **`nightly.yml`**) ; fail-fast lint avant les jobs coûteux là où le gain > le coût de sérialisation. | ~90 |
 | **P18.1.3** | `runbooks/ci.md` : **matrice de déclenchement** (quel chemin → quels jobs), le pattern agrégateur, la liste des *required checks* à régler dans les *branch protection rules*, et la procédure d'ajout d'un nouveau périmètre. | ~60 |
 
 ---

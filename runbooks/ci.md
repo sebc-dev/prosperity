@@ -58,12 +58,14 @@ Les jobs frontend (`frontend-lint`/`unit`/`build`) sont livrés par **S14.7**. I
 ## Cache
 
 - **Backend (`uv`)** : `astral-sh/setup-uv` `enable-cache: true` + `cache-dependency-glob: uv.lock`
-  sur chaque job → cache hit visible dans les logs.
+  sur les 5 jobs backend qui installent (tous sauf le placeholder `backend-sync`) → cache hit visible
+  dans les logs.
 - **Frontend (npm)** : composite action `setup-node-cached` (cache `~/.npm` + `client/node_modules`).
-  ⚠️ **Cache-poisoning** : `node_modules` contient l'addon natif compilé `better-sqlite3`. Les jobs
-  qui le restaurent ne tournent que sur `pull_request` (token **read-only**, pas de secrets) et le
-  scoping de cache GHA isole les caches PR de ceux de la base — l'impact est borné. La `key` inclut
-  `.nvmrc` (version Node ≈ ABI) pour ne pas restaurer un binaire d'une autre ABI. Observable au
+  ⚠️ **Cache-poisoning** : `node_modules` contient l'addon natif compilé `better-sqlite3`. Mitigations :
+  (a) les futurs jobs frontend (S14.7) **ne consomment aucun secret** (`permissions: contents: read`),
+  donc un cache empoisonné n'exfiltre rien ; (b) le scoping de cache GHA isole les caches d'une PR de
+  ceux de la base (`main`) — une PR ne peut pas écrire dans le scope de la base ; (c) la `key` inclut
+  `.nvmrc` (version Node ≈ ABI) → pas de restauration d'un binaire d'une autre ABI. Observable au
   **premier job frontend de S14.7**.
 - **Docker (`powersync-smoke`, nightly)** : les jobs compose **pullent** des images (pas de build).
   **Décision (D6)** : par défaut, **pin par digest** des images dans `compose.dev.yml` (déterminisme) ;
@@ -74,8 +76,11 @@ Les jobs frontend (`frontend-lint`/`unit`/`build`) sont livrés par **S14.7**. I
 ## Validation d'un changement de CI
 
 - **Forme** : `actionlint .github/workflows/*.yml` (local ; gate dur = job `ci-selftest`).
-- **Logique de gating** : `bash .github/scripts/decide.test.sh` (8 branches ; local + `ci-selftest`).
+- **Logique de gating** : `bash .github/scripts/decide.test.sh` (force-full / fail-safe / préséance /
+  valeurs par défaut + contrat exit-code ; local + `ci-selftest`).
 - **Comportement** : PRs synthétiques (docs-only / `client/`-only / backend-only / `.github`-only /
-  mixte `client/`+non-classé). Pour valider la branche **échec** de `ci-required` : introduire une
-  faute (ex. lint) dans `backend/**`, observer `ci-required` **rouge** + PR non-mergeable, puis revert.
+  mixte `client/`+non-classé). Pour valider la branche **échec** de `ci-required` (allow-list) :
+  - via un job **lourd** : introduire une faute (ex. lint) dans `backend/**` → `backend-lint` rouge ;
+  - via le **gating lui-même** (fail-closed) : casser `decide.test.sh` → `ci-selftest` rouge ;
+  dans les deux cas, observer `ci-required` **rouge** + PR non-mergeable, puis revert.
 - Toute PR touchant `.github/**` force un **full run** (auto-validation).

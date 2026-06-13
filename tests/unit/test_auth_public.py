@@ -34,6 +34,7 @@ from backend.modules.auth.public import (
     get_current_user,
     issue_access_token,
     issue_refresh_token,
+    issue_sse_token,
     log_admin_action,
     promote_to_admin,
     regenerate_invitation,
@@ -43,6 +44,7 @@ from backend.modules.auth.public import (
     sanitize_device_label,
     user_is_active_member,
     verify_access_token,
+    verify_sse_token,
 )
 from backend.modules.auth.schemas import TokenPair as _schemas_token_pair
 from backend.modules.auth.schemas import sanitize_device_label as _schemas_sanitize
@@ -85,6 +87,7 @@ def test_public_exports_exact_set() -> None:
         "get_current_user",
         "issue_access_token",
         "issue_refresh_token",
+        "issue_sse_token",
         "log_admin_action",
         "promote_to_admin",
         "regenerate_invitation",
@@ -94,6 +97,7 @@ def test_public_exports_exact_set() -> None:
         "sanitize_device_label",
         "user_is_active_member",
         "verify_access_token",
+        "verify_sse_token",
     ]
     # Also pin "no duplicates": sorted() collapses nothing, but if
     # `__all__` were `["X", "X"]` then sorted would be `["X", "X"]`
@@ -106,6 +110,8 @@ def test_public_exports_exact_set() -> None:
 def test_public_symbols_are_callable_or_exceptions() -> None:
     assert callable(issue_access_token)
     assert callable(verify_access_token)
+    assert callable(issue_sse_token)
+    assert callable(verify_sse_token)
     assert callable(issue_refresh_token)
     assert callable(create_user)
     assert callable(create_user_with_hash)
@@ -142,6 +148,8 @@ def test_public_names_are_identical_objects_to_internals() -> None:
     # Guards against a refactor that re-implements a stub in `public.py`
     # instead of re-exporting the real symbols from internal modules.
     assert auth_public.issue_access_token is _jwt_service.issue_access_token
+    assert auth_public.issue_sse_token is _jwt_service.issue_sse_token
+    assert auth_public.verify_sse_token is _jwt_service.verify_sse_token
     assert auth_public.verify_access_token is _jwt_service.verify_access_token
     assert auth_public.InvalidTokenError is _jwt_service.InvalidTokenError
     assert auth_public.ExpiredTokenError is _jwt_service.ExpiredTokenError

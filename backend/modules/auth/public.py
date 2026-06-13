@@ -80,7 +80,9 @@ from backend.modules.auth.service.jwt import (
     ExpiredTokenError,
     InvalidTokenError,
     issue_access_token,
+    issue_sse_token,
     verify_access_token,
+    verify_sse_token,
 )
 from backend.modules.auth.service.refresh_tokens import issue as issue_refresh_token
 from backend.modules.auth.service.roles import (
@@ -125,6 +127,7 @@ __all__ = [
     "create_user_with_hash",
     "get_current_user",
     "issue_access_token",
+    "issue_sse_token",
     "issue_refresh_token",
     "log_admin_action",
     "promote_to_admin",
@@ -135,4 +138,5 @@ __all__ = [
     "sanitize_device_label",
     "user_is_active_member",
     "verify_access_token",
+    "verify_sse_token",
 ]

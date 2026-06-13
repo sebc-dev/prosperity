@@ -140,3 +140,88 @@ def verify_access_token(token: str, *, settings: Settings) -> UUID:
         return UUID(sub)
     except ValueError as exc:
         raise InvalidTokenError("Access token 'sub' is not a valid UUID") from exc
+
+
+def issue_sse_token(user_id: UUID, *, settings: Settings) -> str:
+    """Issue a short-lived HS256 SSE stream token for `user_id` (S17.1, ADR 0012).
+
+    Identical shape to `issue_access_token` but with the **dedicated** SSE
+    audience (`settings.jwt_sse_audience`) and TTL (`settings.jwt_sse_ttl_seconds`,
+    5 min). The audience is the only cloisonnement vs the access token (same
+    `jwt_secret`, ADR 0016): this token is rejected by `verify_access_token` and
+    vice-versa. There is **no** `scope` claim — the `aud` claim IS the scope, and
+    unlike a custom `scope` it is verified by PyJWT at `decode` (ADR 0012 addendum).
+    """
+    now_ts = int(datetime.now(tz=UTC).timestamp())
+    payload: dict[str, Any] = {
+        "sub": str(user_id),
+        "iat": now_ts,
+        "exp": now_ts + settings.jwt_sse_ttl_seconds,
+        "aud": settings.jwt_sse_audience,
+        "iss": settings.jwt_issuer,
+    }
+    return jwt.encode(
+        payload, settings.jwt_secret.get_secret_value(), algorithm=settings.jwt_algorithm
+    )
+
+
+def verify_sse_token(token: str, *, settings: Settings) -> tuple[UUID, int]:
+    """Verify an SSE token and return `(user_id, exp_ts)` (S17.1).
+
+    Mirror of `verify_access_token` (same hardcoded `["HS256"]` whitelist, same
+    `leeway`, same `audience=`/`issuer=` pinning that rejects a *missing* `aud`/
+    `iss`, same defense-in-depth post-decode checks) but pinned on
+    `settings.jwt_sse_audience`. `exp_ts` is returned so the stream can close the
+    connection when the token expires (it is verified only at open).
+
+    EVERY claim extraction is wrapped so a malformed token yields
+    `InvalidTokenError` (HTTP 401), never an unhandled `KeyError`/`ValueError`
+    surfacing as a 500.
+
+    Raises:
+        ExpiredTokenError / InvalidTokenError: as `verify_access_token`.
+    """
+    try:
+        payload: dict[str, Any] = jwt.decode(
+            token,
+            settings.jwt_secret.get_secret_value(),
+            algorithms=["HS256"],
+            audience=settings.jwt_sse_audience,
+            issuer=settings.jwt_issuer,
+            leeway=_CLOCK_SKEW_LEEWAY_SECONDS,
+        )
+    except ExpiredSignatureError as exc:
+        raise ExpiredTokenError("SSE token has expired") from exc
+    except (
+        InvalidAudienceError,
+        InvalidIssuerError,
+        InvalidIssuedAtError,
+        ImmatureSignatureError,
+        MissingRequiredClaimError,
+    ) as exc:
+        raise InvalidTokenError("SSE token has invalid claims") from exc
+    except PyJWTError as exc:
+        raise InvalidTokenError("SSE token is invalid") from exc
+
+    if "aud" not in payload:
+        raise InvalidTokenError("SSE token has no 'aud' claim")
+    if "iss" not in payload:
+        raise InvalidTokenError("SSE token has no 'iss' claim")
+
+    iat = payload.get("iat")
+    if isinstance(iat, int | float):
+        now_ts = int(datetime.now(tz=UTC).timestamp())
+        if iat > now_ts + _CLOCK_SKEW_LEEWAY_SECONDS:
+            raise InvalidTokenError("SSE token 'iat' is in the future")
+
+    exp = payload.get("exp")
+    if not isinstance(exp, int | float):
+        raise InvalidTokenError("SSE token has no valid 'exp' claim")
+
+    sub = payload.get("sub")
+    if not isinstance(sub, str):
+        raise InvalidTokenError("SSE token has no valid 'sub' claim")
+    try:
+        return UUID(sub), int(exp)
+    except ValueError as exc:
+        raise InvalidTokenError("SSE token 'sub' is not a valid UUID") from exc

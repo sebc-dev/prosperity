@@ -39,3 +39,13 @@ repos:
         language: system
         files: ^tests/.*\.py$
         require_serial: true
+
+      # Workflows CI (S18.1) : lint local si actionlint est installé, sinon no-op
+      # (le job ci-selftest est le gate dur). actionlint n'est pas uv-managé → hook résilient.
+      - id: actionlint
+        name: actionlint (workflows)
+        entry: bash -c 'command -v actionlint >/dev/null 2>&1 && exec actionlint "$@" || echo "actionlint non installé localement — validé en CI (ci-selftest)"' --
+        language: system
+        files: ^\.github/(workflows|actions)/.*\.ya?ml$
+        pass_filenames: true
+        require_serial: true

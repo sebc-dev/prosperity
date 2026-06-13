@@ -35,6 +35,17 @@ export default tseslint.config(
     },
   },
 
+  // Primitives shadcn/ui (vendored, D9) : code copié dans le repo mais maintenu
+  // upstream. Il exporte légitimement des `cva` variants à côté du composant
+  // (`buttonVariants`) → on relâche `react-refresh/only-export-components` sur ce
+  // seul périmètre, sans affaiblir les règles du reste du projet.
+  {
+    files: ['src/components/ui/**'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
+
   // Fichiers de config JS (eslint.config.js) : hors type-check.
   {
     files: ['**/*.js'],

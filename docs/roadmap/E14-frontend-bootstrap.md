@@ -18,12 +18,17 @@ Livrable agrégé : `npm run dev` démarre Vite, l'app charge, on peut se login,
 
 ## Stories
 
-### S14.1 — Vite + React 19 + TypeScript
+> **Deltas appliqués à la création des stories (#205-#211)** — réconciliation vs cette baseline :
+> - **Delta A — harness de test déplacé S14.7 → S14.1.** Le setup Vitest + Testing Library + MSW était en S14.7 (dernière story) alors que S14.3/S14.4/S14.6 (antérieures) écrivent des tests Vitest/MSW : c'est un **prérequis**, donc il migre en **P14.1.3**. Le `MockPowerSyncDatabase` (§5.3) reste en S14.4. S14.7 devient *SSE wrapper + CI* (2 phases). Total inchangé : 19 phases.
+> - **Delta B — endpoint SSE backend absent.** S14.7 (wrapper SSE) consomme `POST /sse/token` + un flux `text/event-stream` qui **n'existent pas** côté backend (ADR 0012 les conçoit, aucune story ne les implémente). Le wrapper reste *buildable + testable via MSW* ; l'**intégration réelle** est bloquée par une **story backend SSE à créer**. Issue #211 marquée `needs-info`.
+
+### S14.1 — Vite + React 19 + TypeScript + harness de test
 
 | Phase | Description | Diff |
 |---|---|---|
 | **P14.1.1** | `client/` : init Vite + React 19 + TypeScript strict + ESLint + Prettier config. Tests : `npm run build` passe, `npm run lint` passe, app vide affiche "Hello" | ~150 |
 | **P14.1.2** | Router (TanStack Router ou React Router 7) + structure `app/`, `pages/`, `features/`, `components/business/`, `components/ui/`, `lib/`, `hooks/`, `types/`. README expliquant la structure et le mapping vers ADRs | ~120 |
+| **P14.1.3** | **(Delta A)** Harness de test : Vitest + `@testing-library/react` + `user-event` + MSW. `tests/setup.ts` (jsdom + matchers + serveur MSW), `tests/msw/handlers.ts`, helpers fixture. Tests : un rendu composant + un appel intercepté MSW | ~120 |
 
 ---
 
@@ -76,13 +81,14 @@ Livrable agrégé : `npm run dev` démarre Vite, l'app charge, on peut se login,
 
 ---
 
-### S14.7 — SSE wrapper + Vitest setup
+### S14.7 — SSE wrapper + CI frontend
+
+> **(Delta B)** Le wrapper SSE consomme un endpoint backend (`POST /sse/token` + flux `text/event-stream`) **non encore implémenté** : développable + testable via MSW, mais l'intégration réelle attend une story backend SSE. Issue #211 en `needs-info`. **(Delta A)** Le setup Vitest/MSW a migré en S14.1 (P14.1.3) — il ne figure plus ici.
 
 | Phase | Description | Diff |
 |---|---|---|
 | **P14.7.1** | `lib/sse/` : wrapper `EventSource` qui : (i) appelle `POST /sse/token` pour obtenir le JWT short-lived (cf. ADR 0012), (ii) maintient `Last-Event-ID` localement et le re-passe à la reconnexion, (iii) refresh le JWT toutes les 4 min. Tests MSW couvrant disconnect/reconnect | ~200 |
-| **P14.7.2** | Vitest setup : `tests/setup.ts`, MSW handlers communs, helpers fixture. Tests trivial Hello | ~120 |
-| **P14.7.3** | CI frontend dans `.github/workflows/push.yml` : ajouter `frontend-lint` (eslint + prettier + tsc), `frontend-unit` (vitest run), `frontend-build` (vite build + capacitor sync). Tests : la CI tourne et passe | ~100 |
+| **P14.7.2** | CI frontend dans `.github/workflows/push.yml` : ajouter `frontend-lint` (eslint + prettier + tsc), `frontend-unit` (vitest run), `frontend-build` (vite build + capacitor sync) + check de régénération OpenAPI (S14.6). Tests : la CI tourne et passe | ~100 |
 
 ---
 
@@ -90,13 +96,13 @@ Livrable agrégé : `npm run dev` démarre Vite, l'app charge, on peut se login,
 
 | ID | Type | Diff | Cumul |
 |---|---|---|---|
-| S14.1 (2 phases) | Vite + React | 270 | 270 |
-| S14.2 (3 phases) | Tailwind + shadcn | 260 | 530 |
-| S14.3 (2 phases) | Drizzle local | 450 | 980 |
-| S14.4 (3 phases) | PowerSync client | 580 | 1560 |
-| S14.5 (3 phases) | Capacitor + Android | 350 | 1910 |
-| S14.6 (3 phases) | Auth client | 570 | 2480 |
-| S14.7 (3 phases) | SSE + Vitest + CI | 420 | 2900 |
+| S14.1 (3 phases) | Vite + React + harness test | 390 | 390 |
+| S14.2 (3 phases) | Tailwind + shadcn | 260 | 650 |
+| S14.3 (2 phases) | Drizzle local | 450 | 1100 |
+| S14.4 (3 phases) | PowerSync client | 580 | 1680 |
+| S14.5 (3 phases) | Capacitor + Android | 350 | 2030 |
+| S14.6 (3 phases) | Auth client | 570 | 2600 |
+| S14.7 (2 phases) | SSE + CI | 300 | 2900 |
 | **Total** | **7 stories / 19 phases** | **~2900 lignes** | |
 
 ---

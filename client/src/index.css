@@ -1,0 +1,7 @@
+@import 'tailwindcss';
+
+/* Dark mode piloté par la classe .dark (toggle explicite, AC), pas par
+   prefers-color-scheme (le défaut Tailwind 4 ne supporte pas un toggle). D2.
+   NB : `shadcn init` (P14.2.2) génère sa propre directive `@custom-variant dark`
+   — on déduplique pour n'en garder qu'une seule. */
+@custom-variant dark (&:where(.dark, .dark *));

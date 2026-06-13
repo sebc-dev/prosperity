@@ -3,6 +3,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
 import { router } from './app/router'
+import './index.css'
 
 // StrictMode dès le bootstrap (D9) : révèle les double-exécutions d'effets de
 // React 19 en dev, avant l'arrivée des hooks PowerSync (S14.4).

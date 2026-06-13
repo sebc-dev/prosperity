@@ -35,6 +35,17 @@ htmlcov/
 .env.local
 .env.*.local
 
+# Frontend (client/)
+node_modules/
+client/dist/
+client/coverage/
+client/.tanstack/
+# Env client : Vite charge nativement .env.development/.env.production — tout ignorer
+# SAUF le gabarit documentaire. L'ordre est load-bearing : le glob AVANT la négation (D12).
+client/.env
+client/.env.*
+!client/.env.example
+
 # OS
 .DS_Store
 Thumbs.db

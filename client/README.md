@@ -35,20 +35,21 @@ lint/format).
 Les dossiers anticipent les stories suivantes ; chacun est rattaché à l'ADR/story
 qui le peuplera.
 
-| Dossier                | Rôle                                                            | ADR / story              |
-| ---------------------- | --------------------------------------------------------------- | ------------------------ |
-| `app/`                 | composition racine (providers, `RouterProvider`)                | —                        |
-| `pages/`               | routes TanStack (`routesDirectory`)                             | —                        |
-| `lib/drizzle/`         | schéma local miroir des tables sync                             | ADR 0003 — S14.3         |
-| `lib/powersync/`       | init SDK PowerSync + write upload handler (`WriteResult.error`) | ADR 0014 — S14.4         |
-| `lib/api/`             | client REST typé OpenAPI                                        | ADR 0016 — S14.6         |
-| `lib/sse/`             | wrapper `EventSource` (token court-lived, resume)               | ADR 0012 — S14.7         |
-| `lib/storage/`         | JWT Secure Storage (mobile) / localStorage (web)                | S14.5                    |
-| `features/`            | parcours métier (confirmable, MCP confirm…)                     | ADR 0017 / 0004 — S14.6+ |
-| `components/business/` | composants métier **testés** (Vitest, §5.1)                     | Stratégie §5.1 — S14.2+  |
-| `components/ui/`       | primitives shadcn/ui (comportement interne Radix non re-testé)  | S14.2                    |
-| `hooks/`               | hooks transverses (`useAuth`…)                                  | S14.6                    |
-| `types/`               | types partagés                                                  | —                        |
+| Dossier                | Rôle                                                               | ADR / story              |
+| ---------------------- | ------------------------------------------------------------------ | ------------------------ |
+| `app/`                 | composition racine (providers, `RouterProvider`)                   | —                        |
+| `pages/`               | routes TanStack (`routesDirectory`)                                | —                        |
+| `lib/drizzle/`         | schéma local miroir des tables sync                                | ADR 0003 — S14.3         |
+| `lib/powersync/`       | init SDK PowerSync + write upload handler (`WriteResult.error`)    | ADR 0014 — S14.4         |
+| `lib/api/`             | client REST typé OpenAPI                                           | ADR 0016 — S14.6         |
+| `lib/auth/`            | source mémoire du JWT (token-store leaf) + session (login/refresh) | ADR 0016 — S14.6         |
+| `lib/sse/`             | wrapper `EventSource` (token court-lived, resume)                  | ADR 0012 — S14.7         |
+| `lib/storage/`         | JWT Secure Storage (mobile) / localStorage (web)                   | S14.5                    |
+| `features/`            | parcours métier (confirmable, MCP confirm…)                        | ADR 0017 / 0004 — S14.6+ |
+| `components/business/` | composants métier **testés** (Vitest, §5.1)                        | Stratégie §5.1 — S14.2+  |
+| `components/ui/`       | primitives shadcn/ui (comportement interne Radix non re-testé)     | S14.2                    |
+| `hooks/`               | hooks transverses (`useAuth`…)                                     | S14.6                    |
+| `types/`               | types partagés                                                     | —                        |
 
 ## Style — Tailwind 4 + shadcn/ui + thème
 

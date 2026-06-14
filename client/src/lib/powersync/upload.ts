@@ -51,9 +51,9 @@ export async function uploadData(db: AbstractPowerSyncDatabase): Promise<void> {
   })
 
   // --- Classification HTTP (D7) — purge vs retry ------------------------------------------
-  // 401 : transitoire → on throw ; PowerSync re-`fetchCredentials`. ⚠️ S14.4 : token statique
-  // (refresh réel = S14.6) → un 401 boucle jusqu'au refresh ; NON destructeur (rien n'est
-  // purgé). Résiduel assumé, tracé §7 du plan.
+  // 401 : transitoire → on throw ; PowerSync re-`fetchCredentials`, qui rafraîchit RÉACTIVEMENT
+  // le token (S14.6, single-flight) avant de relancer. Un refresh refusé → purge → rejet de
+  // credentials (login requis), pas de boucle infinie. NON destructeur (rien n'est purgé ici).
   if (res.status === 401) throw new Error('sync/upload 401')
 
   // 400/422 : `extra="forbid"` côté serveur → rejet de FORME PERMANENT (batch ré-émis

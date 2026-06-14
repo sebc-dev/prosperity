@@ -15,6 +15,6 @@ export const nativeBackend: StorageBackend = {
     const value = await SecureStorage.get(key)
     return typeof value === 'string' ? value : null
   },
-  set: (key, value) => SecureStorage.set(key, value).then(() => undefined),
-  remove: (key) => SecureStorage.remove(key).then(() => undefined),
+  set: (key, value) => SecureStorage.set(key, value), // le plugin renvoie déjà Promise<void>
+  remove: (key) => SecureStorage.remove(key).then(() => undefined), // plugin: Promise<boolean> → void
 }

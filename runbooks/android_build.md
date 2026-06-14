@@ -12,7 +12,7 @@
   à jour (cf. skill `capacitor-app-upgrade-v7-to-v8`) si le build Gradle échoue.
 - Un **AVD** (Android Virtual Device) configuré dans Android Studio (émulateur).
 - **Node ≥ 22** (déjà requis par `client/`).
-- `android/local.properties` (chemin du SDK) est **généré localement et gitignoré** — ne pas le
+- `client/android/local.properties` (chemin du SDK) est **généré localement et gitignoré** — ne pas le
   committer.
 
 ## 2. Boucle de build

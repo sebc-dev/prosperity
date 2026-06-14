@@ -81,6 +81,13 @@ describe.skipIf(PLUGIN_STUBBED)('storage — branche native (Secure Storage)', (
     plugin.get.mockRejectedValue(new Error('keystore locked'))
     await expect(storage.get('k')).rejects.toThrow('keystore locked')
   })
+
+  test('rejet PROPAGÉ aussi sur set et remove (pas de swallow)', async () => {
+    plugin.set.mockRejectedValue(new Error('set échoué'))
+    await expect(storage.set('k', 'v')).rejects.toThrow('set échoué')
+    plugin.remove.mockRejectedValue(new Error('remove échoué'))
+    await expect(storage.remove('k')).rejects.toThrow('remove échoué')
+  })
 })
 
 describe('storage — routage par appel (D2)', () => {

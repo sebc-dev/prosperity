@@ -26,6 +26,12 @@ export default defineConfig({
     react(),
     tsconfigPaths(),
   ],
+  // PowerSync Web (S14.4) charge SQLite (wa-sqlite) dans un Web Worker qui fait du
+  // code-splitting (import dynamique du wasm) → format ES obligatoire (le défaut `iife`
+  // ne supporte pas le code-splitting). `optimizeDeps.exclude` évite que esbuild pré-bundle
+  // le SDK (worker/wasm) en dev. Cf. guide PowerSync + Vite.
+  worker: { format: 'es' },
+  optimizeDeps: { exclude: ['@powersync/web'] },
   test: {
     environment: 'jsdom',
     // Origine stable : les requêtes relatives sont résolues contre cette URL (les

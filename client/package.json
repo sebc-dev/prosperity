@@ -19,6 +19,8 @@
     "vite": "$vite"
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/core": "^8.4.0",
     "@powersync/drizzle-driver": "^0.7.3",
     "@powersync/react": "^1.10.0",
     "@powersync/web": "^1.38.3",
@@ -35,6 +37,7 @@
     "uuid": "^11.1.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.4.0",
     "@eslint/js": "^9.0.0",
     "@tailwindcss/vite": "^4.3.1",
     "@tanstack/router-plugin": "^1.168.18",

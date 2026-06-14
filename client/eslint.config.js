@@ -5,8 +5,9 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  // Code généré / artefacts : jamais lintés (D11). `drizzle/` = DDL SQL généré par drizzle-kit.
-  { ignores: ['dist', 'coverage', 'src/routeTree.gen.ts', 'drizzle'] },
+  // Code généré / artefacts : jamais lintés (D11). `drizzle/` = DDL SQL généré par drizzle-kit ;
+  // `android/` = projet natif Capacitor généré (Gradle/Java/Kotlin, S14.5).
+  { ignores: ['dist', 'coverage', 'src/routeTree.gen.ts', 'drizzle', 'android'] },
 
   // Base JS + TypeScript type-checked (D5).
   js.configs.recommended,

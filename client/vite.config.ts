@@ -40,6 +40,11 @@ export default defineConfig({
     // URL absolue, condition de l'interception sous le `fetch` Node/undici de jsdom).
     environmentOptions: { jsdom: { url: 'http://localhost:5173' } },
     globals: true,
+    // Base API du client typé (`lib/api/client.ts`) figée pour les tests : `import.meta.env`
+    // n'est pas alimenté par `.env` sous Vitest, et `openapi-fetch` exige une URL ABSOLUE
+    // (le `fetch` Node/undici de jsdom rejette un path relatif). Aligné sur le `http://localhost:8000`
+    // des handlers MSW auth (et du test sync existant). Les routes auth/setup y sont interceptées.
+    env: { VITE_API_BASE_URL: 'http://localhost:8000' },
     setupFiles: ['./tests/setup.ts'],
     // Tests co-localisés (src) + self-tests du harness (tests/, ex. verrou MSW).
     include: ['src/**/*.test.{ts,tsx}', 'tests/**/*.test.ts'],

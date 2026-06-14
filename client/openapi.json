@@ -1,0 +1,5139 @@
+{
+  "components": {
+    "schemas": {
+      "AcceptInvitePreviewResponse": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "expires_at"
+        ],
+        "title": "AcceptInvitePreviewResponse",
+        "type": "object"
+      },
+      "AcceptInviteRequest": {
+        "properties": {
+          "display_name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "password": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 12,
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          },
+          "token": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "display_name",
+          "password"
+        ],
+        "title": "AcceptInviteRequest",
+        "type": "object"
+      },
+      "AccountCreatePersonal": {
+        "description": "`POST /accounts/personal`. No `owner_id` \u2014 derived from `get_current_user`.\n\nThe owner is always the authenticated caller (D3); a stray `owner_id` in\nthe body is silently dropped (Pydantic's default `extra=\"ignore\"`), so the\nschema cannot be used to create an account on someone else's behalf.",
+        "properties": {
+          "currency": {
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "Currency",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AccountType"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "currency"
+        ],
+        "title": "AccountCreatePersonal",
+        "type": "object"
+      },
+      "AccountCreateShared": {
+        "description": "`POST /accounts/shared`. \u2265 2 members (\u2264 20, C-SEC-2 anti-DoS bound).\n\nThe cardinality floor is also enforced by `TooFewMembersError` in the\ndomain; the schema bound just rejects an obviously-malformed body before\nit reaches the service.",
+        "properties": {
+          "currency": {
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "Currency",
+            "type": "string"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/AccountMemberInput"
+            },
+            "maxItems": 20,
+            "minItems": 2,
+            "title": "Members",
+            "type": "array"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AccountType"
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "currency",
+          "members"
+        ],
+        "title": "AccountCreateShared",
+        "type": "object"
+      },
+      "AccountDetailResponse": {
+        "description": "`AccountResponse` + the member roster.\n\nServes `GET /accounts/{id}` and the member-mutation routes (S05.4). A\nsuperset of `AccountResponse` (scalar fields unchanged, `members` added), so\nthe contract is strictly widened \u2014 S05.3 detail tests stay green. A personal\naccount serialises to `members == []`.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/AccountMemberResponse"
+            },
+            "title": "Members",
+            "type": "array"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AccountType"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "type",
+          "currency",
+          "owner_id",
+          "created_at",
+          "members"
+        ],
+        "title": "AccountDetailResponse",
+        "type": "object"
+      },
+      "AccountMemberInput": {
+        "description": "A prospective member of a shared account: a user + their quote-part.\n\n`default_share_ratio` is bounded `0 < r < 1` at the schema edge; the\npure `AccountValidator` (\u03a3 == 1, strictly positive, no duplicate) is the\nauthoritative backstop (D8), so these bounds are belt-and-braces.",
+        "properties": {
+          "default_share_ratio": {
+            "anyOf": [
+              {
+                "exclusiveMaximum": 1.0,
+                "exclusiveMinimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*(?:\\d{0,1}|(?=[\\d.]{1,6}0*$)\\d{0,1}\\.\\d{0,4}0*$)",
+                "type": "string"
+              }
+            ],
+            "title": "Default Share Ratio"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "default_share_ratio"
+        ],
+        "title": "AccountMemberInput",
+        "type": "object"
+      },
+      "AccountMemberResponse": {
+        "description": "One member of a shared account in `AccountDetailResponse`.",
+        "properties": {
+          "default_share_ratio": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Default Share Ratio",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "default_share_ratio"
+        ],
+        "title": "AccountMemberResponse",
+        "type": "object"
+      },
+      "AccountMembersRoster": {
+        "additionalProperties": false,
+        "description": "Total re-balance body: the **complete** member set targeted after the op.\n\nThe HTTP verb (+ the `{user_id}` path param on PATCH/DELETE) declares the\nintent; the service cross-checks this roster against the current membership.\n`min_length=1` is deliberately permissive \u2014 the \"\u2265 2 members\" floor is\n**authoritative in the domain** (`validate_member_set` \u2192 `TooFewMembersError`\n\u2192 422), so refusing to remove the second-to-last member reads as a business\nrule, not a schema rejection. `max_length` mirrors `AccountCreateShared`'s\nanti-DoS bound. Reuses `AccountMemberInput` (S05.3) for each entry.",
+        "properties": {
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/AccountMemberInput"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Members",
+            "type": "array"
+          }
+        },
+        "required": [
+          "members"
+        ],
+        "title": "AccountMembersRoster",
+        "type": "object"
+      },
+      "AccountResponse": {
+        "description": "Flat account view. The members roster is exposed by `AccountDetailResponse`.\n\n`from_attributes=True` lets FastAPI serialise the ORM `Account` directly;\nevery field is a scalar loaded at flush, so no async lazy-load fires at\nserialisation time (`Account` maps no relationship). `archived_at` is\nomitted: an accessible account is never archived.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "owner_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Id"
+          },
+          "type": {
+            "$ref": "#/components/schemas/AccountType"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "type",
+          "currency",
+          "owner_id",
+          "created_at"
+        ],
+        "title": "AccountResponse",
+        "type": "object"
+      },
+      "AccountType": {
+        "description": "Financial account categories (F02).\n\nMirrored by the Postgres `account_type` ENUM (Alembic 0007). Adding a\nvalue requires a migration that ALTERs that type. `StrEnum` gives\nruntime enforcement on assignment plus a single source of truth for\nthe Pydantic transports landing in S05.3.\n\nThe SQLAlchemy mapping lives in `models.py`\n(`mapped_column(Enum(AccountType, name=\"account_type\",\nvalues_callable=_account_type_values))`); `values_callable` keeps the\nstored values (`\"courant\"`\u2026) aligned with the PG ENUM rather than the\nmember *names*. A round-trip integration test (P05.1.3) pins that.",
+        "enum": [
+          "courant",
+          "livret",
+          "epargne",
+          "especes",
+          "credit"
+        ],
+        "title": "AccountType",
+        "type": "string"
+      },
+      "AccountUpdate": {
+        "additionalProperties": false,
+        "description": "`PATCH /accounts/{id}`: `name` only \u2014 `currency`/`type` frozen (D6).\n\n`extra=\"forbid\"` turns any `currency`/`type` in the body into a 422\nrather than a silent no-op: unlike the server-derived `owner_id` (D3),\nthese are real columns a client might believe are editable, so a loud\nrejection teaches the contract.",
+        "properties": {
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "AccountUpdate",
+        "type": "object"
+      },
+      "AutoValidationCriteriaOut": {
+        "description": "Les 5 crit\u00e8res F04 + leur conjonction (`all_met`), expos\u00e9s au client.",
+        "properties": {
+          "all_met": {
+            "title": "All Met",
+            "type": "boolean"
+          },
+          "amounts_within_cap": {
+            "title": "Amounts Within Cap",
+            "type": "boolean"
+          },
+          "encoding_high_confidence": {
+            "title": "Encoding High Confidence",
+            "type": "boolean"
+          },
+          "no_duplicates": {
+            "title": "No Duplicates",
+            "type": "boolean"
+          },
+          "volume_under_limit": {
+            "title": "Volume Under Limit",
+            "type": "boolean"
+          },
+          "within_date_window": {
+            "title": "Within Date Window",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "no_duplicates",
+          "encoding_high_confidence",
+          "within_date_window",
+          "amounts_within_cap",
+          "volume_under_limit",
+          "all_met"
+        ],
+        "title": "AutoValidationCriteriaOut",
+        "type": "object"
+      },
+      "BatchUpload": {
+        "additionalProperties": false,
+        "description": "Le batch montant. L'ORDRE du tableau est PR\u00c9SERV\u00c9 (ADR 0014 \u2014 \u00ab cr\u00e9ation\ncompte puis transaction \u00bb en un seul batch atomique). Vide = no-op valide\n(D9 \u2014 le dispatcher retourne `[]`) ; born\u00e9 en cardinalit\u00e9 (anti-DoS).",
+        "properties": {
+          "mutations": {
+            "items": {
+              "$ref": "#/components/schemas/Mutation"
+            },
+            "maxItems": 1000,
+            "title": "Mutations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mutations"
+        ],
+        "title": "BatchUpload",
+        "type": "object"
+      },
+      "Body_commit_import_imports_ofx_commit_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          },
+          "internal_account_id": {
+            "format": "uuid",
+            "title": "Internal Account Id",
+            "type": "string"
+          },
+          "user_overrides": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Overrides"
+          }
+        },
+        "required": [
+          "file",
+          "internal_account_id"
+        ],
+        "title": "Body_commit_import_imports_ofx_commit_post",
+        "type": "object"
+      },
+      "Body_preview_import_imports_ofx_preview_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_preview_import_imports_ofx_preview_post",
+        "type": "object"
+      },
+      "BudgetConsumptionResponse": {
+        "description": "API view of `BudgetConsumption` (S08.2). `percent` is the raw ratio\n(`0.80` = 80 %); the `\u00d7100`/`%` formatting is a UI decision.",
+        "properties": {
+          "consumed_cents": {
+            "title": "Consumed Cents",
+            "type": "integer"
+          },
+          "percent": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Percent",
+            "type": "string"
+          },
+          "remaining_cents": {
+            "title": "Remaining Cents",
+            "type": "integer"
+          },
+          "splits_count": {
+            "title": "Splits Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "consumed_cents",
+          "remaining_cents",
+          "percent",
+          "splits_count"
+        ],
+        "title": "BudgetConsumptionResponse",
+        "type": "object"
+      },
+      "BudgetCreate": {
+        "additionalProperties": false,
+        "description": "`POST /budgets`. `extra=\"forbid\"` \u21d2 a client `id`/`created_by`/`currency` \u2192 422.\n\n`created_by` is server-derived from the token (D5); `currency` is derived\nfrom the household base currency (D6, mono-currency V1) \u2014 neither is\naccepted in the body. `period_kind`/`scope` are domain `Literal`s (closed\nsets validated here, the columns carry no CHECK). `amount_cents > 0` mirrors\nthe `consumption_from_totals` guard. `contributor_ids` is non-empty; the\n`personal \u21d2 {owner}` / `shared \u21d2 \u2265 2` invariant is enforced at the service.",
+        "properties": {
+          "amount_cents": {
+            "exclusiveMinimum": 0.0,
+            "title": "Amount Cents",
+            "type": "integer"
+          },
+          "carry_over_remainder": {
+            "default": false,
+            "title": "Carry Over Remainder",
+            "type": "boolean"
+          },
+          "category_id": {
+            "format": "uuid",
+            "title": "Category Id",
+            "type": "string"
+          },
+          "contributor_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Contributor Ids",
+            "type": "array"
+          },
+          "period_kind": {
+            "enum": [
+              "monthly",
+              "quarterly",
+              "yearly"
+            ],
+            "title": "Period Kind",
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "personal",
+              "shared"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "category_id",
+          "period_kind",
+          "period_start",
+          "amount_cents",
+          "scope",
+          "contributor_ids"
+        ],
+        "title": "BudgetCreate",
+        "type": "object"
+      },
+      "BudgetListResponse": {
+        "description": "`GET /budgets` \u2014 the budgets concerning the caller, each with consumption.\n\nUnpaginated in V1 (few budgets per household, \u00a77); the contributor load is\nbatched into one query (D14) so the listing is not N+1 on contributors.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BudgetWithConsumptionResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "BudgetListResponse",
+        "type": "object"
+      },
+      "BudgetResponse": {
+        "description": "Flat view of a budget + its contributor ids (built via `_to_response`).\n\nNot `from_attributes` driven directly off the ORM: `contributor_ids` is a\nseparate query (no relationship is loaded), so the transport assembles the\nfield list explicitly. `currency`/`created_by` are server-derived (D5/D6).",
+        "properties": {
+          "amount_cents": {
+            "title": "Amount Cents",
+            "type": "integer"
+          },
+          "archived_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
+          "carry_over_remainder": {
+            "title": "Carry Over Remainder",
+            "type": "boolean"
+          },
+          "category_id": {
+            "format": "uuid",
+            "title": "Category Id",
+            "type": "string"
+          },
+          "contributor_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Contributor Ids",
+            "type": "array"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "format": "uuid",
+            "title": "Created By",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "period_kind": {
+            "enum": [
+              "monthly",
+              "quarterly",
+              "yearly"
+            ],
+            "title": "Period Kind",
+            "type": "string"
+          },
+          "period_start": {
+            "format": "date",
+            "title": "Period Start",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "personal",
+              "shared"
+            ],
+            "title": "Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "category_id",
+          "period_kind",
+          "period_start",
+          "amount_cents",
+          "currency",
+          "scope",
+          "created_by",
+          "carry_over_remainder",
+          "contributor_ids",
+          "created_at",
+          "archived_at"
+        ],
+        "title": "BudgetResponse",
+        "type": "object"
+      },
+      "BudgetUpdate": {
+        "additionalProperties": false,
+        "description": "`PATCH /budgets/{id}`. Only `amount_cents`/`carry_over_remainder`/`contributor_ids`.\n\n`extra=\"forbid\"` \u21d2 a `scope`/`category_id`/`period_*`/`currency` in the body\n\u2192 422 (frozen after creation, D7/D8). Every field optional for a partial\nPATCH; the route uses `exclude_unset`, so a `{}` body is a no-op (not a\nwipe-to-None). `contributor_ids`, when present, **replaces** the whole set.",
+        "properties": {
+          "amount_cents": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount Cents"
+          },
+          "carry_over_remainder": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carry Over Remainder"
+          },
+          "contributor_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contributor Ids"
+          }
+        },
+        "title": "BudgetUpdate",
+        "type": "object"
+      },
+      "BudgetWithConsumptionResponse": {
+        "description": "One listing item: a budget paired with its consumption at `as_of`.",
+        "properties": {
+          "budget": {
+            "$ref": "#/components/schemas/BudgetResponse"
+          },
+          "consumption": {
+            "$ref": "#/components/schemas/BudgetConsumptionResponse"
+          }
+        },
+        "required": [
+          "budget",
+          "consumption"
+        ],
+        "title": "BudgetWithConsumptionResponse",
+        "type": "object"
+      },
+      "CategoryCreate": {
+        "additionalProperties": false,
+        "description": "`POST /categories`. `extra=\"forbid\"` \u21d2 a client-supplied `id` \u2192 422.\n\nThe id is generated server-side (closing finding #104); `parent_id` is\noptional (omit / null = a root). `color`/`icon` are optional and\nUI-defaulted.",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CategoryCreate",
+        "type": "object"
+      },
+      "CategoryMove": {
+        "additionalProperties": false,
+        "description": "`PATCH /categories/{id}/parent`. `parent_id` required, nullable (null = root).",
+        "properties": {
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          }
+        },
+        "required": [
+          "parent_id"
+        ],
+        "title": "CategoryMove",
+        "type": "object"
+      },
+      "CategoryResponse": {
+        "description": "Flat category view. `archived_at` exposed (nullable) \u2014 unlike accounts.\n\n`from_attributes=True` serialises the ORM `Category` directly; every field\nis a scalar loaded at flush (no relationship), so no async lazy-load fires\nat serialisation time. `archived_at` is non-null only in the\n`include_archived=true` listing.",
+        "properties": {
+          "archived_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Archived At"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parent_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Id"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "color",
+          "icon",
+          "parent_id",
+          "created_at",
+          "archived_at"
+        ],
+        "title": "CategoryResponse",
+        "type": "object"
+      },
+      "CategoryUpdate": {
+        "additionalProperties": false,
+        "description": "`PATCH /categories/{id}` (edit). `name`/`color`/`icon` only.\n\n`extra=\"forbid\"` \u21d2 a `parent_id` in the body \u2192 422: re-parenting is a\ndistinct route. Every field is optional for a partial update; the route\napplies only the keys actually sent (`exclude_unset`).",
+        "properties": {
+          "color": {
+            "anyOf": [
+              {
+                "pattern": "^#[0-9A-Fa-f]{6}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Color"
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Icon"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 120,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "CategoryUpdate",
+        "type": "object"
+      },
+      "ContributingSplitResponse": {
+        "description": "One split in the drill-down (S08.4.3). Amounts raw (`amount_cents`+`currency`).\n\n`category_id` is non-NULL by construction (the `IN subtree` filter excludes\nthe canonical account leg, E15). `from_attributes` serialises the\n`ContributingSplit` dataclass the service returns.",
+        "properties": {
+          "account_id": {
+            "format": "uuid",
+            "title": "Account Id",
+            "type": "string"
+          },
+          "amount_cents": {
+            "title": "Amount Cents",
+            "type": "integer"
+          },
+          "category_id": {
+            "format": "uuid",
+            "title": "Category Id",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "transaction_id": {
+            "format": "uuid",
+            "title": "Transaction Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "transaction_id",
+          "account_id",
+          "category_id",
+          "amount_cents",
+          "currency",
+          "date"
+        ],
+        "title": "ContributingSplitResponse",
+        "type": "object"
+      },
+      "ContributingSplitsListResponse": {
+        "description": "A page of contributing splits + the opaque cursor of the next page (None if last).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ContributingSplitResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "ContributingSplitsListResponse",
+        "type": "object"
+      },
+      "CounterpartyListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CounterpartyNetResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "CounterpartyListResponse",
+        "type": "object"
+      },
+      "CounterpartyNetResponse": {
+        "description": "Net orient\u00e9 par contrepartie pour le dashboard \u00ab mes dettes par contrepartie \u00bb.\n\n`net_amount` (centimes sign\u00e9s, libell\u00e9 de l'issue #145) : positif = la\ncontrepartie me doit net ; n\u00e9gatif = je lui dois net. Aucun champ source\n(l'agr\u00e9gat en est structurellement d\u00e9pourvu \u2014 non-fuite par construction).",
+        "properties": {
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "debts_count": {
+            "title": "Debts Count",
+            "type": "integer"
+          },
+          "net_amount": {
+            "title": "Net Amount",
+            "type": "integer"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "net_amount",
+          "currency",
+          "debts_count"
+        ],
+        "title": "CounterpartyNetResponse",
+        "type": "object"
+      },
+      "DebtDirection": {
+        "description": "Sens de lecture, TOUJOURS relatif au token (jamais un s\u00e9lecteur de tiers).",
+        "enum": [
+          "all",
+          "owed_to_me",
+          "owed_by_me"
+        ],
+        "title": "DebtDirection",
+        "type": "string"
+      },
+      "DebtListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DebtResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DebtListResponse",
+        "type": "object"
+      },
+      "DebtResponse": {
+        "description": "Vue API d'une dette (miroir 1:1 de `DebtWithContext` \u2014 D7).\n\n`source_transaction_id`/`account_id` nullables : `null` quand masqu\u00e9s au\nd\u00e9biteur. `materialization_trace` ABSENT (allowlist par construction). Le\ntest de parit\u00e9 (`test_debts_schemas`) verrouille l'\u00e9galit\u00e9 des champs avec\n`DebtWithContext` : tout champ ajout\u00e9 d'un seul c\u00f4t\u00e9 casse le build.",
+        "properties": {
+          "account_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
+          "amount_cents": {
+            "title": "Amount Cents",
+            "type": "integer"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "debt_id": {
+            "format": "uuid",
+            "title": "Debt Id",
+            "type": "string"
+          },
+          "from_user_id": {
+            "format": "uuid",
+            "title": "From User Id",
+            "type": "string"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "remaining_cents": {
+            "title": "Remaining Cents",
+            "type": "integer"
+          },
+          "requested_by": {
+            "format": "uuid",
+            "title": "Requested By",
+            "type": "string"
+          },
+          "short_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Label"
+          },
+          "source_transaction_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Transaction Id"
+          },
+          "to_user_id": {
+            "format": "uuid",
+            "title": "To User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "debt_id",
+          "from_user_id",
+          "to_user_id",
+          "amount_cents",
+          "currency",
+          "origin",
+          "requested_by",
+          "short_label",
+          "category_id",
+          "date",
+          "created_at",
+          "source_transaction_id",
+          "account_id",
+          "remaining_cents"
+        ],
+        "title": "DebtResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "ImportPreviewOut": {
+        "description": "Corps de r\u00e9ponse `/preview`.\n\n\u26a0\ufe0f `account_not_linked` n'est PAS expos\u00e9 : la route le traduit TOUJOURS en 422\n(D7), donc un `ImportPreviewOut` renvoy\u00e9 \u27fa tous les comptes li\u00e9s & accessibles.",
+        "properties": {
+          "amount_max_cents": {
+            "title": "Amount Max Cents",
+            "type": "integer"
+          },
+          "auto_validatable": {
+            "title": "Auto Validatable",
+            "type": "boolean"
+          },
+          "criteria": {
+            "$ref": "#/components/schemas/AutoValidationCriteriaOut"
+          },
+          "date_max": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Max"
+          },
+          "date_min": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date Min"
+          },
+          "duplicate_count": {
+            "title": "Duplicate Count",
+            "type": "integer"
+          },
+          "encoding_confidence": {
+            "enum": [
+              "high",
+              "low"
+            ],
+            "title": "Encoding Confidence",
+            "type": "string"
+          },
+          "tx_count": {
+            "title": "Tx Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tx_count",
+          "duplicate_count",
+          "encoding_confidence",
+          "date_min",
+          "date_max",
+          "amount_max_cents",
+          "criteria",
+          "auto_validatable"
+        ],
+        "title": "ImportPreviewOut",
+        "type": "object"
+      },
+      "ImportResultOut": {
+        "description": "R\u00e9sultat d'un `/commit` : lignes cr\u00e9\u00e9es vs ignor\u00e9es (doublons).",
+        "properties": {
+          "created": {
+            "title": "Created",
+            "type": "integer"
+          },
+          "skipped_duplicates": {
+            "title": "Skipped Duplicates",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "created",
+          "skipped_duplicates"
+        ],
+        "title": "ImportResultOut",
+        "type": "object"
+      },
+      "InvitationCreateRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "InvitationCreateRequest",
+        "type": "object"
+      },
+      "InvitationCreatedResponse": {
+        "properties": {
+          "accept_url": {
+            "title": "Accept Url",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "expires_at",
+          "token",
+          "accept_url"
+        ],
+        "title": "InvitationCreatedResponse",
+        "type": "object"
+      },
+      "InvitationResponse": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "invited_at": {
+            "format": "date-time",
+            "title": "Invited At",
+            "type": "string"
+          },
+          "invited_by": {
+            "format": "uuid",
+            "title": "Invited By",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "invited_at",
+          "expires_at",
+          "invited_by"
+        ],
+        "title": "InvitationResponse",
+        "type": "object"
+      },
+      "LinkAccountIn": {
+        "description": "Corps de `/link-account` : lier une r\u00e9f externe \u00e0 un compte interne.",
+        "properties": {
+          "external_ref": {
+            "title": "External Ref",
+            "type": "string"
+          },
+          "internal_account_id": {
+            "format": "uuid",
+            "title": "Internal Account Id",
+            "type": "string"
+          },
+          "provider": {
+            "default": "ofx",
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "external_ref",
+          "internal_account_id"
+        ],
+        "title": "LinkAccountIn",
+        "type": "object"
+      },
+      "LinkAccountOut": {
+        "description": "Mapping cr\u00e9\u00e9 (201).",
+        "properties": {
+          "external_ref": {
+            "title": "External Ref",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "internal_account_id": {
+            "format": "uuid",
+            "title": "Internal Account Id",
+            "type": "string"
+          },
+          "provider": {
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "external_ref",
+          "internal_account_id",
+          "provider"
+        ],
+        "title": "LinkAccountOut",
+        "type": "object"
+      },
+      "LoginRequest": {
+        "properties": {
+          "email": {
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "LoginRequest",
+        "type": "object"
+      },
+      "LogoutRequest": {
+        "properties": {
+          "refresh_token": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "LogoutRequest",
+        "type": "object"
+      },
+      "Mutation": {
+        "additionalProperties": false,
+        "description": "Une mutation du batch montant.\n\n`client_request_id` : UUID client porteur de l'idempotence (scop\u00e9e user en\nbase, cf. `models.SyncRequestLog`). Toute version d'UUID est accept\u00e9e\nc\u00f4t\u00e9 serveur (D7 \u2014 la v7 reste la recommandation client pour l'ordonnancement,\nmais contraindre la version couplerait le serveur \u00e0 l'impl\u00e9mentation client) ;\nun UUID mal form\u00e9 \u2192 422. `op` hors enum \u2192 422. `table` non vide et born\u00e9e\n(anti-DoS) ; le dispatcher (S13.3) REJETTE une `table` non mapp\u00e9e plut\u00f4t que\nde la persister. `payload` opaque : valid\u00e9 par le sous-handler de `table`\n(S13.4), qui en bornera aussi la taille/profondeur (d\u00e9f\u00e9r\u00e9e, cf. Hors-scope).",
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "title": "Client Request Id",
+            "type": "string"
+          },
+          "op": {
+            "enum": [
+              "insert",
+              "update",
+              "delete"
+            ],
+            "title": "Op",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "title": "Payload",
+            "type": "object"
+          },
+          "table": {
+            "maxLength": 63,
+            "minLength": 1,
+            "title": "Table",
+            "type": "string"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "table",
+          "op",
+          "payload"
+        ],
+        "title": "Mutation",
+        "type": "object"
+      },
+      "RefreshRequest": {
+        "properties": {
+          "refresh_token": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "RefreshRequest",
+        "type": "object"
+      },
+      "SettledDebtResponse": {
+        "description": "A referenced `Debt` enriched with `remaining_cents`, MASKING already applied.\n\nMirror of `DebtWithContext` (the masked DTO from `_project_debt`, S09.4):\n`source_transaction_id`/`account_id` are `null` when the caller is the debtor;\n`materialization_trace` is absent by construction. Built from the masked DTO\nso the single S09.4 masking path is reused (no parallel read).",
+        "properties": {
+          "account_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account Id"
+          },
+          "amount_cents": {
+            "title": "Amount Cents",
+            "type": "integer"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "debt_id": {
+            "format": "uuid",
+            "title": "Debt Id",
+            "type": "string"
+          },
+          "from_user_id": {
+            "format": "uuid",
+            "title": "From User Id",
+            "type": "string"
+          },
+          "origin": {
+            "title": "Origin",
+            "type": "string"
+          },
+          "remaining_cents": {
+            "title": "Remaining Cents",
+            "type": "integer"
+          },
+          "requested_by": {
+            "format": "uuid",
+            "title": "Requested By",
+            "type": "string"
+          },
+          "short_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Short Label"
+          },
+          "source_transaction_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Transaction Id"
+          },
+          "to_user_id": {
+            "format": "uuid",
+            "title": "To User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "debt_id",
+          "from_user_id",
+          "to_user_id",
+          "amount_cents",
+          "currency",
+          "origin",
+          "requested_by",
+          "short_label",
+          "category_id",
+          "date",
+          "created_at",
+          "source_transaction_id",
+          "account_id",
+          "remaining_cents"
+        ],
+        "title": "SettledDebtResponse",
+        "type": "object"
+      },
+      "SettlementCreate": {
+        "additionalProperties": false,
+        "description": "Body of `POST /settlements`.\n\n`by_user_id`/`created_by` are NEVER in the body (D7, `extra=\"forbid\"`): the\ncaller is derived from the token at the route. `linked_transaction_id` is\npresent iff `type != virtual` (`_link_matches_type`, mirror of the\nbiconditional CHECK `ck_settlements_virtual_no_link`, S10.1).\n\n\u26a0\ufe0f `note` is free text IMPOSED on the other party \u2014 same guarantees as\n`short_label` (server trim + control-char rejection via `_LABEL_ALLOWED`,\nwhich excludes `\\n`/`\\t` \u21d2 the note is single-line, an INTENTIONAL\nanti-injection choice, S-n1). The client rendering MUST stay HTML-escaped\n(stored-XSS risk in a Capacitor WebView, review #22).",
+        "properties": {
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/SettlementLineCreate"
+            },
+            "minItems": 1,
+            "title": "Lines",
+            "type": "array"
+          },
+          "linked_transaction_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Transaction Id"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "settled_at": {
+            "format": "date",
+            "title": "Settled At",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "internal_transfer",
+              "external_transfer",
+              "virtual"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "settled_at",
+          "lines"
+        ],
+        "title": "SettlementCreate",
+        "type": "object"
+      },
+      "SettlementDetailResponse": {
+        "description": "Detail of a settlement: meta + (visible) lines + (masked) referenced debts.\n\n`lines` and `debts` are BOTH restricted to the debts the caller is party to\n(S-M1): a third party's debt id / context never appears.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "format": "uuid",
+            "title": "Created By",
+            "type": "string"
+          },
+          "debts": {
+            "items": {
+              "$ref": "#/components/schemas/SettledDebtResponse"
+            },
+            "title": "Debts",
+            "type": "array"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/SettlementLineResponse"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "linked_transaction_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Transaction Id"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "settled_at": {
+            "format": "date",
+            "title": "Settled At",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "internal_transfer",
+              "external_transfer",
+              "virtual"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "linked_transaction_id",
+          "settled_at",
+          "note",
+          "created_by",
+          "created_at",
+          "lines",
+          "debts"
+        ],
+        "title": "SettlementDetailResponse",
+        "type": "object"
+      },
+      "SettlementLineCreate": {
+        "additionalProperties": false,
+        "description": "One line of the `POST /settlements` body (\u2260 `domain.SettlementLineInput`).\n\n`amount_cents > 0` mirrors `ck_settlement_lines_amount_positive` (S10.1); the\nnetting direction is carried by the Debt's orientation, never a sign here.",
+        "properties": {
+          "amount_cents": {
+            "exclusiveMinimum": 0.0,
+            "title": "Amount Cents",
+            "type": "integer"
+          },
+          "debt_id": {
+            "format": "uuid",
+            "title": "Debt Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "debt_id",
+          "amount_cents"
+        ],
+        "title": "SettlementLineCreate",
+        "type": "object"
+      },
+      "SettlementLineResponse": {
+        "description": "A line of a settlement detail (the netting amount on one debt).",
+        "properties": {
+          "amount_cents": {
+            "title": "Amount Cents",
+            "type": "integer"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "debt_id": {
+            "format": "uuid",
+            "title": "Debt Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "debt_id",
+          "amount_cents",
+          "currency"
+        ],
+        "title": "SettlementLineResponse",
+        "type": "object"
+      },
+      "SettlementListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SettlementResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "SettlementListResponse",
+        "type": "object"
+      },
+      "SettlementResponse": {
+        "description": "API view of a created/listed settlement (meta, without the lines).",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "format": "uuid",
+            "title": "Created By",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "linked_transaction_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linked Transaction Id"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "settled_at": {
+            "format": "date",
+            "title": "Settled At",
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "internal_transfer",
+              "external_transfer",
+              "virtual"
+            ],
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "linked_transaction_id",
+          "settled_at",
+          "note",
+          "created_by",
+          "created_at"
+        ],
+        "title": "SettlementResponse",
+        "type": "object"
+      },
+      "SetupRequest": {
+        "description": "Bootstrap form posted once per deployment to `POST /setup`.\n\n`display_name` and `household_name` are explicit (rather than\nderived from `email.split(\"@\")[0]` and a default) because they are\nused everywhere downstream \u2014 audit logs, RBAC UI, settings page \u2014\nand the cost of asking is nil (single-use form on an empty DB).",
+        "properties": {
+          "display_name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "format": "email",
+            "maxLength": 254,
+            "title": "Email",
+            "type": "string"
+          },
+          "household_name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Household Name",
+            "type": "string"
+          },
+          "password": {
+            "format": "password",
+            "maxLength": 128,
+            "minLength": 12,
+            "title": "Password",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "email",
+          "password",
+          "display_name",
+          "household_name"
+        ],
+        "title": "SetupRequest",
+        "type": "object"
+      },
+      "ShareRequestCreate": {
+        "additionalProperties": false,
+        "description": "Body of `POST /transactions/{tx_id}/share-requests`.\n\n`by_user_id` is NEVER in the body (D7): it is derived from the token at the\nroute. \u26a0\ufe0f `short_label` is free creditor text IMPOSED on the debtor \u2014 the\nclient rendering MUST stay HTML-escaped (stored-XSS risk in a Capacitor\nWebView, review #22). The whitelist below blocks injection/spoofing vectors\nserver-side but cannot guarantee a stored string's innocuousness on render.",
+        "properties": {
+          "ratio": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 1.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              }
+            ],
+            "title": "Ratio"
+          },
+          "requested_from": {
+            "format": "uuid",
+            "title": "Requested From",
+            "type": "string"
+          },
+          "short_label": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Short Label",
+            "type": "string"
+          }
+        },
+        "required": [
+          "requested_from",
+          "ratio",
+          "short_label"
+        ],
+        "title": "ShareRequestCreate",
+        "type": "object"
+      },
+      "ShareRequestResponse": {
+        "description": "Creditor's view of the created SR (NOT the `Debt` \u2014 debtor masking is S09.4).\n\nThe creator (creditor) owns the source account, so echoing\n`source_transaction_id` here is fine \u2014 debtor-side masking is a *read*\nconcern (S09.4), not this creation echo. `materialization_trace` and the\n`Debt` are deliberately absent (server-only / debtor-masked).",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "ratio": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Ratio",
+            "type": "string"
+          },
+          "requested_from": {
+            "format": "uuid",
+            "title": "Requested From",
+            "type": "string"
+          },
+          "short_label": {
+            "title": "Short Label",
+            "type": "string"
+          },
+          "source_transaction_id": {
+            "format": "uuid",
+            "title": "Source Transaction Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "source_transaction_id",
+          "requested_from",
+          "ratio",
+          "short_label",
+          "created_at"
+        ],
+        "title": "ShareRequestResponse",
+        "type": "object"
+      },
+      "SplitInput": {
+        "additionalProperties": false,
+        "description": "One leg of a create payload. `account_id` is household-validated at the\nroute boundary (D5), not here \u2014 the schema only shapes the wire format.",
+        "properties": {
+          "account_id": {
+            "format": "uuid",
+            "title": "Account Id",
+            "type": "string"
+          },
+          "amount_cents": {
+            "title": "Amount Cents",
+            "type": "integer"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "currency": {
+            "maxLength": 3,
+            "minLength": 3,
+            "title": "Currency",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account_id",
+          "amount_cents",
+          "currency"
+        ],
+        "title": "SplitInput",
+        "type": "object"
+      },
+      "SplitResponse": {
+        "description": "One split in `TransactionResponse`. Amounts raw (`amount_cents`+`currency`).",
+        "properties": {
+          "account_id": {
+            "format": "uuid",
+            "title": "Account Id",
+            "type": "string"
+          },
+          "amount_cents": {
+            "title": "Amount Cents",
+            "type": "integer"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          }
+        },
+        "required": [
+          "account_id",
+          "category_id",
+          "amount_cents",
+          "currency"
+        ],
+        "title": "SplitResponse",
+        "type": "object"
+      },
+      "SseTokenResponse": {
+        "description": "R\u00e9ponse de `POST /sse/token` : le token SSE scop\u00e9 + sa dur\u00e9e de vie (s).",
+        "properties": {
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "expires_in"
+        ],
+        "title": "SseTokenResponse",
+        "type": "object"
+      },
+      "TokenPair": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "token_type": {
+            "const": "bearer",
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token"
+        ],
+        "title": "TokenPair",
+        "type": "object"
+      },
+      "TransactionCreate": {
+        "additionalProperties": false,
+        "description": "`POST /accounts/{account_id}/transactions`.\n\nThe route `account_id` (D5) and `created_by` (token, D6) are NOT in the body;\n`extra=\"forbid\"` rejects either if slipped in (422, not a silent drop).\n`payee` is not settable in V1 (no service writer \u2014 \u00a7HS). `debt_generation_override`\nis a domain `Literal`, so an out-of-enum value is a 422 before the service.",
+        "properties": {
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "date": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "debt_generation_override": {
+            "default": "default",
+            "enum": [
+              "default",
+              "force_full_debt",
+              "force_no_debt"
+            ],
+            "title": "Debt Generation Override",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "splits": {
+            "items": {
+              "$ref": "#/components/schemas/SplitInput"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Splits",
+            "type": "array"
+          },
+          "tags": {
+            "items": {
+              "maxLength": 64,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "splits"
+        ],
+        "title": "TransactionCreate",
+        "type": "object"
+      },
+      "TransactionListResponse": {
+        "description": "A page of transactions + the opaque cursor of the next page (None if last).",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TransactionResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "title": "TransactionListResponse",
+        "type": "object"
+      },
+      "TransactionPatch": {
+        "additionalProperties": false,
+        "description": "`PATCH /transactions/{id}`: only the post-confirmed editable fields.\n\nThe exposed subset of `EDITABLE_AFTER_CONFIRMED` (D9: `share_request_id` is\nout of the V1 API). `extra=\"forbid\"` turns any other field (a frozen\n`amount_cents`/`account_id`/`date`/`payee`/`splits`/`state`) into a **422** \u2014\nnot a silent no-op (the AC). Every field optional (partial PATCH); the route\nuses `exclude_unset` so a `{}` body is a no-op rather than a wipe-to-None.",
+        "properties": {
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "debt_generation_override": {
+            "anyOf": [
+              {
+                "enum": [
+                  "default",
+                  "force_full_debt",
+                  "force_no_debt"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Debt Generation Override"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags"
+          }
+        },
+        "title": "TransactionPatch",
+        "type": "object"
+      },
+      "TransactionResponse": {
+        "description": "Client view of a transaction. Never the domain aggregate directly (D7).\n\n`from_domain` is the single mapper from `domain.Transaction`. Does not expose\n`split.id` nor timestamps in V1 (absent from `domain.Transaction` \u2014 D8), nor\n`payee`/`share_request_id` (no V1 writer / lives in E09 \u2014 D9).",
+        "properties": {
+          "account_id": {
+            "format": "uuid",
+            "title": "Account Id",
+            "type": "string"
+          },
+          "category_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category Id"
+          },
+          "created_by": {
+            "format": "uuid",
+            "title": "Created By",
+            "type": "string"
+          },
+          "date": {
+            "format": "date",
+            "title": "Date",
+            "type": "string"
+          },
+          "debt_generation_override": {
+            "enum": [
+              "default",
+              "force_full_debt",
+              "force_no_debt"
+            ],
+            "title": "Debt Generation Override",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "splits": {
+            "items": {
+              "$ref": "#/components/schemas/SplitResponse"
+            },
+            "title": "Splits",
+            "type": "array"
+          },
+          "state": {
+            "$ref": "#/components/schemas/TransactionState"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "account_id",
+          "date",
+          "state",
+          "created_by",
+          "category_id",
+          "description",
+          "tags",
+          "debt_generation_override",
+          "splits"
+        ],
+        "title": "TransactionResponse",
+        "type": "object"
+      },
+      "TransactionState": {
+        "description": "\u00c9tats du cycle de vie d'une transaction (ADR 0001).\n\nValeurs = exactement les `String` stock\u00e9s par l'ORM (S07.2) \u2192 mapping\ntrivial au service, et source unique pour les schemas API S07.5. Gabarit\n`accounts.domain.AccountType`.",
+        "enum": [
+          "draft",
+          "planned",
+          "confirmed",
+          "void"
+        ],
+        "title": "TransactionState",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "VoidRequest": {
+        "additionalProperties": false,
+        "description": "Optional body for `POST /transactions/{id}/void`.\n\n`reason` rides the `TransactionVoidedEvent` payload only \u2014 no column in V1\n(S07.4 D7). Bounded (`max_length`) against unbounded payloads / log-injection\n(PII); the boundary never logs it raw.",
+        "properties": {
+          "reason": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "title": "VoidRequest",
+        "type": "object"
+      },
+      "WriteError": {
+        "additionalProperties": false,
+        "description": "Erreur d'une mutation \u2014 forme wire FIG\u00c9E en S13.2 (`CONTEXT.md` \u00a7WriteResult :\n`{success, error?: {code, message}}` ; ADR 0014 \u00ab WriteResult.error typ\u00e9 \u00bb).\n\n`code` : `WriteErrorCode` \u2014 vocabulaire FERM\u00c9 (`Literal`) depuis S13.6 / P13.6.3\n(D6 ; S13.2 le d\u00e9clarait `str` libre). Le contrat wire client est ainsi stable et\nauditable. `message` : texte humain STATIQUE par code \u2014 NE DOIT JAMAIS porter de\nd\u00e9tail interne (`str(exc)`, SQL, chemin, PII du payload), review S\u00e9cu F2 ; la\ns\u00e9paration `code` (s\u00fbr) / `message` borne la surface de fuite. La table de\ncorrespondance exception \u2192 code vit dans `sync.service.errors` (`to_write_error`).",
+        "properties": {
+          "code": {
+            "enum": [
+              "auth_denied",
+              "unknown_table",
+              "not_implemented_yet",
+              "validation_error",
+              "immutable_field_violation",
+              "uncategorized_expense",
+              "unbalanced_transaction",
+              "invalid_state_transition",
+              "not_found"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "WriteError",
+        "type": "object"
+      },
+      "WriteResult": {
+        "additionalProperties": false,
+        "description": "R\u00e9sultat par mutation (ack \u00e9tape 10, ADR 0014).\n\n`error` : objet typ\u00e9 `WriteError | None` (D6). `server_values` : valeurs\ng\u00e9n\u00e9r\u00e9es serveur que le client adopte (l'`id` d'un `insert`, un `created_at`\nserveur, \u2026) \u2014 un `dict` plut\u00f4t qu'un scalaire pour ne pas migrer le schema\nen S13.6 (D5). Optionnels `None` par d\u00e9faut : S13.2 les D\u00c9CLARE, S13.6 les\nPEUPLE. Aucune logique m\u00e9tier ici.",
+        "properties": {
+          "client_request_id": {
+            "format": "uuid",
+            "title": "Client Request Id",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WriteError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "server_values": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Values"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "client_request_id",
+          "success"
+        ],
+        "title": "WriteResult",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "title": "Prosperity",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/accept-invite": {
+      "get": {
+        "description": "Pre-check an invitation token; 200 + {email, expires_at}, else 410.\n\nAnonymous, read-only \u2014 does not consume the token. Every invalid case\n(unknown/expired/accepted/revoked) collapses to one uniform 410 so the\nresponse can never be used to enumerate which tokens exist (ADR 0010).",
+        "operationId": "preview_invitation_accept_invite_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptInvitePreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Invitation",
+        "tags": [
+          "accept-invite"
+        ]
+      },
+      "post": {
+        "description": "Accept an invitation: create the `member` invitee, auto-login a `TokenPair`.\n\nAnonymous. One transaction (D2): atomically claim the invitation \u2192\ncreate the `member` user \u2192 audit `invite_accepted` (actor-less) \u2192 mint\ntokens. An invalid token (unknown/expired/accepted/revoked) \u21d2 uniform\n410. A lost race (40001) or an email already enrolled (23505) \u21d2 the\n**same** 410 via the `DBAPIError` backstop (mirror of `/setup`) \u2014 no\nthird status code, no oracle (D5/D11). `get_db` rolls back the whole\ntransaction on any exception (so a partial `accepted_at` is undone and\nthe invitation reverts to pending). A body carrying `role`/`email` is\nignored (anti-poisoning): the role is ALWAYS `member`, the email is\nALWAYS the invitation's, and the `id` is generated server-side.",
+        "operationId": "accept_invitation_accept_invite_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptInviteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Accept Invitation",
+        "tags": [
+          "accept-invite"
+        ]
+      }
+    },
+    "/accounts": {
+      "get": {
+        "description": "List the accounts visible to the caller (watertight by filter, not RBAC).\n\nOwned personal accounts \u222a shared accounts where the caller is a member,\narchived excluded. The admin is NOT exempt (F03/D2): it never sees another\nuser's personal account here.",
+        "operationId": "list_accounts_accounts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AccountResponse"
+                  },
+                  "title": "Response List Accounts Accounts Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Accounts",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/accounts/personal": {
+      "post": {
+        "description": "Create the caller's personal account; `owner_id` is the token's user (D3).\n\n`owner_id` is taken from `get_current_user`, never the body \u2014 a stray\n`owner_id` in the payload was already dropped by the schema. Domain\nrejections (currency mismatch, ownership shape) map to a curated 422\n(C-SEC-1), never a 500.",
+        "operationId": "create_personal_account_accounts_personal_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountCreatePersonal"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Personal Account",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/accounts/shared": {
+      "post": {
+        "description": "Create a shared account with its members (\u2265 2, quote-parts \u03a3 == 1).\n\nDomain rejections (\u03a3 \u2260 1, duplicate member, ratio \u2264 0, < 2 members,\ncurrency mismatch) \u2192 curated 422 (C-SEC-1). A member `user_id` with no\nmatching user trips `fk_account_members_user_id_users` at flush; we catch\nonly `IntegrityError`/SQLSTATE 23503 \u2192 422 (C-ARCH-1) \u2014 narrower than\n`/setup`'s `DBAPIError` because account creation has no business race, so\na concurrent 40001 may surface as 500 (no corruption, no disclosure). Any\nother SQLSTATE (e.g. 23505, pre-empted by `DuplicateMemberError`) is a\nreal bug \u2192 re-raise \u2192 500.",
+        "operationId": "create_shared_account_accounts_shared_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountCreateShared"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Shared Account",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/accounts/{account_id}": {
+      "delete": {
+        "description": "Soft-delete an account (set `archived_at`); 204 on success, else 404.\n\nNever a hard delete \u2014 the row stays in the DB and drops out of every\naccessible read. A second delete (already archived) \u2192 404, same as an\ninaccessible/unknown account (D7/D4 non-disclosure).",
+        "operationId": "delete_account_accounts__account_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Account",
+        "tags": [
+          "accounts"
+        ]
+      },
+      "get": {
+        "description": "Fetch one account by id, with its member roster; 404 if inaccessible.\n\nReturns `AccountDetailResponse` (S05.4): the scalar account fields plus\n`members` (empty for a personal account). The uniform 404 (admin included)\nkeeps an account's existence from leaking to a non-member (D4).",
+        "operationId": "get_account_accounts__account_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Account",
+        "tags": [
+          "accounts"
+        ]
+      },
+      "patch": {
+        "description": "Edit an account's `name` only; `currency`/`type` are frozen (D6).\n\nA body carrying `currency`/`type` is a 422 (`extra=\"forbid\"` on the\nschema). An inaccessible/archived/unknown account is the uniform 404 (D4).",
+        "operationId": "patch_account_accounts__account_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Patch Account",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/accounts/{account_id}/members": {
+      "post": {
+        "description": "Add one member to a shared account via a complete re-balanced roster.\n\n\u03a3=1 / \u2265 2 / positive / no-duplicate are re-validated (\u2192 422); a member\n`user_id` with no user row trips `fk_account_members_user_id_users` \u2192 422\n(FK 23503), never 500. A caller who is not a member \u2192 404.",
+        "operationId": "add_account_member_accounts__account_id__members_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountMembersRoster"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Add Account Member",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/accounts/{account_id}/members/{user_id}": {
+      "delete": {
+        "description": "Remove `{user_id}`, the remaining members re-balanced by the roster body.\n\nThe roster must be exactly the survivors (\u2192 422 otherwise); removing the\nsecond-to-last member is a 422 (`TooFewMembersError` \u2014 a shared account keeps\n\u2265 2 members), never executed partially. Caller not a member, or `{user_id}`\nnot a member \u2192 404.",
+        "operationId": "remove_account_member_accounts__account_id__members__user_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountMembersRoster"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Remove Account Member",
+        "tags": [
+          "accounts"
+        ]
+      },
+      "patch": {
+        "description": "Edit `{user_id}`'s quote-part via a complete roster (membership unchanged).\n\n\u03a3 maintained at 1 (\u2192 422 otherwise); a roster that changes the membership is\na 422 (PATCH is not an add/remove channel). Caller not a member, or\n`{user_id}` not a member \u2192 404.",
+        "operationId": "update_account_member_accounts__account_id__members__user_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccountMembersRoster"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Account Member",
+        "tags": [
+          "accounts"
+        ]
+      }
+    },
+    "/accounts/{account_id}/transactions": {
+      "post": {
+        "description": "Create a `draft` + its splits + editable metadata from the payload.\n\n`created_by` is the token's user (D6), never the body. The route `account_id`\nis checked for membership first \u2014 inaccessible \u2192 404 (admin included, D4/D5).\nEvery split `account_id` must also be accessible (D5): a foreign account would\ninflate the distinct-account count \u2192 `is_transfer` True \u2192 the expense escapes\n`assert_expenses_categorized`; an inaccessible one is a 422 (body data, generic\ndetail). The editable metadata is posted on the draft via `update_editable_fields`\n(a no-op `check_mutation_allowed` below `confirmed`, D10).",
+        "operationId": "create_transaction_accounts__account_id__transactions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransactionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Transaction",
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "description": "Authenticate by email + password; return an access + refresh pair.\n\nCase-insensitive on the email lookup (uses the functional\n`lower(email)` index on `users`). 401 is returned uniformly for\nunknown user, wrong password, and disabled account so the client\ncannot enumerate which case applies.",
+        "operationId": "login_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "description": "Revoke the refresh token. Idempotent: 204 regardless of state.\n\nReturning 204 even when the hash is unknown (already cleaned up,\nforged value, etc.) keeps the response shape uniform \u2014 no\ndifferential signal that would let a client probe for valid tokens.",
+        "operationId": "logout_auth_logout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LogoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Logout",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "description": "Rotate a refresh token: revoke the presented one, issue a new pair.\n\nAll refresh-token failure modes (unknown, expired, revoked) collapse\nto a single 401 with a generic body \u2014 the distinct exception types\nare preserved for server-side logs but never leak to the client.\nReplay of an already-revoked token triggers family-wide invalidation\ninside `rotate()` (see service docstring).",
+        "operationId": "refresh_auth_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Refresh",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/budgets": {
+      "get": {
+        "description": "List the budgets concerning the caller (personal owned \u222a shared contributor),\nnon-archived, each with its consumption at `as_of` (default = today, D9).\n\nContributors are loaded in ONE grouped query for the whole page (D14), so the\nlisting is not N+1 on contributors (the N `compute_consumption` calls stay,\na conscious V1 debt \u2014 few budgets per household, \u00a77).",
+        "operationId": "list_budgets_route_budgets_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Budgets Route",
+        "tags": [
+          "budgets"
+        ]
+      },
+      "post": {
+        "description": "Create a budget + its contributors; `created_by`/`currency` server-derived.\n\nA bad contributor list (count/shape or a `shared` contributor who is not a\nmember of any common account) \u2192 422. An unknown `category_id` trips the FK\n(23503) at flush \u2192 422 (body reference, gabarit `create_category`). Any other\nSQLSTATE is a real bug \u2192 re-raise \u2192 500 (never `str(exc)`, C-SEC-1).",
+        "operationId": "create_budget_route_budgets_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Budget Route",
+        "tags": [
+          "budgets"
+        ]
+      }
+    },
+    "/budgets/{budget_id}": {
+      "delete": {
+        "description": "Soft-delete (archive) a visible budget; never a hard delete.\n\nThe row is preserved with `archived_at` set (contributors survive) and drops\nout of the listing / detail. A re-DELETE of an already-archived budget \u2192 404\n(idempotent in the \"no corruption\" sense, gabarit `accounts.archive`). A\nnon-contributor \u2192 404 (watertight, D3).",
+        "operationId": "delete_budget_route_budgets__budget_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "budget_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Budget Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Budget Route",
+        "tags": [
+          "budgets"
+        ]
+      },
+      "get": {
+        "description": "Detail of a visible budget; uniform 404 if unknown / archived / not yours (D3).",
+        "operationId": "get_budget_route_budgets__budget_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "budget_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Budget Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Budget Route",
+        "tags": [
+          "budgets"
+        ]
+      },
+      "patch": {
+        "description": "Edit `amount_cents`/`carry_over_remainder`/`contributor_ids` (D7/D8).\n\nVisibility is checked first (`update_budget` \u2192 404 before any validation), so\na non-contributor sending an invalid body gets 404, never a 422 that would\nreveal the budget exists (D3 \u2014 order is security-relevant). A frozen field\n(`scope`/`category_id`/`period_*`) is a 422 at the schema (`extra=\"forbid\"`).",
+        "operationId": "patch_budget_route_budgets__budget_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "budget_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Budget Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BudgetUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Patch Budget Route",
+        "tags": [
+          "budgets"
+        ]
+      }
+    },
+    "/budgets/{budget_id}/consumption": {
+      "get": {
+        "description": "Detailed consumption of a visible budget at `as_of` (default = today, D9).\n\nVisibility is checked first (`get_visible_budget` \u2192 404 watertight, D3), then\nthe read delegates to `compute_consumption` (RBAC-blind, gabarit S08.2). The\n`consumption is None` branch is structurally unreachable here \u2014 after a\nnon-`None` `get_visible_budget` in the same transaction, `compute_consumption`\nonly returns `None` for an unknown id \u2014 so it is a documented defensive guard\n(`# pragma: no cover`), not a tested 404 path.",
+        "operationId": "get_budget_consumption_route_budgets__budget_id__consumption_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "budget_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Budget Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BudgetConsumptionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Budget Consumption Route",
+        "tags": [
+          "budgets"
+        ]
+      }
+    },
+    "/budgets/{budget_id}/contributing-splits": {
+      "get": {
+        "description": "Paginated drill-down of the splits contributing to the budget's consumption.\n\nVisibility is checked first (`get_visible_budget` \u2192 404 watertight, D3) \u2014 the\ncursor is decoded only after, and the query stays bounded to `budget_id`, so a\ncursor lifted from another budget cannot widen the perimeter. A malformed\ncursor \u2192 422 (never a 500). The page is consistent with `splits_count` of the\nconsumption (same `_consumption_filters`, D13).",
+        "operationId": "list_contributing_splits_route_budgets__budget_id__contributing_splits_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "budget_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Budget Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "As Of"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContributingSplitsListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Contributing Splits Route",
+        "tags": [
+          "budgets"
+        ]
+      }
+    },
+    "/categories": {
+      "get": {
+        "description": "List categories (flat). `include_archived=false` (default) excludes tombstones.",
+        "operationId": "list_categories_route_categories_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "include_archived",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Archived",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/CategoryResponse"
+                  },
+                  "title": "Response List Categories Route Categories Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Categories Route",
+        "tags": [
+          "categories"
+        ]
+      },
+      "post": {
+        "description": "Create a category (optional `parent_id`); 422 on cycle / unknown parent.\n\nThe cycle guard is vacuous on create (the id is server-side, the node has\nno descendants), but kept symmetric with the move route. An unknown\n`parent_id` trips the self-FK at flush (23503) \u2192 422, since `parent_id` is\na body reference (gabarit accounts \"unknown member\"). Any other SQLSTATE is\na real bug \u2192 re-raise \u2192 500.",
+        "operationId": "create_category_route_categories_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Category Route",
+        "tags": [
+          "categories"
+        ]
+      }
+    },
+    "/categories/{category_id}": {
+      "delete": {
+        "description": "Soft-delete (archive) a category; never a hard delete (D9).\n\nThe row is preserved with `archived_at` set, and drops out of the default\nlisting. A re-DELETE of an already-archived category \u2192 404 (idempotent in\nthe \"no corruption\" sense, gabarit `accounts.archive`). The hard-delete\nservice (`delete_category`) is deliberately NOT routed (D8): a category\nwith children is archived here, never refused.",
+        "operationId": "delete_category_route_categories__category_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "category_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Category Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Category Route",
+        "tags": [
+          "categories"
+        ]
+      },
+      "patch": {
+        "description": "Edit `name`/`color`/`icon` (partial); 404 if unknown or archived.\n\nA `parent_id` in the body is a 422 (`extra=\"forbid\"` \u2014 re-parenting has its\nown route). An archived category is invisible \u2192 uniform 404 (D10).",
+        "operationId": "patch_category_route_categories__category_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "category_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Category Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Patch Category Route",
+        "tags": [
+          "categories"
+        ]
+      }
+    },
+    "/categories/{category_id}/parent": {
+      "patch": {
+        "description": "Re-parent a category and audit the move in the **same** transaction (D5/D6).\n\nThe cycle check runs *before* the write, so a rejected move (422) raises\nbefore the audit call \u2014 no audit row, no mutation (crit\u00e8re #4). On success\n`move_category` and `log_admin_action` share the transaction `get_db`\nowns: if the audit INSERT fails, the move rolls back too (atomic pair).\nA concurrent mover that loses the serialisation race surfaces as 40001 \u2192\n409 retry, never a 500 or a silently-created cycle (D7).",
+        "operationId": "move_category_route_categories__category_id__parent_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "category_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Category Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CategoryMove"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Move Category Route",
+        "tags": [
+          "categories"
+        ]
+      }
+    },
+    "/debts": {
+      "get": {
+        "description": "Dettes du user courant (p\u00e9rim\u00e8tre d\u00e9riv\u00e9 du token, D7/D9).\n\n`direction` borne le sens (`all`/`owed_to_me`/`owed_by_me`) ; `with` filtre la\ncontrepartie APR\u00c8S bornage \u2014 jamais un s\u00e9lecteur de propri\u00e9taire (anti-IDOR).\n`source_transaction_id`/`account_id` sont `null` quand le caller est d\u00e9biteur ;\n`materialization_trace` n'appara\u00eet jamais (allowlist). Une `direction` invalide\n\u2192 422 natif FastAPI (validation enum).",
+        "operationId": "list_debts_route_debts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "direction",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/DebtDirection",
+              "default": "all"
+            }
+          },
+          {
+            "in": "query",
+            "name": "with",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "With"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DebtListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Debts Route",
+        "tags": [
+          "debts"
+        ]
+      }
+    },
+    "/debts/by-counterparty": {
+      "get": {
+        "description": "Net orient\u00e9 par contrepartie pour le user courant (p\u00e9rim\u00e8tre d\u00e9riv\u00e9 du token).\n\nPasse par le M\u00caME helper de bornage/masquage que `GET /debts`\n(`aggregate_by_counterparty` \u2192 `list_debts_for_user`) \u2014 aucun champ source\nne transite dans l'agr\u00e9gat (non-fuite par construction).",
+        "operationId": "debts_by_counterparty_route_debts_by_counterparty_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CounterpartyListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Debts By Counterparty Route",
+        "tags": [
+          "debts"
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Healthz Healthz Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Healthz"
+      }
+    },
+    "/imports/ofx/commit": {
+      "post": {
+        "description": "Cr\u00e9e un `draft` par ligne non dupliqu\u00e9e + journalise son `import_hash`.\n\nOrchestration au composition root (D1). Gates : (a) compte cible accessible\n(404, D8a) ; (b) chaque r\u00e9f du fichier li\u00e9e \u00e0 CE compte (422, D8b) ; (c) devise\ndu fichier == devise du foyer (422, D6b ; foyer non initialis\u00e9 \u2192 409 curat\u00e9).\nDedup D9 : `known_import_hashes` +\nset `seen` intra-batch. Chaque ligne retenue \u2192 `create_draft` + `add_split`\n(jambe `funding`, reste `draft`, D6) + `record_imported`. AUCUN commit (D10) :\n`get_db` commite \u00e0 la sortie ; une exception \u2192 rollback total (atomicit\u00e9).\n`user_overrides` accept\u00e9 mais ignor\u00e9 (D11 \u2014 cat\u00e9gorisation manuelle). PII\njamais logg\u00e9e.",
+        "operationId": "commit_import_imports_ofx_commit_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_commit_import_imports_ofx_commit_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportResultOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Commit Import",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/imports/ofx/link-account": {
+      "post": {
+        "description": "Lie `(external_ref, provider)` \u00e0 un compte interne accessible (D8).\n\nGate accessibilit\u00e9 AVANT `link` (404 non-disclosure, admin non exempt, F03) :\non ne r\u00e9v\u00e8le jamais l'existence d'un compte d'autrui. Puis `link` :\ndouble-lien \u2192 409, provider inconnu \u2192 422. Flush-only (ADR 0015).",
+        "operationId": "link_account_imports_ofx_link_account_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LinkAccountIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LinkAccountOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Link Account",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/imports/ofx/preview": {
+      "post": {
+        "description": "Analyse un OFX upload\u00e9 \u2192 `ImportPreviewOut` (read-only, D10).\n\nGate D7 : si UN SEUL `external_ref` du fichier est non-li\u00e9 OU li\u00e9 \u00e0 un compte\n\u2209 `accessible_account_ids(user)` \u2192 422 `account_not_linked` (corps statique\npartag\u00e9, non-disclosure). Sinon \u2192 `analyze_import`. PII jamais logg\u00e9e.",
+        "operationId": "preview_import_imports_ofx_preview_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_preview_import_imports_ofx_preview_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportPreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Import",
+        "tags": [
+          "imports"
+        ]
+      }
+    },
+    "/invitations": {
+      "get": {
+        "description": "List pending invitations (`accepted_at IS NULL AND revoked_at IS NULL`).\n\nAdmin-only, newest first. Not audited (a read). `response_model`\nstructurally excludes `token_hash` even though the ORM rows are returned\nwhole.",
+        "operationId": "list_pending_invitations_invitations_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/InvitationResponse"
+                  },
+                  "title": "Response List Pending Invitations Invitations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Pending Invitations",
+        "tags": [
+          "invitations"
+        ]
+      },
+      "post": {
+        "description": "Create a pending invitation; return the raw token + accept link once.\n\nAdmin-only. The raw token is returned **once** in the body (and logged\nonce for manual transmission \u2014 see `_log_invitation_link`); only its\nsha256 digest is persisted. A pre-existing pending invitation for the\nsame email is a 409 (both on the sequential pre-check and on the\nconcurrent partial-index race), never a 500.",
+        "operationId": "create_invitation_invitations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationCreatedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Invitation",
+        "tags": [
+          "invitations"
+        ]
+      }
+    },
+    "/invitations/{invitation_id}": {
+      "delete": {
+        "description": "Revoke a pending invitation (`revoked_at = now`); 204, admin-only.\n\nThe row stays in the DB (audit). Idempotent on an already-revoked\ninvitation (the service is a silent no-op \u2192 still 204, and still audited\n\u2014 every successful HTTP action writes one row). Unknown id \u2192 404; an\naccepted invitation \u2192 409.",
+        "operationId": "revoke_invitation_invitations__invitation_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invitation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Invitation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke Invitation",
+        "tags": [
+          "invitations"
+        ]
+      }
+    },
+    "/invitations/{invitation_id}/regenerate": {
+      "post": {
+        "description": "Rotate a pending invitation's token; return the new raw token once.\n\nAdmin-only. The old `/accept-invite?token=...` link stops working the\nmoment this commits. Unknown id \u2192 404; an accepted or revoked invitation\n\u2192 409 (the 410 is reserved for the token-consumption endpoint in S04.5).",
+        "operationId": "regenerate_invitation_invitations__invitation_id__regenerate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invitation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Invitation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationCreatedResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Regenerate Invitation",
+        "tags": [
+          "invitations"
+        ]
+      }
+    },
+    "/settlements": {
+      "get": {
+        "description": "Settlements between the caller and `with` (scope derived from the token).\n\nThe perimeter is bounded by the token (`caller = user.id`); `with` is a\ncounterparty filter applied AFTER bounding (anti-IDOR) \u2014 never a selector of\nsomeone else's settlements. Includes settlements of fully-settled debts (D9).",
+        "operationId": "list_settlements_route_settlements_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "with",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "With",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettlementListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Settlements Route",
+        "tags": [
+          "debts"
+        ]
+      },
+      "post": {
+        "description": "Create a multi-debt settlement (201) in one DB transaction.\n\n`by_user_id` is the token's user (D7), never the body. Every rejection maps to\na curated 4xx (404 inaccessible/unknown debt or linked tx, incl. cross-foyer;\n422 non-confirmed / non-transfer tx + every `SettlementValidator` invariant;\n409 on a lost serialisation race) \u2014 never a 500.",
+        "operationId": "create_settlement_route_settlements_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettlementCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettlementResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Settlement Route",
+        "tags": [
+          "debts"
+        ]
+      }
+    },
+    "/settlements/{settlement_id}": {
+      "get": {
+        "description": "Detail of a settlement (meta + visible lines + masked referenced debts).\n\nRBAC: the caller must be party to AT LEAST ONE debt of the settlement \u2192 else a\nuniform 404 (anti-oracle). The lines AND debts returned are restricted to the\ndebts the caller is party to (S-M1); referenced debts are masked via the\ncentralised S09.4 path (debtor never sees `source_transaction_id`/`account_id`;\n`materialization_trace` never exposed).",
+        "operationId": "get_settlement_route_settlements__settlement_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "settlement_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Settlement Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettlementDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Settlement Route",
+        "tags": [
+          "debts"
+        ]
+      }
+    },
+    "/setup": {
+      "get": {
+        "description": "Probe whether `/setup` is still open.\n\nReturns `{\"status\": \"open\"}` with 200 when the deployment has not\nyet been initialised; 404 once any user exists or the household\nsingleton row has been inserted. The frontend uses this to decide\nwhether to render the bootstrap form vs the login page.",
+        "operationId": "setup_form_setup_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Setup Form Setup Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Setup Form",
+        "tags": [
+          "setup"
+        ]
+      },
+      "post": {
+        "description": "Bootstrap the deployment: create the first admin + init household.\n\nWrapped in a single `get_db` transaction \u2014 household INSERT, user\nINSERT, refresh-token INSERT all live or die together. The DB\nconstraints (PK on `household.id`, UNIQUE on `lower(email)`)\nbackstop the precheck race window. Any `DBAPIError` with a\nrace-lost SQLSTATE (23505/23514/40001) collapses to 404; anything\nelse re-raises so app-level bugs surface as 500.\n\nReturns a `TokenPair` so the new admin is logged in immediately \u2014\nno second round-trip to `/auth/login` required.",
+        "operationId": "setup_submit_setup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenPair"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Setup Submit",
+        "tags": [
+          "setup"
+        ]
+      }
+    },
+    "/share-requests/{share_request_id}": {
+      "delete": {
+        "description": "Revoke a `ShareRequest` + hard-delete its `Debt` (idempotent, 204).\n\nOnly the `requested_by` (creditor) may revoke; anyone else gets a uniform\n404 (anti-oracle \u2014 never confirm another user's SR exists). Re-revoking an\nalready-revoked SR is a no-op (still 204).",
+        "operationId": "revoke_share_request_route_share_requests__share_request_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "share_request_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Share Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revoke Share Request Route",
+        "tags": [
+          "debts"
+        ]
+      }
+    },
+    "/sse/stream": {
+      "get": {
+        "description": "Flux SSE authentifi\u00e9 par le token query (ADR 0012). 401 si token invalide,\n429 si le user d\u00e9passe son plafond de connexions (v\u00e9rifi\u00e9 AVANT de streamer).",
+        "operationId": "stream_sse_stream_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Stream",
+        "tags": [
+          "sse"
+        ]
+      }
+    },
+    "/sse/token": {
+      "post": {
+        "description": "\u00c9met un token SSE scop\u00e9 5 min pour le user authentifi\u00e9 (ADR 0012).\n\nLe client ouvre ensuite `GET /sse/stream?token=<token>`. Le token a l'audience\n`prosperity-sse` (cloisonn\u00e9e de l'access token, ADR 0016) et expire en 5 min.",
+        "operationId": "issue_token_sse_token_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SseTokenResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Issue Token",
+        "tags": [
+          "sse"
+        ]
+      }
+    },
+    "/sync/upload": {
+      "post": {
+        "description": "`POST /sync/upload` \u2014 un `WriteResult` par mutation, dans l'ordre du batch.\n\nLe statut est 200 m\u00eame si toutes les mutations \u00e9chouent : chaque erreur est un\nack typ\u00e9 `WriteResult.error`, pas un statut HTTP. 401 = token absent/invalide\n(`get_current_user`) ; 422 = enveloppe malform\u00e9e / `> MAX_MUTATIONS` (Pydantic).\nAucun `commit()` ici : `process_batch` committe par mutation (S13.6/ADR 0015).",
+        "operationId": "upload_sync_upload_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchUpload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WriteResult"
+                  },
+                  "title": "Response Upload Sync Upload Post",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Upload",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/transactions": {
+      "get": {
+        "description": "List the transactions of the caller's accessible accounts, paginated (D4/D12).\n\nWatertight by membership: only accounts the caller can reach are scanned\n(`accessible_account_ids`), so the admin is not exempt and a new user gets an\nempty page. An explicit `?account_id=X` the caller cannot reach is a **404**\n(targeted resource, non-disclosure) \u2014 not a silent empty list. Filters\n`from`/`to`/`state` narrow the page; a malformed `cursor` is a 422.",
+        "operationId": "list_transactions_route_transactions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "account_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Account Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/TransactionState"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Transactions Route",
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
+    "/transactions/{tx_id}": {
+      "patch": {
+        "description": "Edit only the allowed fields `{category_id, tags, description,\ndebt_generation_override}` (P07.5.3).\n\n`extra=\"forbid\"` makes any frozen field (`amount_cents`, `account_id`, `date`,\n`payee`, `splits`, `state`) a 422 at the schema \u2014 never a silent no-op (the\nAC). `exclude_unset` passes only the fields actually present, so a `{}` body\nis a no-op (no wipe-to-None). On a `confirmed` transaction the service runs\n`check_mutation_allowed`; since all four allowed fields are editable, an\n`ImmutableFieldViolation` cannot fire via this route \u2014 the 409 mapping stays\na defensive guard. Two fail-closed FK/CHECK backstops map to 422 (never a\n500 on body data): `23514` (bad `debt_generation_override`, pre-empted by the\n`Literal`) and `23503` (a `category_id` editing to a row that does not exist\n\u2014 RESTRICT, now propagated to the classification leg too, S11.4).",
+        "operationId": "patch_transaction_transactions__tx_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tx_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tx Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransactionPatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Patch Transaction",
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
+    "/transactions/{tx_id}/confirm": {
+      "post": {
+        "description": "`planned \u2192 confirmed`: zero-sum + every expense split categorised.\n\nA gate failure (unbalanced/uncategorized/mixed currency) \u2192 422; an illegal\ntransition (e.g. `draft \u2192 confirmed`) \u2192 409 \u2014 never a 500.",
+        "operationId": "confirm_transaction_transactions__tx_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tx_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tx Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Confirm Transaction",
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
+    "/transactions/{tx_id}/plan": {
+      "post": {
+        "description": "`draft \u2192 planned`, refusing an unbalanced transaction (422).\n\n`confirmed \u2192 planned` is refused with 409 (ADR 0001 \u2014 reopening a confirmed\ntransaction's amounts is forbidden).",
+        "operationId": "plan_transaction_transactions__tx_id__plan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tx_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tx Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Plan Transaction",
+        "tags": [
+          "transactions"
+        ]
+      }
+    },
+    "/transactions/{tx_id}/share-requests": {
+      "post": {
+        "description": "Create a `ShareRequest` + materialise its `Debt` in one DB transaction.\n\n`by_user_id` is the token's user (D7), never the body. Every rejection maps\nto a curated 4xx (404 inaccessible/unknown tx; 422 non-shareable account /\nnon-confirmed tx / non-member / self-share / ratio / label / non-positive\nexpense / degenerate rounding; 409 active duplicate) \u2014 never a 500.",
+        "operationId": "create_share_request_route_transactions__tx_id__share_requests_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tx_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tx Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ShareRequestCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareRequestResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Share Request Route",
+        "tags": [
+          "debts"
+        ]
+      }
+    },
+    "/transactions/{tx_id}/void": {
+      "post": {
+        "description": "`* \u2192 void` (terminal). A `void \u2192 void` re-void is a 409 (terminal state).\n\n`reason` (optional, bounded) rides the event payload only (no V1 column);\nthe boundary never logs it raw (PII / log-injection).",
+        "operationId": "void_transaction_transactions__tx_id__void_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tx_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Tx Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/VoidRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TransactionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Void Transaction",
+        "tags": [
+          "transactions"
+        ]
+      }
+    }
+  }
+}

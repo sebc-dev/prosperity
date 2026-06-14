@@ -3,6 +3,8 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
 import { afterAll, afterEach, beforeAll, vi } from 'vitest'
 
+import { tokenStore } from '@/lib/auth/token-store'
+
 import { server } from './msw/server'
 
 // `setupFiles` s'exécute pour TOUS les fichiers de test, y compris ceux en
@@ -41,6 +43,13 @@ beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' })
 })
 afterEach(() => {
+  // Purge le token-store mémoire entre tests (anti-fuite : un `login()` laisserait un token
+  // peuplé visible du test suivant). On reset via le LEAF `token-store` (zéro import) et NON via
+  // `session.ts` : ce dernier tire `lib/storage` → `@aparajita/capacitor-secure-storage`, dont
+  // l'import eager casserait le `vi.mock(...)` de `storage.test.ts`. Un éventuel `setTimeout` de
+  // refresh resté armé devient INOFFENSIF après ce reset : au tir, `refresh()` ne trouve plus de
+  // refresh token → purge locale, AUCUN appel réseau (pas de faux-rouge sous onUnhandledRequest:error).
+  tokenStore.set(null)
   server.resetHandlers() // purge les handlers ad-hoc (anti-fuite d'état inter-tests)
   if (isDom) {
     cleanup() // démonte les composants Testing Library

@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { v5 as uuidv5 } from 'uuid'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
+import { tokenStore } from '@/lib/auth/token-store'
 import { setAdoptSink, type AdoptedId } from '@/lib/powersync/adopt'
 import type { BatchUpload, WriteResult } from '@/lib/powersync/protocol'
 import { NS, uploadData } from '@/lib/powersync/upload'
@@ -65,12 +66,13 @@ const ok = (client_request_id: string, server_values?: Record<string, unknown>):
 
 beforeEach(() => {
   vi.stubEnv('VITE_API_BASE_URL', API)
-  localStorage.setItem('prosperity-jwt', 'tok')
+  // `getToken()` lit désormais le token-store mémoire (rewire S14.6), plus `localStorage` brut.
+  tokenStore.set({ accessToken: 'tok', refreshToken: 'rt', accessExp: 4_102_444_800 })
   toastError.mockClear()
 })
 afterEach(() => {
   vi.unstubAllEnvs()
-  localStorage.clear()
+  tokenStore.set(null)
   setAdoptSink(() => {})
 })
 
@@ -283,7 +285,7 @@ describe('uploadData — gardes & sûreté-données', () => {
   })
 
   test('token absent : Authorization "Bearer " → (ici 401) throw, batch conservé', async () => {
-    localStorage.clear() // pas de JWT
+    tokenStore.set(null) // pas de JWT
     const db = createMockPowerSync()
     db.enqueueCrud([PUT_ACC])
     const captured = interceptUpload(() => new HttpResponse(null, { status: 401 }))

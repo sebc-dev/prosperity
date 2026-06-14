@@ -1,6 +1,8 @@
 dist
 coverage
 src/routeTree.gen.ts
+src/lib/api/schema.d.ts
+openapi.json
 package-lock.json
 drizzle
 android

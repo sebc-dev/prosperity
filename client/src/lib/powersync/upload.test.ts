@@ -174,6 +174,42 @@ describe('uploadData — 200 (succès / erreurs typées)', () => {
     expect(toastError).not.toHaveBeenCalledWith(expect.stringContaining('secret'))
   })
 
+  test('code d’erreur INCONNU (forward-compat) → toast GENERIC (fallback ?? GENERIC)', async () => {
+    const db = createMockPowerSync()
+    db.enqueueCrud([PUT_ACC])
+    // Le serveur évolue et renvoie un code hors du vocabulaire fermé → on retombe sur GENERIC.
+    interceptUpload(() =>
+      HttpResponse.json([
+        {
+          client_request_id: rid(1),
+          success: false,
+          error: { code: 'code_du_futur', message: 'x' },
+        },
+      ]),
+    )
+
+    await uploadData(asPowerSync(db))
+
+    expect(toastError).toHaveBeenCalledTimes(1)
+    expect(toastError).toHaveBeenCalledWith('Une erreur est survenue.')
+    expect(db.hasPendingCrud).toBe(false)
+  })
+
+  test('succès avec client_request_id ORPHELIN (aucune CrudEntry) → pas d’adoption, pas de crash', async () => {
+    const db = createMockPowerSync()
+    db.enqueueCrud([PUT_ACC])
+    const adopted: AdoptedId[] = []
+    setAdoptSink((e) => adopted.push(e))
+    // Le serveur renvoie un id qui ne correspond à aucune mutation envoyée (byId.get → undefined).
+    interceptUpload(() =>
+      HttpResponse.json([ok('00000000-0000-0000-0000-000000000000', { id: 'srv-x' })]),
+    )
+
+    await expect(uploadData(asPowerSync(db))).resolves.toBeUndefined()
+    expect(adopted).toEqual([]) // garde `if (entry)` : aucun sink émis
+    expect(db.hasPendingCrud).toBe(false)
+  })
+
   test('corrélation par id : WriteResult[] DÉSORDONNÉ → adoption jointe à la bonne CrudEntry', async () => {
     const ins1 = crudEntry({ clientId: 10, op: UpdateType.PUT, table: 'accounts', id: 'loc-10' })
     const ins2 = crudEntry({

@@ -1,11 +1,11 @@
-import { CheckIcon, RefreshCwIcon, WifiOffIcon } from 'lucide-react'
+import { CheckIcon, RefreshCwIcon, WifiOffIcon, type LucideIcon } from 'lucide-react'
 
 import { useSyncStatus, type SyncState } from '@/hooks/use-sync-status'
 import { cn } from '@/lib/utils'
 
 // Badge d'état de synchronisation : surface UI de `useSyncStatus` (3 états). `role="status"`
 // + `aria-label` → accessible et assertable sans introspection interne.
-const META: Record<SyncState, { label: string; Icon: typeof CheckIcon; className: string }> = {
+const META: Record<SyncState, { label: string; Icon: LucideIcon; className: string }> = {
   offline: { label: 'Hors ligne', Icon: WifiOffIcon, className: 'text-muted-foreground' },
   syncing: { label: 'Synchronisation…', Icon: RefreshCwIcon, className: 'text-muted-foreground' },
   synced: { label: 'À jour', Icon: CheckIcon, className: 'text-green-600 dark:text-green-500' },

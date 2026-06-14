@@ -19,8 +19,18 @@ function renderOn(mock: MockPowerSyncDatabase) {
 }
 
 describe('useSyncStatus', () => {
-  test('déconnecté → "offline"', () => {
+  test('déconnecté → "offline" (+ lastSyncedAt undefined)', () => {
     const { result } = renderOn(createMockPowerSync()) // connected:false par défaut
+    expect(result.current.state).toBe('offline')
+    expect(result.current.lastSyncedAt).toBeUndefined()
+  })
+
+  test('priorité "offline" : déconnecté MAIS downloading (reconnexion en cours) → "offline"', () => {
+    // PowerSync peut publier downloading:true pendant la (re)connexion ; !connected prime.
+    // Verrouille l'ordre du ternaire (une inversion ferait basculer en "syncing").
+    const mock = createMockPowerSync()
+    mock.simulateDataFlow({ downloading: true }) // connected reste false
+    const { result } = renderOn(mock)
     expect(result.current.state).toBe('offline')
   })
 
@@ -30,6 +40,7 @@ describe('useSyncStatus', () => {
     mock.simulateDataFlow({ downloading: true })
     const { result } = renderOn(mock)
     expect(result.current.state).toBe('syncing')
+    expect(result.current.lastSyncedAt).toBeUndefined() // pas encore de synchro complète
   })
 
   test('connecté + uploading → "syncing"', () => {

@@ -32,9 +32,21 @@ describe('SyncStatusBadge', () => {
     )
   })
 
-  test('synced → libellé "À jour"', () => {
-    setState('synced', new Date(0))
+  test('synced → libellé "À jour" (+ title = heure de dernière synchro)', () => {
+    const at = new Date(0)
+    setState('synced', at)
     render(<SyncStatusBadge />)
-    expect(screen.getByRole('status', { name: 'À jour' })).toHaveTextContent('À jour')
+    const badge = screen.getByRole('status', { name: 'À jour' })
+    expect(badge).toHaveTextContent('À jour')
+    // title porte l'horodatage (assertion sur la présence du préfixe, pas l'heure locale exacte).
+    expect(badge).toHaveAttribute('title', expect.stringContaining('Dernière synchro'))
+  })
+
+  test('synced SANS lastSyncedAt (avant 1ʳᵉ synchro) → title retombe sur le libellé', () => {
+    setState('synced', undefined)
+    render(<SyncStatusBadge />)
+    const badge = screen.getByRole('status', { name: 'À jour' })
+    expect(badge).toHaveTextContent('À jour')
+    expect(badge).toHaveAttribute('title', 'À jour') // branche title=label
   })
 })

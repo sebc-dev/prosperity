@@ -2,12 +2,14 @@ import { render, screen } from '@testing-library/react'
 import { StrictMode } from 'react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
+import { UpdateType } from '@powersync/web'
+
 import { usePowerSync } from '@powersync/react'
 
 import { PowerSyncProvider } from '@/app/powersync-provider'
 import { useDrizzle } from '@/lib/drizzle/context'
 import { getPowerSync } from '@/lib/powersync/client'
-import { createMockPowerSync, type MockPowerSyncDatabase } from '@tests/mocks/powersync'
+import { createMockPowerSync, crudEntry, type MockPowerSyncDatabase } from '@tests/mocks/powersync'
 import type { SQLiteDatabase } from '@/lib/drizzle/types'
 
 // Seam d'injection (§3.6) : pas de point d'injection naturel sur le singleton module-level
@@ -88,6 +90,26 @@ describe('MockPowerSyncDatabase', () => {
     expect(m.currentStatus.connected).toBe(true)
     m.simulateOffline()
     expect(m.currentStatus.connected).toBe(false)
+  })
+
+  test('getCrudBatch idempotent jusqu’à complete() (invariant load-bearing du replay P14.4.2)', async () => {
+    const m = createMockPowerSync()
+    m.enqueueCrud([
+      crudEntry({ clientId: 1, op: UpdateType.PUT, table: 'accounts', id: 'a1' }),
+      crudEntry({ clientId: 2, op: UpdateType.PATCH, table: 'transactions', id: 't1' }),
+    ])
+
+    // Deux lectures successives SANS complete() re-servent le MÊME crud[] (anti double-write).
+    const batch1 = await m.getCrudBatch()
+    const batch2 = await m.getCrudBatch()
+    expect(batch1?.crud.map((e) => e.id)).toEqual(['a1', 't1'])
+    expect(batch2?.crud.map((e) => e.id)).toEqual(['a1', 't1'])
+    expect(m.hasPendingCrud).toBe(true)
+
+    // complete() purge la queue → la lecture suivante renvoie null.
+    await batch1?.complete()
+    expect(m.hasPendingCrud).toBe(false)
+    expect(await m.getCrudBatch()).toBeNull()
   })
 
   test('isolation de contexte : deux instances = deux jeux de données disjoints (AC « 2 users »)', () => {

@@ -80,12 +80,12 @@ export async function uploadData(db: AbstractPowerSyncDatabase): Promise<void> {
   // 200 : un WriteResult par mutation. On route chacun vers SA CrudEntry (via byId).
   const results = (await res.json()) as WriteResult[]
   for (const r of results) {
-    const entry = byId.get(r.client_request_id)
     if (!r.success && r.error) {
       // Message MAPPÉ FR depuis le code (jamais `error.message` serveur) ; fallback si code inconnu.
       toast.error(WRITE_ERROR_MESSAGES[r.error.code] ?? GENERIC)
-    } else if (r.success && r.server_values && entry) {
-      adoptServerValues(entry, r.server_values) // capture observable de l'id serveur (D9)
+    } else if (r.success && r.server_values) {
+      const entry = byId.get(r.client_request_id) // corrélation ; ignore un id orphelin
+      if (entry) adoptServerValues(entry, r.server_values) // capture observable de l'id serveur (D9)
     }
   }
   await batch.complete() // purge le batch traité (typed-errors incluses : permanentes)

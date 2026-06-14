@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { StrictMode } from 'react'
-import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi, type MockInstance } from 'vitest'
 
 import { UpdateType } from '@powersync/web'
 
@@ -32,7 +32,7 @@ function Probe() {
   return <span data-testid="probe">{ps ? 'ok' : 'ko'}</span>
 }
 
-let consoleError: ReturnType<typeof vi.spyOn>
+let consoleError: MockInstance<typeof console.error>
 beforeEach(() => {
   mock().reset() // le mock est partagé via le module mocké → état neuf à chaque test
   consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})

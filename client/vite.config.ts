@@ -1,11 +1,10 @@
 import tailwindcss from '@tailwindcss/vite'
 import { tanstackRouter } from '@tanstack/router-plugin/vite'
-import react from '@vitejs/plugin-react-swc'
-import tsconfigPaths from 'vite-tsconfig-paths'
+import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 
 // Une seule version de Vite (override `vite: $vite` dans package.json) → `vitest/config`
-// et les plugins sont typés contre le même vite@6 (sinon clash PluginOption v5/v6).
+// et les plugins sont typés contre le même vite@8 (sinon clash PluginOption).
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -24,8 +23,10 @@ export default defineConfig({
     // `@import "tailwindcss"` dans src/index.css suffit (D1).
     tailwindcss(),
     react(),
-    tsconfigPaths(),
   ],
+  // Résolution des `paths` tsconfig (`@/*`, `@tests/*`) native à Vite 8 (remplace
+  // `vite-tsconfig-paths`) ; héritée par Vitest.
+  resolve: { tsconfigPaths: true },
   // PowerSync Web (S14.4) charge SQLite (wa-sqlite) dans un Web Worker qui fait du
   // code-splitting (import dynamique du wasm) → format ES obligatoire (le défaut `iife`
   // ne supporte pas le code-splitting). `optimizeDeps.exclude` évite que esbuild pré-bundle

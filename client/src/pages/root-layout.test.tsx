@@ -1,5 +1,5 @@
 import { screen } from '@testing-library/react'
-import { afterEach, beforeEach, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, expect, test, vi, type MockInstance } from 'vitest'
 
 import { renderWithProviders } from '@tests/render'
 
@@ -12,7 +12,7 @@ vi.mock('@/lib/powersync/client')
 // (→ matchMedia/localStorage) + <PowerSyncProvider> + <Toaster/>. renderWithProviders({route})
 // monte ce VRAI root ; les tests S14.1 routés (not-found…) le traversent → on ne le tient
 // pas « vert par foi », on prouve qu'il monte sans throw ni erreur console.
-let consoleError: ReturnType<typeof vi.spyOn>
+let consoleError: MockInstance<typeof console.error>
 
 beforeEach(() => {
   consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})

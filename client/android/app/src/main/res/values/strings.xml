@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Prosperity</string>
+    <string name="title_activity_main">Prosperity</string>
+    <string name="package_name">dev.prosperity.app</string>
+    <string name="custom_url_scheme">dev.prosperity.app</string>
+</resources>

@@ -20,7 +20,7 @@ Livrable agrégé : `npm run dev` démarre Vite, l'app charge, on peut se login,
 
 > **Deltas appliqués à la création des stories (#205-#211)** — réconciliation vs cette baseline :
 > - **Delta A — harness de test déplacé S14.7 → S14.1.** Le setup Vitest + Testing Library + MSW était en S14.7 (dernière story) alors que S14.3/S14.4/S14.6 (antérieures) écrivent des tests Vitest/MSW : c'est un **prérequis**, donc il migre en **P14.1.3**. Le `MockPowerSyncDatabase` (§5.3) reste en S14.4. S14.7 devient *SSE wrapper + CI* (2 phases). Total inchangé : 19 phases.
-> - **Delta B — endpoint SSE backend absent.** S14.7 (wrapper SSE) consomme `POST /sse/token` + un flux `text/event-stream` qui **n'existent pas** côté backend (ADR 0012 les conçoit, aucune story ne les implémente). Le wrapper reste *buildable + testable via MSW* ; l'**intégration réelle** est bloquée par une **story backend SSE à créer**. Issue #211 marquée `needs-info`.
+> - **Delta B — endpoint SSE backend ~~absent~~ LIVRÉ (résolu 2026-06-15).** S14.7 (wrapper SSE) consomme `POST /sse/token` + un flux `text/event-stream`. Ces endpoints **existent désormais** : livrés par **S17.1 (#214, epic E17)** — module `backend/modules/sse/` (token `aud=prosperity-sse` TTL 5 min, stream `?token=…`, heartbeat 30s, resume `Last-Event-ID`, ring 5 min/100 events). L'intégration de S14.7 n'est **plus bloquée** : le wrapper se teste via MSW contre le **contrat réel** (plus « supposé via ADR »). Label `needs-info` retiré de #211.
 
 ### S14.1 — Vite + React 19 + TypeScript + harness de test
 
@@ -85,7 +85,7 @@ Livrable agrégé : `npm run dev` démarre Vite, l'app charge, on peut se login,
 
 ### S14.7 — SSE wrapper + CI frontend
 
-> **(Delta B)** Le wrapper SSE consomme un endpoint backend (`POST /sse/token` + flux `text/event-stream`) **non encore implémenté** : développable + testable via MSW, mais l'intégration réelle attend une story backend SSE. Issue #211 en `needs-info`. **(Delta A)** Le setup Vitest/MSW a migré en S14.1 (P14.1.3) — il ne figure plus ici.
+> **(Delta B — résolu 2026-06-15)** Le wrapper SSE consomme `POST /sse/token` + un flux `text/event-stream` désormais **livrés par S17.1 (#214, E17)** : l'intégration n'est plus bloquée, le wrapper se teste via MSW contre le contrat réel. Label `needs-info` retiré de #211. **(Delta A)** Le setup Vitest/MSW a migré en S14.1 (P14.1.3) — il ne figure plus ici.
 
 | Phase | Description | Diff |
 |---|---|---|

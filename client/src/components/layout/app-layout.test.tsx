@@ -26,10 +26,14 @@ test('header : logo + badge synchro + bascule thème + menu user, et la nav list
   expect(screen.getAllByRole('link', { name: /comptes/i }).length).toBeGreaterThan(0)
 })
 
-test('menu user : ouverture → Réglages + Se déconnecter', async () => {
+test('menu user : fermé par défaut → ouverture → Réglages + Se déconnecter', async () => {
   const user = userEvent.setup()
   renderWithProviders(null, { route: '/' })
-  await user.click(await screen.findByRole('button', { name: 'Alice' }))
+  // Fermé par défaut : aucun item de menu rendu tant que le déclencheur n'est pas activé.
+  await screen.findByRole('button', { name: 'Alice' })
+  expect(screen.queryByRole('menuitem')).not.toBeInTheDocument()
+  // Ouverture → les items apparaissent (prouve que le clic change réellement l'état du dropdown).
+  await user.click(screen.getByRole('button', { name: 'Alice' }))
   expect(await screen.findByRole('menuitem', { name: /réglages/i })).toBeInTheDocument()
   expect(screen.getByRole('menuitem', { name: /se déconnecter/i })).toBeInTheDocument()
 })

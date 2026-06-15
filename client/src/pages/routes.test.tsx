@@ -15,6 +15,7 @@ vi.mock('@/hooks/use-current-user', () => ({
 }))
 
 const PROTECTED = [
+  ['/', /tableau de bord/i],
   ['/accounts', /comptes/i],
   ['/transactions', /transactions/i],
   ['/budgets', /budgets/i],

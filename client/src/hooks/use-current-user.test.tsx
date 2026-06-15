@@ -9,7 +9,7 @@ import { useQuery } from '@powersync/react'
 import { useCurrentUser } from '@/hooks/use-current-user'
 import { DrizzleContext } from '@/lib/drizzle/context'
 import type { SQLiteDatabase } from '@/lib/drizzle/types'
-import { seedAuth } from '@tests/auth'
+import { makeTestJwt, seedAuth } from '@tests/auth'
 
 // Câblage (gabarit `use-debts-for-current-user.test.tsx`) : `useQuery` mocké → on prouve l'appel
 // avec une query compilable + la dérivation `isAdmin`/`user`. `seedAuth()` fournit le `userId`.
@@ -32,8 +32,10 @@ function mockRow(role: 'admin' | 'member' | null) {
 }
 
 describe('useCurrentUser', () => {
-  test('admin → isAdmin=true + user exposé ; query compilable', () => {
-    seedAuth()
+  test('admin → isAdmin=true + user exposé ; query liée à l’userId courant', () => {
+    seedAuth({
+      accessToken: makeTestJwt({ sub: 'user-42', exp: Math.floor(Date.now() / 1000) + 900 }),
+    })
     mockRow('admin')
     const { result } = renderHook(() => useCurrentUser(), { wrapper })
     expect(result.current.isAdmin).toBe(true)
@@ -41,6 +43,9 @@ describe('useCurrentUser', () => {
     const compilable = vi.mocked(useQuery).mock.calls[0]?.[0]
     expect(compilable).toHaveProperty('execute')
     expect(compilable).toHaveProperty('compile')
+    // Le `userId` courant (sub du JWT) est BIEN lié dans le WHERE — pas une query générique.
+    if (typeof compilable !== 'object') throw new Error('CompilableQuery attendue')
+    expect(JSON.stringify(compilable.compile())).toContain('user-42')
   })
 
   test('member → isAdmin=false', () => {

@@ -18,17 +18,21 @@ choix d'UX — voir **issue #240** (« Décisions UI/UX à valider »). En cons�
 
 ## Comment s'en servir
 
-1. Lire `design-system.md` (tokens, composants, formatage, copy, a11y, états) → c'est le **cadre
+1. Lire `app-overview.md` (le « pourquoi » : produit, modèle mental, **périmètre MVP vs V1**) →
+   contexte général, à lire avant tout.
+2. Lire `design-system.md` (tokens, composants, formatage, copy, a11y, états) → c'est le **cadre
    commun** que chaque écran présuppose.
-2. Pour générer un écran : prendre sa fiche dans `screens-*.md`, **y joindre `design-system.md`**
-   (+ `screen-template.md` si l'outil a besoin de la structure attendue), et demander une maquette.
-3. L'intégration réelle (données PowerSync/Drizzle, écritures, API typée, tests) est faite
+3. Pour générer un écran : prendre sa fiche dans `screens-*.md`, **y joindre `app-overview.md` +
+   `design-system.md`** (+ `screen-template.md` si l'outil a besoin de la structure attendue), et
+   demander une maquette.
+4. L'intégration réelle (données PowerSync/Drizzle, écritures, API typée, tests) est faite
    **ensuite, à la main** dans le repo — hors de ces documents.
 
 ## Sommaire
 
 | Fichier | Contenu |
 |---|---|
+| `app-overview.md` | **Description générale** : produit, philosophie, utilisateurs, modèle mental (foyer/comptes/transactions/budgets/dettes), plateformes, **périmètre MVP vs V1** |
 | `design-system.md` | Tokens (provisoires), composants, couleurs sémantiques, typo, espacement, icônes, responsive + coque applicative, dark mode, **formatage EUR/fr-FR**, conventions de copy FR, accessibilité, états (vide/chargement/erreur/succès), indicateurs offline-first |
 | `screen-template.md` | Gabarit d'une fiche-écran (à suivre pour tout nouvel écran) |
 | `screens-auth.md` | Connexion, configuration (1er admin), acceptation d'invitation |

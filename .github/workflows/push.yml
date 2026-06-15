@@ -119,6 +119,10 @@ jobs:
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Profil Hypothesis `ci` (50 exemples vs 100 par défaut) en PR ; le sweep profond
+    # (500) reste au nightly (`HYPOTHESIS_PROFILE: nightly`). Cf. Stratégie de tests §9.3.
+    env:
+      HYPOTHESIS_PROFILE: ci
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
@@ -126,13 +130,16 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
       - run: uv sync --frozen
-      - run: uv run pytest tests/unit/
+      # `-n auto` (pytest-xdist) : tests unitaires purs (sans Docker) → parallélisation triviale.
+      - run: uv run pytest tests/unit/ -n auto
 
   backend-integration:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      HYPOTHESIS_PROFILE: ci
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
@@ -140,9 +147,12 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
       - run: uv sync --frozen
-      # Migration schema-check lives in tests/integration/ but is owned by
-      # the dedicated backend-migrations job, so it's excluded here.
-      - run: uv run pytest tests/integration/ --ignore=tests/integration/test_migrations_schema.py
+      # `-n auto --dist loadscope` (pytest-xdist) : un worker par cœur, chaque worker démarre
+      # SON conteneur Postgres (session-scopé/processus) → isolation naturelle. `loadscope`
+      # groupe par module pour que les fixtures `module`/`session` (ex. `committed_engine`)
+      # restent sur un seul worker. Postgres jetable accéléré (fsync=off, cf. tests/conftest.py).
+      # Migration schema-check exclu ici (job `backend-migrations` dédié).
+      - run: uv run pytest tests/integration/ --ignore=tests/integration/test_migrations_schema.py -n auto --dist loadscope
 
   backend-e2e:
     needs: changes

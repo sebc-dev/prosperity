@@ -85,8 +85,16 @@ def _docker_available() -> bool:
 def postgres_container() -> Iterator[PostgresContainer]:
     if not _docker_available():
         pytest.skip("Docker unavailable — integration tier requires a Docker daemon")
-    with PostgresContainer("postgres:17-alpine", driver="asyncpg") as container:
-        yield container
+    # Throwaway test database → durability is irrelevant: disable fsync, group-commit
+    # and full-page-writes. Removes the per-write disk-sync cost that dominates a
+    # write-heavy integration suite. NEVER use these flags for a real database.
+    # (The official postgres image's entrypoint prepends `postgres` to a command that
+    # starts with `-`, so this becomes `postgres -c fsync=off …`.)
+    container = PostgresContainer("postgres:17-alpine", driver="asyncpg").with_command(
+        "-c fsync=off -c synchronous_commit=off -c full_page_writes=off"
+    )
+    with container as started:
+        yield started
 
 
 @pytest_asyncio.fixture(loop_scope="session", scope="module")

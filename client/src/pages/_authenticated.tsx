@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet, redirect } from '@tanstack/react-router'
 
+import { AppLayout } from '@/components/layout/app-layout'
 import { getToken } from '@/lib/powersync/auth-token'
 
 // Route de layout PATHLESS (`_authenticated` → préfixe `_` = aucun segment d'URL : `/accounts`
@@ -18,6 +19,9 @@ export const Route = createFileRoute('/_authenticated')({
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     if (!getToken()) throw redirect({ to: '/login' })
   },
-  // Remplacé par <AppLayout><Outlet/></AppLayout> en P15.1.2 (header + nav responsive).
-  component: () => <Outlet />,
+  component: () => (
+    <AppLayout>
+      <Outlet />
+    </AppLayout>
+  ),
 })

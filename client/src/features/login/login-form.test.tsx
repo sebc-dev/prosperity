@@ -12,6 +12,14 @@ const API = 'http://localhost:8000'
 
 // __root monte PowerSyncProvider → substitue le singleton par le mock (pas de wasm/OPFS en jsdom).
 vi.mock('@/lib/powersync/client')
+vi.mock('@/hooks/use-current-user', () => ({
+  // AppLayout (rendu par _authenticated) consomme useCurrentUser → on le stube (le mock client
+  // PowerSync n'expose pas de db Drizzle interrogeable par useQuery).
+  useCurrentUser: () => ({
+    user: { id: 'u1', display_name: 'Alice', role: 'member' },
+    isAdmin: false,
+  }),
+}))
 
 async function fillAndSubmit() {
   const user = userEvent.setup()

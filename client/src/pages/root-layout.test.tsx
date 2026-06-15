@@ -7,6 +7,14 @@ import { renderWithProviders } from '@tests/render'
 // singleton client.ts par le mock (pas de wasm/OPFS en jsdom) ; le provider monte donc ses
 // contextes sans connexion réelle.
 vi.mock('@/lib/powersync/client')
+vi.mock('@/hooks/use-current-user', () => ({
+  // AppLayout (rendu par _authenticated) consomme useCurrentUser → on le stube (le mock client
+  // PowerSync n'expose pas de db Drizzle interrogeable par useQuery).
+  useCurrentUser: () => ({
+    user: { id: 'u1', display_name: 'Alice', role: 'member' },
+    isAdmin: false,
+  }),
+}))
 
 // Anti-régression : depuis S15.1 le __root n'est PLUS QUE des providers (ThemeProvider →
 // PowerSyncProvider → Outlet → Toaster) — le header/nav a migré dans la route de layout

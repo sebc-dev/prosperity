@@ -52,7 +52,7 @@ export default defineConfig({
       provider: 'v8',
       // Seuls les périmètres chiffrés par la stratégie §10 sont mesurés ; `lib/`
       // est volontairement hors mesure ici (cible rouverte en S14.4).
-      include: ['src/components/business/**', 'src/features/**'],
+      include: ['src/components/business/**', 'src/components/layout/**', 'src/features/**'],
       // TODO(S14.7) — activer ces seuils dans la CI quand les dossiers se peuplent :
       // thresholds: {
       //   'src/components/business/**': { lines: 75 },

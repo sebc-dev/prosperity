@@ -35,6 +35,23 @@ if (isDom) {
   // jsdom n'implémente pas scrollTo : TanStack Router l'appelle à la navigation
   // (warning console). Polyfill no-op → silence le bruit pour tous les tests routés.
   window.scrollTo = vi.fn()
+
+  // Radix DropdownMenu/Popper (menu user, S15.1+) s'appuie sur des API du DOM que jsdom
+  // n'implémente pas → sans ces stubs, ouvrir le menu (clic/clavier) throw. Posé une fois ici
+  // (réutilisé par toute primitive Radix-Popper d'E15).
+  if (!Element.prototype.hasPointerCapture) {
+    Element.prototype.hasPointerCapture = () => false
+    Element.prototype.setPointerCapture = () => {}
+    Element.prototype.releasePointerCapture = () => {}
+    Element.prototype.scrollIntoView = () => {}
+  }
+  if (!('ResizeObserver' in globalThis)) {
+    globalThis.ResizeObserver = class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+  }
 }
 
 // MSW intercepte au niveau RÉSEAU. `onUnhandledRequest: 'error'` fait échouer tout

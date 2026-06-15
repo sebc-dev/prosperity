@@ -527,3 +527,76 @@ test('immediate_eof_backs_off', async () => {
   await vi.advanceTimersByTimeAsync(500) // backoff(0)=500
   await fakeUntil(() => streamCalls.length === 2)
 })
+
+// ---- 25. Rotation saine → PAS de flash `reconnecting` (badge E15) -------------------------
+
+test('rotation_does_not_flash_reconnecting', async () => {
+  vi.useFakeTimers()
+  seedAuth()
+  onToken([
+    { token: 't1', expires_in: 100 },
+    { token: 't2', expires_in: 100 },
+  ])
+  const streamCalls = onStream(() => sseChannel().response)
+  const states: string[] = []
+  active = createSseClient()
+  active.onStateChange((s) => states.push(s))
+  active.start()
+  await fakeUntil(() => active!.getState() === 'open')
+  states.length = 0 // on n'observe que les transitions POSTÉRIEURES à la 1re ouverture
+  await vi.advanceTimersByTimeAsync(40_000) // rotation à (100 - 60) = 40 s
+  await fakeUntil(() => streamCalls.length === 2 && active!.getState() === 'open')
+  expect(states).not.toContain('reconnecting') // rotation saine : pas de dégradation visible
+  expect(states).toContain('connecting') // mais bien une nouvelle connexion
+})
+
+// ---- 26. 5xx sur le retry APRÈS refresh réussi → backoff (pas de déconnexion) -------------
+
+test('token_5xx_on_retry_after_refresh_backs_off', async () => {
+  vi.useFakeTimers()
+  seedAuth()
+  const tokenCalls = onToken([401, 500, { token: 't1' }]) // 401 → refresh OK → retry 500 → ok
+  const refreshCalls: number[] = []
+  server.use(
+    http.post(`${API}/auth/refresh`, () => {
+      refreshCalls.push(1)
+      return HttpResponse.json({
+        access_token: makeTestJwt({ exp: Math.floor(Date.now() / 1000) + 900 }),
+        refresh_token: 'rt2',
+        token_type: 'bearer',
+      })
+    }),
+  )
+  onStream(() => sseChannel().response)
+  active = createSseClient({ maxBackoffMs: 100 })
+  active.start()
+  await fakeUntil(() => active!.getState() === 'reconnecting')
+  expect(active.getState()).not.toBe('unauthenticated') // un 5xx post-refresh ne déconnecte pas
+  await vi.advanceTimersByTimeAsync(100)
+  await fakeUntil(() => active!.getState() === 'open')
+  expect(tokenCalls).toHaveLength(3)
+  expect(refreshCalls).toHaveLength(1) // un seul refresh (pas de second sur le 5xx transitoire)
+})
+
+// ---- 27. Rejet réseau de POST /sse/token → backoff (pas de déconnexion) -------------------
+
+test('token_network_error_backs_off', async () => {
+  vi.useFakeTimers()
+  seedAuth()
+  let call = 0
+  server.use(
+    http.post(`${API}/sse/token`, () => {
+      call += 1
+      return call === 1
+        ? HttpResponse.error() // fetch rejette → api.POST rejette
+        : HttpResponse.json({ token: 't1', expires_in: 300 })
+    }),
+  )
+  onStream(() => sseChannel().response)
+  active = createSseClient({ maxBackoffMs: 100 })
+  active.start()
+  await fakeUntil(() => active!.getState() === 'reconnecting')
+  expect(active.getState()).not.toBe('unauthenticated')
+  await vi.advanceTimersByTimeAsync(100)
+  await fakeUntil(() => active!.getState() === 'open')
+})

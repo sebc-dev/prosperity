@@ -88,6 +88,8 @@ export function createSseClient(opts: SseClientOptions = {}): SseClient {
     if (await refresh()) {
       const retry = await api.POST('/sse/token')
       if (retry.data) return { token: retry.data.token, expiresIn: retry.data.expires_in }
+      // 5xx APRÈS un refresh réussi = transitoire (auth OK) → backoff, pas de déconnexion.
+      if (retry.response.status !== 401) throw new TokenIssueFailed()
     }
     throw new AuthLost()
   }
@@ -103,7 +105,8 @@ export function createSseClient(opts: SseClientOptions = {}): SseClient {
           setState('unauthenticated')
           return
         }
-        // Erreur réseau à l'émission du token → backoff borné, puis retry.
+        // Échec transitoire de l'émission du token (5xx via `TokenIssueFailed`, ou rejet réseau de
+        // `api.POST`) → backoff borné, puis retry. (`AuthLost` = 401 persistant, traité au-dessus.)
         setState('reconnecting')
         await sleep(backoff(attempt++, maxBackoff))
         continue

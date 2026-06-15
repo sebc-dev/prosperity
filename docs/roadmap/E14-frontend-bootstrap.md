@@ -1,7 +1,7 @@
 # E14 — Frontend bootstrap (Capacitor + React + PowerSync client)
 
 > **Durée estimée** : 5-7 jours
-> **Statut** : not started
+> **Statut** : done (S14.1–S14.7 mergées ; CSP anti-FOUC #221 reportée en E16)
 > **Dépend de** : E13
 > **Bloque** : E15
 > **ADRs activés** : (cohérence ADR 0014 côté client via `WriteResult.error` handling)

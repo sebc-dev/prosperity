@@ -55,7 +55,7 @@ Ordre topologique. Chaque epic ne démarre qu'après ses dépendances.
 | [E11](./E11-debts-overflow.md) | Debts overflow F10 | `debt_generation_override` + `DebtCalculator` matérialisation excédent | E08.5, E10 | done |
 | [E12](./E12-ofx-import.md) | OFX import | F04 partie 1 : `OFXProvider` + wrapper défensif + preview hybride + `bank_account_external_refs` | E05, E07 | done |
 | [E13](./E13-sync-write-upload-handler.md) | Sync module + write upload handler | ADR 0014 : module `sync` + dispatcher + 10 étapes + idempotence + `WriteResult.error` typé | E07, E09, E11 | done |
-| [E14](./E14-frontend-bootstrap.md) | Frontend bootstrap | Capacitor 8 + React 19 + Vite 6 + Drizzle + Tailwind + shadcn scaffolding + PowerSync client setup | E13 | in progress (S14.1-5 mergées ; S14.6 auth-client en cours) |
+| [E14](./E14-frontend-bootstrap.md) | Frontend bootstrap | Capacitor 8 + React 19 + Vite 6 + Drizzle + Tailwind + shadcn scaffolding + PowerSync client setup | E13 | done |
 | [E15](./E15-ui-mvp.md) | UI MVP (~15 écrans) | Login + dashboard solde réel + comptes + transactions + budgets + dettes + settings + invitation accept | E14 | not started |
 | [E16](./E16-deployment.md) | Deployment | Podman Quadlet + Caddy + Cloudflare Tunnel + Tailscale + Restic→B2 + runbooks | E15 | not started |
 | [E17](./E17-realtime-sse-backend.md) | Realtime backend (SSE) | ADR 0012 : `POST /sse/token` + `GET /sse/stream` + heartbeat 30 s + buffer/resume `Last-Event-ID` | E02, E04 | done |

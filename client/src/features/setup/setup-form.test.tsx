@@ -13,6 +13,14 @@ const API = 'http://localhost:8000'
 
 // __root monte PowerSyncProvider → mock du singleton (pas de wasm/OPFS).
 vi.mock('@/lib/powersync/client')
+vi.mock('@/hooks/use-current-user', () => ({
+  // AppLayout (rendu par _authenticated) consomme useCurrentUser → on le stube (le mock client
+  // PowerSync n'expose pas de db Drizzle interrogeable par useQuery).
+  useCurrentUser: () => ({
+    user: { id: 'u1', display_name: 'Alice', role: 'member' },
+    isAdmin: false,
+  }),
+}))
 // Toast mocké : on n'assertе que les MESSAGES, jamais l'UI Sonner réelle.
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() }, Toaster: () => null }))
 const toastError = vi.mocked(toast.error)
@@ -45,7 +53,7 @@ test('submit valide → POST /setup → TokenPair → auto-login → navigation 
   await fillAndSubmit()
 
   await waitFor(() => expect(getToken()).toBeTruthy()) // auto-login (commitTokens)
-  expect(await screen.findByRole('heading', { name: /composants/i })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: /tableau de bord/i })).toBeInTheDocument()
 })
 
 test('POST /setup → 404 (course perdue) → toast + redirection /login', async () => {

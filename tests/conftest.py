@@ -49,9 +49,9 @@ from backend.main import app
 from backend.shared.db import get_db
 from backend.shared.models import Base
 
-# Profiles consumed by CI: push.yml leaves the default (max_examples=100),
-# nightly.yml sets HYPOTHESIS_PROFILE=nightly for the 500-example sweep
-# (docs/Stratégie de tests §9.3).
+# Profiles consumed by CI: push.yml sets HYPOTHESIS_PROFILE=ci (max_examples=50) on the
+# backend-unit/integration jobs; nightly.yml sets HYPOTHESIS_PROFILE=nightly for the
+# 500-example sweep (docs/Stratégie de tests §9.3). Local default profile = 100 examples.
 _hyp_settings.register_profile("ci", max_examples=50)
 _hyp_settings.register_profile("nightly", max_examples=500)
 _hyp_settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))

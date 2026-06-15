@@ -49,9 +49,9 @@ from backend.main import app
 from backend.shared.db import get_db
 from backend.shared.models import Base
 
-# Profiles consumed by CI: push.yml leaves the default (max_examples=100),
-# nightly.yml sets HYPOTHESIS_PROFILE=nightly for the 500-example sweep
-# (docs/Stratégie de tests §9.3).
+# Profiles consumed by CI: push.yml sets HYPOTHESIS_PROFILE=ci (max_examples=50) on the
+# backend-unit/integration jobs; nightly.yml sets HYPOTHESIS_PROFILE=nightly for the
+# 500-example sweep (docs/Stratégie de tests §9.3). Local default profile = 100 examples.
 _hyp_settings.register_profile("ci", max_examples=50)
 _hyp_settings.register_profile("nightly", max_examples=500)
 _hyp_settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "default"))
@@ -85,8 +85,16 @@ def _docker_available() -> bool:
 def postgres_container() -> Iterator[PostgresContainer]:
     if not _docker_available():
         pytest.skip("Docker unavailable — integration tier requires a Docker daemon")
-    with PostgresContainer("postgres:17-alpine", driver="asyncpg") as container:
-        yield container
+    # Throwaway test database → durability is irrelevant: disable fsync, group-commit
+    # and full-page-writes. Removes the per-write disk-sync cost that dominates a
+    # write-heavy integration suite. NEVER use these flags for a real database.
+    # (The official postgres image's entrypoint prepends `postgres` to a command that
+    # starts with `-`, so this becomes `postgres -c fsync=off …`.)
+    container = PostgresContainer("postgres:17-alpine", driver="asyncpg").with_command(
+        "-c fsync=off -c synchronous_commit=off -c full_page_writes=off"
+    )
+    with container as started:
+        yield started
 
 
 @pytest_asyncio.fixture(loop_scope="session", scope="module")

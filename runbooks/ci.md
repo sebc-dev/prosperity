@@ -77,6 +77,28 @@ client typé n'a pas été régénéré depuis `openapi.json`.
   de pull-time net (sur GitHub les images communes sont souvent déjà chaudes). **Statut** : non
   implémenté (aucune mesure réalisée) — à reprendre comme suivi mesuré.
 
+## Performance des tests backend (vitesse)
+
+Trois leviers, **mesurés** sur la suite d'intégration (1237 tests) :
+
+- **Parallélisme `pytest-xdist`** : `backend-unit` lance `-n auto` ; `backend-integration`
+  lance `-n auto --dist loadscope`. `loadscope` groupe les tests par **module** → les fixtures
+  `module`/`session` (`committed_engine`, `db_engine`) restent sur un seul worker. Chaque worker
+  démarre **son propre** conteneur Postgres (`postgres_container` est session-scopé = par
+  processus xdist) → isolation naturelle, aucune coordination inter-worker. Sur un runner GHA le
+  nombre de conteneurs = nombre de vCPU (borné).
+- **Postgres jetable accéléré** (`tests/conftest.py::postgres_container`) : `fsync=off`,
+  `synchronous_commit=off`, `full_page_writes=off`. La base de test étant jetable, la durabilité
+  est sans objet → on supprime le coût de sync disque qui domine une suite write-heavy. **Jamais**
+  ces flags sur une vraie base.
+- **Profil Hypothesis `ci`** (`env: HYPOTHESIS_PROFILE: ci`, 50 exemples vs 100 par défaut) sur
+  `backend-unit`/`backend-integration`. Le balayage profond (500) reste au **nightly**
+  (`HYPOTHESIS_PROFILE: nightly`). Cf. Stratégie de tests §9.3.
+
+**Mesure de référence (local, 4 workers)** : intégration **829 s → 225 s** (×3,7, mêmes 1237
+tests) avec xdist + flags Postgres ; le profil `ci` réduit en plus les modules property-based
+(le plus lourd : 70 s → 37 s). Re-mesurer si la suite grossit.
+
 ## Validation d'un changement de CI
 
 - **Forme** : `actionlint .github/workflows/*.yml` (local ; gate dur = job `ci-selftest`).

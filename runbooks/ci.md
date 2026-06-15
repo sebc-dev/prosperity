@@ -50,10 +50,15 @@ Notes :
 
 ### Coordination S14.7 (#211) — jobs frontend
 
-Les jobs frontend (`frontend-lint`/`unit`/`build`) sont livrés par **S14.7**. Ils doivent :
-- être gatés par `if: needs.changes.outputs.frontend == 'true'` (l'output est déjà câblé) ;
-- utiliser la composite action `./.github/actions/setup-node-cached` (cache npm + node_modules) ;
-- être ajoutés au `needs:` de `ci-required`.
+Les jobs frontend `frontend-lint` / `frontend-unit` / `frontend-build` / `frontend-openapi-check`
+sont **livrés ✓ par S14.7** (#211). Ils :
+- sont gatés par `if: needs.changes.outputs.frontend == 'true'` (output câblé par S18.1) ;
+- utilisent la composite action `./.github/actions/setup-node-cached` (cache npm + node_modules) ;
+- sont ajoutés au `needs:` de `ci-required`.
+
+`frontend-lint` lance `npm run lint` **+ `npm run typecheck`** (garantit `tsc --noEmit`, séparé du
+`vite build` de `frontend-build`). `frontend-openapi-check` (`npm run gen:api:check`) échoue si le
+client typé n'a pas été régénéré depuis `openapi.json`.
 
 ## Cache
 
@@ -62,11 +67,10 @@ Les jobs frontend (`frontend-lint`/`unit`/`build`) sont livrés par **S14.7**. I
   dans les logs.
 - **Frontend (npm)** : composite action `setup-node-cached` (cache `~/.npm` + `client/node_modules`).
   ⚠️ **Cache-poisoning** : `node_modules` contient l'addon natif compilé `better-sqlite3`. Mitigations :
-  (a) les futurs jobs frontend (S14.7) **ne consomment aucun secret** (`permissions: contents: read`),
+  (a) les jobs frontend (S14.7) **ne consomment aucun secret** (`permissions: contents: read`),
   donc un cache empoisonné n'exfiltre rien ; (b) le scoping de cache GHA isole les caches d'une PR de
   ceux de la base (`main`) — une PR ne peut pas écrire dans le scope de la base ; (c) la `key` inclut
-  `.nvmrc` (version Node ≈ ABI) → pas de restauration d'un binaire d'une autre ABI. Observable au
-  **premier job frontend de S14.7**.
+  `.nvmrc` (version Node ≈ ABI) → pas de restauration d'un binaire d'une autre ABI.
 - **Docker (`powersync-smoke`, nightly)** : les jobs compose **pullent** des images (pas de build).
   **Décision (D6)** : par défaut, **pin par digest** des images dans `compose.dev.yml` (déterminisme) ;
   un cache `save/load` keyé sur les digests résolus n'est ajouté **que si** une mesure prouve un gain
@@ -80,7 +84,10 @@ Les jobs frontend (`frontend-lint`/`unit`/`build`) sont livrés par **S14.7**. I
   valeurs par défaut + contrat exit-code ; local + `ci-selftest`).
 - **Comportement** : PRs synthétiques (docs-only / `client/`-only / backend-only / `.github`-only /
   mixte `client/`+non-classé). Pour valider la branche **échec** de `ci-required` (allow-list) :
-  - via un job **lourd** : introduire une faute (ex. lint) dans `backend/**` → `backend-lint` rouge ;
+  - via un job backend **lourd** : introduire une faute (ex. lint) dans `backend/**` → `backend-lint` rouge ;
+  - via un job frontend (gating du **code applicatif**, pas que le lint) : casser un cas de test dans
+    `client/src/**` (ex. une assertion de `lib/sse/client.test.ts`) → `frontend-unit` rouge — prouve
+    que le job exécute réellement les tests et n'est pas un faux-vert `skipped` ;
   - via le **gating lui-même** (fail-closed) : casser `decide.test.sh` → `ci-selftest` rouge ;
-  dans les deux cas, observer `ci-required` **rouge** + PR non-mergeable, puis revert.
+  dans les trois cas, observer `ci-required` **rouge** + PR non-mergeable, puis revert.
 - Toute PR touchant `.github/**` force un **full run** (auto-validation).

@@ -41,25 +41,25 @@ Ordre topologique. Chaque epic ne démarre qu'après ses dépendances.
 
 | # | Epic | Couvre | Dépend de | Statut |
 |---|---|---|---|---|
-| [E01](./E01-bootstrap.md) | Backend bootstrap + quality gates | pytest + Hypothesis + testcontainers + import-linter (5 contrats J1) + pre-commit + CI workflows + Alembic init + scaffolding modulaire vide | — | not started |
-| [E02](./E02-auth-foundations.md) | Auth foundations | F01 sans PAT ni 2FA (email + Argon2id + JWT + refresh) + `users` server-only | E01 | not started |
-| [E03](./E03-household-bootstrap.md) | Household singleton + bootstrap `/setup` | ADR 0010 : table `household` + flow `/setup` lock-after-init + premier admin | E02 | not started |
-| [E04](./E04-rbac-invitations.md) | RBAC + invitations | F03 : rôles admin/member + flow invitation token-based (ADR 0010) + audit log admin | E03 | not started |
-| [E05](./E05-accounts.md) | Accounts | F02 : comptes personnel + commun + `account_members` + quote-parts | E04 | not started |
-| [E06](./E06-categories.md) | Categories hiérarchiques | F08 partie 1 : `Category` + cycle prevention + archive + bucket household | E05 | not started |
-| [E07](./E07-transactions.md) | Transactions module | F05 : `Transaction` aggregate immutable (ADR 0001) + splits relationnels + states + Money | E05, E06 | not started |
-| [E08](./E08-budgets.md) | Budgets | F08 partie 2 : `Budget` + agrégation hiérarchique + alertes seuils via `shared/events.py` | E07 | not started |
-| [E08.5](./E08.5-canonical-expense-reconciliation.md) | Réconciliation dépense confirmable ↔ consommation budget | ADR 0017 : `leg_role` sur `Split` — une dépense confirmable consomme un budget (lève la contradiction E07/E08) | E08 | not started |
-| [E09](./E09-debts-foundations.md) | Debts foundations | F09 partie 1 : `Debt` projection (ADR 0002) + `share_request` + dashboard dettes | E05, E07 | not started |
-| [E10](./E10-settlements.md) | Settlements | F09 partie 2 : `Settlement` multi-line (ADR 0011) + 3 types + invariants Hypothesis | E09 | not started |
-| [E11](./E11-debts-overflow.md) | Debts overflow F10 | `debt_generation_override` + `DebtCalculator` matérialisation excédent | E08.5, E10 | not started |
-| [E12](./E12-ofx-import.md) | OFX import | F04 partie 1 : `OFXProvider` + wrapper défensif + preview hybride + `bank_account_external_refs` | E05, E07 | not started |
+| [E01](./E01-bootstrap.md) | Backend bootstrap + quality gates | pytest + Hypothesis + testcontainers + import-linter (5 contrats J1) + pre-commit + CI workflows + Alembic init + scaffolding modulaire vide | — | done |
+| [E02](./E02-auth-foundations.md) | Auth foundations | F01 sans PAT ni 2FA (email + Argon2id + JWT + refresh) + `users` server-only | E01 | done |
+| [E03](./E03-household-bootstrap.md) | Household singleton + bootstrap `/setup` | ADR 0010 : table `household` + flow `/setup` lock-after-init + premier admin | E02 | done |
+| [E04](./E04-rbac-invitations.md) | RBAC + invitations | F03 : rôles admin/member + flow invitation token-based (ADR 0010) + audit log admin | E03 | done |
+| [E05](./E05-accounts.md) | Accounts | F02 : comptes personnel + commun + `account_members` + quote-parts | E04 | done |
+| [E06](./E06-categories.md) | Categories hiérarchiques | F08 partie 1 : `Category` + cycle prevention + archive + bucket household | E05 | done |
+| [E07](./E07-transactions.md) | Transactions module | F05 : `Transaction` aggregate immutable (ADR 0001) + splits relationnels + states + Money | E05, E06 | done |
+| [E08](./E08-budgets.md) | Budgets | F08 partie 2 : `Budget` + agrégation hiérarchique + alertes seuils via `shared/events.py` | E07 | done |
+| [E08.5](./E08.5-canonical-expense-reconciliation.md) | Réconciliation dépense confirmable ↔ consommation budget | ADR 0017 : `leg_role` sur `Split` — une dépense confirmable consomme un budget (lève la contradiction E07/E08) | E08 | done |
+| [E09](./E09-debts-foundations.md) | Debts foundations | F09 partie 1 : `Debt` projection (ADR 0002) + `share_request` + dashboard dettes | E05, E07 | done |
+| [E10](./E10-settlements.md) | Settlements | F09 partie 2 : `Settlement` multi-line (ADR 0011) + 3 types + invariants Hypothesis | E09 | done |
+| [E11](./E11-debts-overflow.md) | Debts overflow F10 | `debt_generation_override` + `DebtCalculator` matérialisation excédent | E08.5, E10 | done |
+| [E12](./E12-ofx-import.md) | OFX import | F04 partie 1 : `OFXProvider` + wrapper défensif + preview hybride + `bank_account_external_refs` | E05, E07 | done |
 | [E13](./E13-sync-write-upload-handler.md) | Sync module + write upload handler | ADR 0014 : module `sync` + dispatcher + 10 étapes + idempotence + `WriteResult.error` typé | E07, E09, E11 | done |
-| [E14](./E14-frontend-bootstrap.md) | Frontend bootstrap | Capacitor 8 + React 19 + Vite 6 + Drizzle + Tailwind + shadcn scaffolding + PowerSync client setup | E13 | not started |
+| [E14](./E14-frontend-bootstrap.md) | Frontend bootstrap | Capacitor 8 + React 19 + Vite 6 + Drizzle + Tailwind + shadcn scaffolding + PowerSync client setup | E13 | in progress (S14.1-5 mergées ; S14.6 auth-client en cours) |
 | [E15](./E15-ui-mvp.md) | UI MVP (~15 écrans) | Login + dashboard solde réel + comptes + transactions + budgets + dettes + settings + invitation accept | E14 | not started |
 | [E16](./E16-deployment.md) | Deployment | Podman Quadlet + Caddy + Cloudflare Tunnel + Tailscale + Restic→B2 + runbooks | E15 | not started |
-| [E17](./E17-realtime-sse-backend.md) | Realtime backend (SSE) | ADR 0012 : `POST /sse/token` + `GET /sse/stream` + heartbeat 30 s + buffer/resume `Last-Event-ID` | E02, E04 | not started |
-| [E18](./E18-devx-ci.md) | DevX / CI (optimisation workflows) | CI path-scopée par périmètre (backend/frontend/docs) + agrégateur de *required check* + parallélisme + cache uv/npm/Docker + runbook | E01 | not started |
+| [E17](./E17-realtime-sse-backend.md) | Realtime backend (SSE) | ADR 0012 : `POST /sse/token` + `GET /sse/stream` + heartbeat 30 s + buffer/resume `Last-Event-ID` | E02, E04 | done |
+| [E18](./E18-devx-ci.md) | DevX / CI (optimisation workflows) | CI path-scopée par périmètre (backend/frontend/docs) + agrégateur de *required check* + parallélisme + cache uv/npm/Docker + runbook | E01 | done |
 
 > **Hors-séquence** : E17 (backend SSE) a été ajouté après coup — gap découvert à la création des stories E14 (#205-#211). Topologiquement il **précède E14 S14.7** (#211, qui en dépend) ; son numéro ne reflète pas l'ordre d'exécution.
 >

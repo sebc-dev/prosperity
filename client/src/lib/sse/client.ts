@@ -23,6 +23,8 @@ import type { SseClient, SseClientOptions, SseEvent, SseState } from './types'
 
 // Refresh auth KO → escalade login (pas de retry). Propagée hors de la boucle.
 class AuthLost extends Error {}
+// Émission du token en échec transitoire (5xx, pas un 401) → backoff, PAS de déconnexion.
+class TokenIssueFailed extends Error {}
 // 401 à l'ouverture du stream (token SSE périmé) → réémettre un token et rouvrir.
 class ReopenWithNewToken extends Error {}
 // Réponse HTTP non exploitable. `status === 429` (plafond connexions) → backoff ; sinon → fermeture.
@@ -47,10 +49,13 @@ export function createSseClient(opts: SseClientOptions = {}): SseClient {
   const baseUrl = opts.baseUrl ?? (import.meta.env.VITE_API_BASE_URL as string)
   const margin = (opts.tokenTtlMarginSeconds ?? 60) * 1000
   const maxBackoff = opts.maxBackoffMs ?? 30_000
+  const minHealthy = opts.minHealthyMs ?? 1000
   const openWhenHidden = opts.openWhenHidden ?? false
 
   let started = false
   let stopped = false
+  let rotating = false // abort déclenché par le rotateTimer (rotation saine), pas par une coupure
+  let openedAt = 0 // horodatage de la dernière ouverture réussie (anti-spin)
   let abort: AbortController | null = null
   let rotateTimer: ReturnType<typeof setTimeout> | undefined
   let lastEventId: string | null = null
@@ -73,10 +78,13 @@ export function createSseClient(opts: SseClientOptions = {}): SseClient {
     })
   }
 
-  // UN refresh (single-flight, `session.ts`) + UN retry. Échec → escalade (pas de 2e refresh).
+  // Émet un token. 401 = problème d'auth → UN refresh (single-flight) + UN retry, sinon escalade
+  // (`AuthLost`). Un échec NON-401 (5xx) est transitoire → `TokenIssueFailed` (backoff, pas de
+  // déconnexion). Un rejet réseau de `api.POST` remonte tel quel (traité aussi en backoff).
   async function issueToken(): Promise<{ token: string; expiresIn: number }> {
     const first = await api.POST('/sse/token')
     if (first.data) return { token: first.data.token, expiresIn: first.data.expires_in }
+    if (first.response.status !== 401) throw new TokenIssueFailed()
     if (await refresh()) {
       const retry = await api.POST('/sse/token')
       if (retry.data) return { token: retry.data.token, expiresIn: retry.data.expires_in }
@@ -103,8 +111,16 @@ export function createSseClient(opts: SseClientOptions = {}): SseClient {
       if (stopped) return
 
       // Rotation proactive : à `expiresIn - marge`, on abort → la boucle ré-acquiert un token.
+      // Le flag `rotating` distingue cet abort sain d'une vraie coupure (pas de flash `reconnecting`).
       clearTimeout(rotateTimer)
-      rotateTimer = setTimeout(() => abort?.abort(), Math.max(0, issued.expiresIn * 1000 - margin))
+      rotating = false
+      rotateTimer = setTimeout(
+        () => {
+          rotating = true
+          abort?.abort()
+        },
+        Math.max(0, issued.expiresIn * 1000 - margin),
+      )
       abort = new AbortController()
       setState('connecting')
 
@@ -121,6 +137,7 @@ export function createSseClient(opts: SseClientOptions = {}): SseClient {
               throw new FatalHttp(res.status)
             }
             attempt = 0 // reset du backoff sur ouverture réussie
+            openedAt = Date.now()
             setState('open')
             return Promise.resolve()
           },
@@ -143,7 +160,13 @@ export function createSseClient(opts: SseClientOptions = {}): SseClient {
         })
         // Résolu sans erreur : EOF propre (expiration serveur / overflow) OU abort de rotation/stop.
         if (stopped) return
+        if (rotating) {
+          rotating = false // rotation saine : reconnexion immédiate, pas de flash `reconnecting`
+          continue
+        }
         setState('reconnecting')
+        // EOF subi : anti-spin si la connexion a duré trop peu (open→EOF immédiat répété).
+        if (Date.now() - openedAt < minHealthy) await sleep(backoff(attempt++, maxBackoff))
       } catch (err) {
         if (stopped) return
         if (err instanceof ReopenWithNewToken) continue // 401 ouverture → réémission immédiate

@@ -157,7 +157,7 @@ test('resync_routes_to_callback_and_does_not_advance_id', async () => {
     return call === 1 ? sseStream([frame(7, 'notification', {}), resync]) : sseChannel().response
   })
   const resyncs: number[] = []
-  active = createSseClient()
+  active = createSseClient({ minHealthyMs: 0 })
   active.onResync(() => resyncs.push(1))
   active.start()
   await until(() => streamCalls.length === 2)
@@ -176,7 +176,7 @@ test('reconnect_resends_last_event_id_header', async () => {
     call += 1
     return call === 1 ? sseStream([frame(5, 'notification', {})]) : sseChannel().response
   })
-  active = createSseClient()
+  active = createSseClient({ minHealthyMs: 0 })
   active.start()
   await until(() => streamCalls.length === 2)
   expect(at(streamCalls, 1).lastEventId).toBe('5')
@@ -229,7 +229,7 @@ test('stream_401_triggers_token_reissue', async () => {
   active = createSseClient()
   active.start()
   await until(() => active!.getState() === 'open')
-  expect(tokenCalls.length).toBeGreaterThanOrEqual(2)
+  expect(tokenCalls).toHaveLength(2)
   expect(at(streamCalls, 1).token).toBe('t2')
 })
 
@@ -311,7 +311,7 @@ test('state_transitions_are_emitted', async () => {
     return call === 1 ? sseStream([]) : sseChannel().response // EOF immédiat → reconnexion
   })
   const states: string[] = []
-  active = createSseClient()
+  active = createSseClient({ minHealthyMs: 0 })
   active.onStateChange((s) => states.push(s))
   active.start()
   await until(() => streamCalls.length === 2 && active!.getState() === 'open')
@@ -352,7 +352,7 @@ test('backoff_resets_after_successful_reopen', async () => {
     if (call === 4) return sseStream([]) // ouvre (reset attempt) puis EOF → reconnexion immédiate
     return sseChannel().response
   })
-  active = createSseClient({ maxBackoffMs: 10_000 })
+  active = createSseClient({ maxBackoffMs: 10_000, minHealthyMs: 0 })
   active.start()
 
   // 3× 429 : les délais croissent 500 → 1000 → 2000 (backoff exponentiel).
@@ -383,7 +383,7 @@ test('silent_expiry_close_reissues_token', async () => {
     call += 1
     return call === 1 ? sseStream([]) : sseChannel().response // EOF propre (sans 401)
   })
-  active = createSseClient()
+  active = createSseClient({ minHealthyMs: 0 })
   active.start()
   await until(() => streamCalls.length === 2)
   expect(tokenCalls).toHaveLength(2) // un nouveau POST /sse/token après la fermeture
@@ -442,4 +442,88 @@ test('no_token_in_logs', async () => {
     }
     s.mockRestore()
   }
+})
+
+// ---- 20. 5xx sur POST /sse/token → backoff, PAS de déconnexion ----------------------------
+
+test('token_5xx_backs_off_not_unauthenticated', async () => {
+  vi.useFakeTimers()
+  seedAuth()
+  const tokenCalls = onToken([500, { token: 't1' }]) // 1er POST 500 (transitoire) → 2e OK
+  onStream(() => sseChannel().response)
+  active = createSseClient({ maxBackoffMs: 100 })
+  active.start()
+  await fakeUntil(() => active!.getState() === 'reconnecting')
+  expect(active.getState()).not.toBe('unauthenticated') // un 5xx ne déconnecte pas
+  await vi.advanceTimersByTimeAsync(100) // backoff borné
+  await fakeUntil(() => active!.getState() === 'open')
+  expect(tokenCalls).toHaveLength(2)
+})
+
+// ---- 21. Réponse fatale (500) sur le stream → closed, pas de reconnexion ------------------
+
+test('stream_fatal_5xx_closes', async () => {
+  seedAuth()
+  onToken([{ token: 't1' }])
+  const streamCalls = onStream(() => new HttpResponse(null, { status: 500 }))
+  active = createSseClient()
+  active.start()
+  await until(() => active!.getState() === 'closed')
+  await new Promise((r) => setTimeout(r, 30))
+  expect(streamCalls).toHaveLength(1) // état terminal : aucune réouverture
+})
+
+// ---- 22. Désabonnement : subscribe() renvoie un disposer qui stoppe la livraison ----------
+
+test('subscribe_unsubscribe_stops_delivery', async () => {
+  seedAuth()
+  onToken([{ token: 't1' }])
+  const ch = sseChannel()
+  onStream(() => ch.response)
+  const got: SseEvent[] = []
+  active = createSseClient()
+  const off = active.subscribe('notification', (e) => got.push(e))
+  active.start()
+  await until(() => active!.getState() === 'open')
+  ch.push(frame(1, 'notification', { n: 1 }))
+  await until(() => got.length === 1)
+  off() // désabonnement
+  ch.push(frame(2, 'notification', { n: 2 }))
+  await new Promise((r) => setTimeout(r, 30))
+  expect(got).toHaveLength(1) // plus aucune livraison après off()
+})
+
+// ---- 23. start() idempotent : un seul flux malgré plusieurs appels ------------------------
+
+test('start_is_idempotent', async () => {
+  seedAuth()
+  const tokenCalls = onToken([{ token: 't1' }])
+  const streamCalls = onStream(() => sseChannel().response)
+  active = createSseClient()
+  active.start()
+  active.start()
+  active.start()
+  await until(() => active!.getState() === 'open')
+  await new Promise((r) => setTimeout(r, 30))
+  expect(tokenCalls).toHaveLength(1) // un seul `run()` actif (invariant « un seul flux »)
+  expect(streamCalls).toHaveLength(1)
+})
+
+// ---- 24. EOF immédiat répété → backoff anti-spin ------------------------------------------
+
+test('immediate_eof_backs_off', async () => {
+  vi.useFakeTimers()
+  seedAuth()
+  onToken([{ token: 't1' }, { token: 't2' }])
+  let call = 0
+  const streamCalls = onStream(() => {
+    call += 1
+    return call === 1 ? sseStream([]) : sseChannel().response // 1re connexion : EOF immédiat
+  })
+  active = createSseClient({ minHealthyMs: 1000, maxBackoffMs: 5000 })
+  active.start()
+  await fakeUntil(() => active!.getState() === 'reconnecting')
+  expect(streamCalls).toHaveLength(1) // EOF < minHealthy → pas de reconnexion serrée
+  await vi.advanceTimersByTimeAsync(500) // backoff(0)=500
+  await fakeUntil(() => streamCalls.length === 2)
 })

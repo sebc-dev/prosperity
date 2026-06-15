@@ -84,7 +84,10 @@ client typé n'a pas été régénéré depuis `openapi.json`.
   valeurs par défaut + contrat exit-code ; local + `ci-selftest`).
 - **Comportement** : PRs synthétiques (docs-only / `client/`-only / backend-only / `.github`-only /
   mixte `client/`+non-classé). Pour valider la branche **échec** de `ci-required` (allow-list) :
-  - via un job **lourd** : introduire une faute (ex. lint) dans `backend/**` → `backend-lint` rouge ;
+  - via un job backend **lourd** : introduire une faute (ex. lint) dans `backend/**` → `backend-lint` rouge ;
+  - via un job frontend (gating du **code applicatif**, pas que le lint) : casser un cas de test dans
+    `client/src/**` (ex. une assertion de `lib/sse/client.test.ts`) → `frontend-unit` rouge — prouve
+    que le job exécute réellement les tests et n'est pas un faux-vert `skipped` ;
   - via le **gating lui-même** (fail-closed) : casser `decide.test.sh` → `ci-selftest` rouge ;
-  dans les deux cas, observer `ci-required` **rouge** + PR non-mergeable, puis revert.
+  dans les trois cas, observer `ci-required` **rouge** + PR non-mergeable, puis revert.
 - Toute PR touchant `.github/**` force un **full run** (auto-validation).

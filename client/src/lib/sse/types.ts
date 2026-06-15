@@ -26,6 +26,10 @@ export interface SseClientOptions {
   tokenTtlMarginSeconds?: number
   // Plafond du backoff de reconnexion (ms). Défaut 30_000.
   maxBackoffMs?: number
+  // Durée minimale (ms) d'une connexion « saine ». Une connexion qui se ferme (EOF serveur) avant
+  // ce seuil déclenche un backoff anti-spin (open→EOF immédiat répété = misconfig/overflow). Défaut
+  // 1000. Mettre 0 désactive l'anti-spin (reconnexion immédiate sur EOF).
+  minHealthyMs?: number
   // Garder le flux ouvert quand l'onglet/app est caché. Défaut `false` (conservateur : évite de
   // drainer la batterie mobile et de saturer le plafond de connexions serveur). E15 tranchera.
   openWhenHidden?: boolean

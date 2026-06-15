@@ -45,7 +45,7 @@ test('submit valide → POST /setup → TokenPair → auto-login → navigation 
   await fillAndSubmit()
 
   await waitFor(() => expect(getToken()).toBeTruthy()) // auto-login (commitTokens)
-  expect(await screen.findByRole('heading', { name: /composants/i })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: /tableau de bord/i })).toBeInTheDocument()
 })
 
 test('POST /setup → 404 (course perdue) → toast + redirection /login', async () => {

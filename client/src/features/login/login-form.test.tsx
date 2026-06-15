@@ -27,8 +27,8 @@ test('login OK : POST /auth/login → token stocké → navigation vers /', asyn
 
   // Le handler par défaut (/auth/login → TokenPair) peuple le token, puis navigate({ to: '/' }).
   await waitFor(() => expect(getToken()).toBeTruthy())
-  // Après navigation, la home (showcase) est rendue → preuve de la redirection bout-en-bout.
-  expect(await screen.findByRole('heading', { name: /composants/i })).toBeInTheDocument()
+  // Après navigation, la home (tableau de bord) est rendue → preuve de la redirection bout-en-bout.
+  expect(await screen.findByRole('heading', { name: /tableau de bord/i })).toBeInTheDocument()
 })
 
 test('login KO (401) : message role="alert" générique, pas de crash, bouton réactivé', async () => {

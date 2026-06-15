@@ -44,7 +44,9 @@ export function AppNav() {
       >
         <NavLinks orientation="sidebar" />
       </nav>
-      {/* Mobile : barre de navigation basse */}
+      {/* Mobile : barre de navigation basse.
+          ⚠️ À VALIDER (#240) : 7 items en barre basse, c'est dense sur petit écran — le pattern
+          usuel plafonne à ~5 (le reste → menu « Plus »). Arbitrage UI/UX en attente. */}
       <nav
         aria-label="Navigation principale (mobile)"
         className="fixed inset-x-0 bottom-0 flex justify-around border-t bg-background p-2 md:hidden"

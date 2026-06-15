@@ -20,6 +20,11 @@ export interface NavItem {
   adminOnly?: boolean
 }
 
+// ⚠️ ARCHITECTURE DE NAVIGATION À VALIDER — voir l'issue #240 (décisions UI/UX E15).
+// Libellés / ordre / icônes sont des DÉFAUTS (S15.1), pas une décision figée — éditer ici.
+// Se propage à TOUS les écrans → arbitrer tôt (cf. aussi l'arbitrage barre-basse mobile à 7 items,
+// `app-nav.tsx`).
+//
 // Sections MVP (E15). Aucune entrée n'est `adminOnly` au MVP : les écrans admin (Invitations /
 // Household) sont des onglets INTERNES à `/settings` (S15.9), pas des entrées de nav. Le champ
 // `adminOnly` + `visibleNavItems` sont livrés et testés pour S15.9.

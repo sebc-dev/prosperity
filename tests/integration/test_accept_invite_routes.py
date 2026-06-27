@@ -591,6 +591,16 @@ async def test_post_concurrent_same_token_one_wins(
     async def _coordinated_accept(
         session: AsyncSession, raw_token: str, **kwargs: object
     ) -> object:
+        # Pin the REPEATABLE READ snapshot *before* the barrier (a harmless
+        # read opens the transaction and freezes the snapshot, cf.
+        # `test_invitations_service.test_concurrent_create_*`). Without this,
+        # the snapshot is only taken at the UPDATE below, so asyncio
+        # scheduling can let the winner commit before the loser's UPDATE even
+        # issues — the loser then reads the committed claim (0 rows → clean
+        # 410) instead of the 40001 arm, making the race flaky (~75% under
+        # CI xdist). Pinning first guarantees both snapshots predate either
+        # commit, so the loser deterministically aborts on SerializationFailure.
+        await session.execute(select(Invitation).limit(1))
         # Both racers reach the UPDATE in the same window so neither sees
         # the other's committed claim — forcing the 40001 arm.
         await barrier.wait()

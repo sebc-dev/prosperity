@@ -1,7 +1,7 @@
 import { and, desc, eq, isNull, or, sql } from 'drizzle-orm'
 
 import type { Transaction } from './index'
-import { debts, splits, transactions } from './schema'
+import { debts, splits, transactions, users_public } from './schema'
 import type { SQLiteDatabase } from './types'
 
 export interface TransactionFilters {
@@ -45,6 +45,12 @@ export const selectAccountBalance = (db: SQLiteDatabase, accountId: string) =>
         isNull(transactions.voided_at),
       ),
     )
+
+// Ligne `users_public` d'un utilisateur (id, display_name, role) — synchronisée (sync rule
+// `household`). `id = ''` (utilisateur courant inconnu) → 0 ligne (la query reste valide pour
+// `useQuery`, qui exige une CompilableQuery non-nulle ; le fail-safe RBAC en découle).
+export const selectUserById = (db: SQLiteDatabase, id: string) =>
+  db.select().from(users_public).where(eq(users_public.id, id)).limit(1)
 
 // Dettes où l'utilisateur est partie prenante (créancier `to_user_id` OU débiteur `from_user_id`).
 export const selectDebtsForUser = (db: SQLiteDatabase, userId: string) =>

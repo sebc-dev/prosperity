@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 
 import { SyncStatusBadge } from '@/components/business/sync-status-badge'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { APP_NAME, APP_TAGLINE } from '@/config/branding'
 
 import { AppNav } from './app-nav'
 import { UserMenu } from './user-menu'
@@ -13,7 +14,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-svh flex-col">
       <header className="flex items-center justify-between gap-4 border-b p-4">
-        <span className="text-lg font-semibold">Prosperity</span>
+        <span className="text-lg font-semibold">{APP_NAME}</span>
         <div className="flex items-center gap-2">
           <SyncStatusBadge />
           <ThemeToggle />
@@ -26,7 +27,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         <main className="flex-1 p-4 pb-20 md:pb-4">{children}</main>
       </div>
       <footer className="text-muted-foreground border-t p-4 text-center text-xs">
-        Prosperity — gestion de budget familial
+        {APP_NAME} — {APP_TAGLINE}
       </footer>
     </div>
   )

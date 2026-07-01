@@ -2,15 +2,14 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react'
 
 import { ThemeContext, THEME_STORAGE_KEY, type Theme } from '@/hooks/use-theme'
 
-/** Thème initial : valeur stockée si valide, sinon préférence système. La même
- *  heuristique (clé + prefers-color-scheme) est dupliquée dans le script anti-FOUC
- *  d'index.html (D7) ; cohérence des deux à vérifier en Playwright (§6). */
+/** Thème initial : valeur stockée si valide, sinon sombre par défaut (décision #240).
+ *  La même heuristique est dupliquée dans le script anti-FOUC d'index.html (D7). */
 function readInitial(): Theme {
   const stored = localStorage.getItem(THEME_STORAGE_KEY)
   if (stored === 'dark' || stored === 'light') {
     return stored
   }
-  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+  return 'dark'
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {

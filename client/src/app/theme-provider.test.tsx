@@ -3,7 +3,6 @@ import { expect, test } from 'vitest'
 
 import { ThemeProvider } from '@/app/theme-provider'
 import { THEME_STORAGE_KEY } from '@/hooks/use-theme'
-import { stubMatchMedia } from '@tests/setup'
 
 const html = () => document.documentElement
 
@@ -14,11 +13,8 @@ test('init depuis localStorage : "dark" → <html> reçoit .dark', () => {
   expect(html().classList.contains('dark')).toBe(true)
 })
 
-// Branche 2 (fallback) : storage vide → préférence système. Sans surcharge, le
-// stub matchMedia par défaut (matches:false) ne couvrirait jamais cette branche.
-test('fallback matchMedia : storage vide + prefers-color-scheme dark → .dark', () => {
-  stubMatchMedia(true) // surcharge `matches:true` ; restaurée par l'afterEach du setup
-
+// Branche 2 (fallback) : storage vide → sombre par défaut (décision #240).
+test('fallback : storage vide → .dark par défaut', () => {
   render(<ThemeProvider>contenu</ThemeProvider>)
   expect(html().classList.contains('dark')).toBe(true)
 })

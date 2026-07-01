@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 
 import { SyncStatusBadge } from '@/components/business/sync-status-badge'
 import { ThemeToggle } from '@/components/theme-toggle'
-import { APP_NAME, APP_TAGLINE } from '@/config/branding'
+import { APP_LOGO_MARK, APP_NAME, APP_TAGLINE } from '@/config/branding'
 
 import { AppNav } from './app-nav'
 import { UserMenu } from './user-menu'
@@ -14,7 +14,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-svh flex-col">
       <header className="flex items-center justify-between gap-4 border-b p-4">
-        <span className="text-lg font-semibold">{APP_NAME}</span>
+        <span className="flex items-center gap-2 text-lg font-semibold" style={{ fontFamily: 'var(--font-serif)' }}>
+          <img src={APP_LOGO_MARK} alt="" aria-hidden width={28} height={28} />
+          {APP_NAME}
+        </span>
         <div className="flex items-center gap-2">
           <SyncStatusBadge />
           <ThemeToggle />

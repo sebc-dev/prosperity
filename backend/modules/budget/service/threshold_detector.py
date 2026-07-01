@@ -28,20 +28,19 @@ from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import column, select, table
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.budget.domain import compute_period_window, crossed_thresholds
 from backend.modules.budget.events import BudgetThresholdEvent
-from backend.modules.budget.models import Budget, BudgetThresholdAlert, Category
+from backend.modules.budget.models import BudgetThresholdAlert
+from backend.modules.budget.service._budget_queries import (
+    concerned_budgets as _concerned_budgets,
+    splits as _splits,
+)
 from backend.modules.budget.service.consumption import compute_consumption
 from backend.shared.events import publish
-
-# Lightweight Core handle on a PEER module's table (`transactions ⊥ budget`,
-# contract 1). Read-only — NO import of `transactions.models` (gabarit
-# `consumption._splits`). Only the columns this query touches are declared.
-_splits = table("splits", column("transaction_id"), column("category_id"))
 
 
 class _ConfirmedEvent(Protocol):
@@ -69,42 +68,6 @@ async def _split_category_ids(session: AsyncSession, tx_id: UUID) -> set[UUID]:
         )
     )
     return set(rows.scalars().all())
-
-
-async def _concerned_budgets(session: AsyncSession, category_ids: set[UUID]) -> list[Budget]:
-    """Active budgets whose category is an ancestor-or-self of a split category.
-
-    A budget is concerned iff `split.category ∈ subtree(budget.category)` ⟺
-    `budget.category` is an ancestor-or-self of a split category — so we walk
-    UPWARD (recursive CTE, gabarit `categories._load_ancestor_chain`), then join
-    active budgets. SELECTs the full `Budget` ENTITIES (populates the identity-map
-    → no re-SELECT per `session.get` in the handler loop). Ordered `(created_at,
-    id)` for determinism.
-
-    Over-resolution is safe: the `publish` decision depends EXCLUSIVELY on
-    `crossed_thresholds(consumed, amount)`, where `consumed` is recomputed by
-    `compute_consumption` (re-filtered strictly by subtree, eligible accounts,
-    window, currency, state) — never on membership of this candidate set. A
-    falsely-candidate budget computes its true consumption (often 0 on the
-    eligible accounts) → `crossed_thresholds` returns `[]` → no INSERT, no publish.
-    This only WIDENS the candidate set, never triggers an effect by itself.
-    """
-    cat = Category.__table__
-    anchor = (
-        select(cat.c.id, cat.c.parent_id)
-        .where(cat.c.id.in_(category_ids))
-        .cte("concerned", recursive=True)
-    )
-    parent = cat.alias("p")
-    chain = anchor.union(  # UNION (dedup) → terminates even on a corrupted tree
-        select(parent.c.id, parent.c.parent_id).join(anchor, parent.c.id == anchor.c.parent_id)
-    )
-    stmt = (
-        select(Budget)
-        .where(Budget.category_id.in_(select(chain.c.id)), Budget.archived_at.is_(None))
-        .order_by(Budget.created_at, Budget.id)
-    )
-    return list((await session.execute(stmt)).scalars().all())
 
 
 async def on_transaction_confirmed(session: AsyncSession, event: _ConfirmedEvent) -> None:

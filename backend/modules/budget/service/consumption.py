@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from datetime import date
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, column, func, literal, select, table, tuple_
+from sqlalchemy import ColumnElement, func, literal, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.modules.accounts.public import (
@@ -46,29 +46,13 @@ from backend.modules.budget.domain import (
     consumption_from_totals,
 )
 from backend.modules.budget.models import Budget, BudgetContributor, Category
+from backend.modules.budget.service._budget_queries import (
+    concerned_budgets as _concerned_budgets,
+    splits as _splits,
+    transactions as _transactions,
+)
 
 logger = logging.getLogger(__name__)
-
-# Lightweight Core handles on a PEER module's tables (`transactions ⊥ budget`,
-# contract 1). NO import of `transactions.models` — read-only access only
-# (CONTEXT.md §Split sanctions budget aggregation reads). Only the columns the
-# SUM query touches are declared.
-_splits = table(
-    "splits",
-    column("id"),
-    column("account_id"),
-    column("category_id"),
-    column("amount_cents"),
-    column("currency"),
-    column("transaction_id"),
-)
-_transactions = table(
-    "transactions",
-    column("id"),
-    column("date"),
-    column("state"),
-    column("debt_generation_override"),
-)
 
 
 async def _load_descendant_ids(session: AsyncSession, root_id: UUID) -> set[UUID]:
@@ -377,21 +361,9 @@ async def list_overflow_budget_ids_for_categories(
     consumes the parent budget ⇒ the parent's neighbours must be recomputed). `[]`
     if `category_ids` is empty. REUSES the ancestor walk-up of `_concerned_budgets`
     (no second CTE), adding only the `_eligible_account_ids` filter. Read-only.
-
-    The `_concerned_budgets` import is intra-`budget` (not constrained by
-    import-linter, whose contracts are cross-module) and done lazily here to avoid
-    the `consumption ↔ threshold_detector` import cycle (`threshold_detector`
-    imports `compute_consumption` at module load).
     """
     if not category_ids:
         return []
-    # Lazy + intra-module: top-level would cycle (`threshold_detector` imports
-    # `compute_consumption` at load). Private reuse is deliberate (single source of
-    # the ancestor walk-up, no second CTE — gabarit `_consumption_filters`).
-    from backend.modules.budget.service.threshold_detector import (  # noqa: PLC0415
-        _concerned_budgets,  # pyright: ignore[reportPrivateUsage]
-    )
-
     budgets = await _concerned_budgets(session, category_ids)
     out: list[UUID] = []
     for budget in budgets:

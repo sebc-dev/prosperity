@@ -14,7 +14,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-svh flex-col">
       <header className="flex items-center justify-between gap-4 border-b p-4">
-        <span className="flex items-center gap-2 text-lg font-semibold" style={{ fontFamily: 'var(--font-serif)' }}>
+        <span
+          className="flex items-center gap-2 text-lg font-semibold"
+          style={{ fontFamily: 'var(--font-serif)' }}
+        >
           <img src={APP_LOGO_MARK} alt="" aria-hidden width={28} height={28} />
           {APP_NAME}
         </span>

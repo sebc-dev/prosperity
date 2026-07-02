@@ -184,3 +184,19 @@ def test_public_names_are_identical_objects_to_internals() -> None:
     assert auth_public.get_current_user is _deps.get_current_user
     assert auth_public.require_admin is _deps.require_admin
     assert auth_public.require_member is _deps.require_member
+
+
+def test_role_guards_importable_from_public_surface() -> None:
+    # S19.3: the RBAC guards must be reachable via the cross-module public
+    # surface so a future admin-only module can `Depends(require_admin)`
+    # without importing `auth.transports.dependencies` (ADR 0005). The
+    # module-level `from backend.modules.auth.public import require_admin,
+    # require_member` above is itself the import-only proof — it would fail
+    # at collection time if the surface dropped either guard. This focused
+    # test states the story's observable deliverable on its own terms and
+    # pins both names to their public-surface bindings. HTTP enforcement
+    # behaviour is covered by the auth integration tests, not here.
+    assert require_admin is auth_public.require_admin
+    assert require_member is auth_public.require_member
+    assert callable(require_admin)
+    assert callable(require_member)

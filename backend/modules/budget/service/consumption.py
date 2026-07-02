@@ -48,7 +48,11 @@ from backend.modules.budget.domain import (
 from backend.modules.budget.models import Budget, BudgetContributor, Category
 from backend.modules.budget.service._budget_queries import (
     concerned_budgets as _concerned_budgets,
+)
+from backend.modules.budget.service._budget_queries import (
     splits as _splits,
+)
+from backend.modules.budget.service._budget_queries import (
     transactions as _transactions,
 )
 

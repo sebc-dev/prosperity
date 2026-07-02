@@ -37,6 +37,8 @@ from backend.modules.budget.events import BudgetThresholdEvent
 from backend.modules.budget.models import BudgetThresholdAlert
 from backend.modules.budget.service._budget_queries import (
     concerned_budgets as _concerned_budgets,
+)
+from backend.modules.budget.service._budget_queries import (
     splits as _splits,
 )
 from backend.modules.budget.service.consumption import compute_consumption

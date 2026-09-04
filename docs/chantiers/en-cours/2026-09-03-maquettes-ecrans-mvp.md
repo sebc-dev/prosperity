@@ -1,7 +1,7 @@
 # Génération des écrans MVP en maquette + améliorations itératives
 
 Portée : hors-cycle
-Ouvert le 2026-09-03 · Actualisé le 2026-09-04 · branche `main` · HEAD `831307d`
+Ouvert le 2026-09-03 · Actualisé le 2026-09-04 · branche `main` · HEAD `ff06e71`
 
 ## Objectif
 Couvrir en maquette Claude Design (identité Chêne) le reste des écrans MVP d'E15
@@ -22,10 +22,11 @@ au-delà de la boucle financière cœur, et y intégrer au fil de l'eau les amé
 - Rendu figé : jamais la couleur seule (toujours doublée d'icône/signe) ; mot de passe ≥ 12 sur setup/invitation.
 - Compte › détail + édition des membres faits (desktop/tablette/mobile), rangée 4 Desktop.
 - Budgets faits (desktop/tablette/mobile) : liste (consommation, alerte 80 % / dépassement), détail (barre + restant + splits contributeurs « Courses › Frais » + Charger plus) et création (Catégorie picker, Période, Portée, Contributeurs si Commun, report du reliquat). Rangée 5 Desktop.
+- Dettes faits (desktop/tablette/mobile) : vue par contrepartie (onglets « On me doit » vert / « Je dois » terre cuite, net orienté, détail libellé court OU « Excédent — {compte/période} », masquage débiteur de la tx source), Régler des dettes (sélection multiple + montant/dette, type interne/externe/compensation, date+note) et Demander un partage (lancé depuis une tx perso : quote-part slider → montant, libellé ≤ 100). Rangée 6 Desktop + annotation `debt-note`.
 - Les `.dc.html` de travail vivent dans le scratchpad éphémère → seule source durable = le canvas Artifact.
 
 ## Prochaine étape
-Générer les écrans MVP restants : dettes, catégories, réglages. Prochain : dettes par contrepartie (`docs/ui/screens-debts.md`).
+Générer les écrans MVP restants : catégories, réglages. Prochain : arbre de catégories (`docs/ui/screens-categories.md`) — création/édition/archivage, icône + couleur (pastille).
 
 ## Écarté
 - Format `specs/NNN` — le dépôt suit `EXX`/roadmap (vision.md §7-9).

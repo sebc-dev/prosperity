@@ -32,3 +32,10 @@ requis + le bump, décider le merge, puis rebaser la suivante.
 ## Écarté
 - Merge groupé / à l'aveugle des 6 — rejeté : CI périmées entre elles + bump non vérifié.
 - Se fier à « OK » du status comme feu vert de merge — c'est une classe de topologie, pas de contenu.
+
+## Issue
+Fermé le 2026-09-04 — toutes les PR Dependabot traitées, **0 restante**.
+- **8 PR mergées** (squash, branche supprimée, `main` vérifié à chaque merge), dans l'ordre de risque : #257 tar, #258 postcss, #262 @xmldom/xmldom, #259 undici, #261 js-yaml+@redocly/openapi-core (aucun major, question du fiche tranchée), #260 cryptography 48→50, #265 brace-expansion, #264 browserslist.
+- **cryptography 48→50** (seul majeur, runtime backend) jugé sûr car **transitif via PyJWT** (aucun import direct dans le backend) : la résolution `uv` prouve la compatibilité de PyJWT et la CI backend (unit/integration/e2e) est verte sur le rebase — pas d'épluchage du changelog d'une API qu'on n'appelle pas.
+- **#263 fermé/superseded par Dependabot** (remplacé par #265, re-scopé au seul 1.1.15→1.1.18) en cours de boucle : « Base branch was modified » à la tentative de merge ; rien mergé par erreur, vérifié sur `main`.
+- Méthode tenue : une PR à la fois → `@dependabot rebase` la suivante → CI requise verte **sur base à jour** → merge. `pip-audit` reste nocturne, non exécuté au moment du merge.

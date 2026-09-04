@@ -1,7 +1,7 @@
 # Génération des écrans MVP en maquette + améliorations itératives
 
 Portée : hors-cycle
-Ouvert le 2026-09-03 · Actualisé le 2026-09-04 · branche `main` · HEAD `cd8a38a`
+Ouvert le 2026-09-03 · Actualisé le 2026-09-04 · branche `main` · HEAD `61a59d4`
 
 ## Objectif
 Couvrir en maquette Claude Design (identité Chêne) le reste des écrans MVP d'E15
@@ -21,10 +21,11 @@ au-delà de la boucle financière cœur, et y intégrer au fil de l'eau les amé
 - Écrans auth faits : 3 publics *nus* (connexion, config 1er admin, acceptation d'invitation), desktop + mobile ; états d'erreur documentés.
 - Rendu figé : montants en espaces insécables ; jamais la couleur seule ; mot de passe ≥ 12 sur setup/invitation.
 - Compte › détail + édition des membres faits (desktop/tablette/mobile), rangée 4 Desktop.
+- Budgets faits (desktop/tablette/mobile) : liste (consommation, alerte 80 % / dépassement), détail (barre + restant + splits contributeurs « Courses › Frais » + Charger plus) et création (Catégorie picker, Période, Portée, Contributeurs si Commun, report du reliquat). Rangée 5 Desktop.
 - Les `.dc.html` de travail vivent dans le scratchpad éphémère → seule source durable = le canvas Artifact.
 
 ## Prochaine étape
-Générer les écrans MVP restants : détail/création de budget, dettes, catégories, réglages. Prochain : détail/création de budget (`docs/ui/screens-budgets.md`).
+Générer les écrans MVP restants : dettes, catégories, réglages. Prochain : dettes par contrepartie (`docs/ui/screens-debts.md`).
 
 ## Écarté
 - Format `specs/NNN` — le dépôt suit `EXX`/roadmap (vision.md §7-9).

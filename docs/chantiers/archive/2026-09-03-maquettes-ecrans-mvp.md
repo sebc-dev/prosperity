@@ -38,3 +38,11 @@ Générer le dernier écran MVP : **nouvelle page « Réglages »** (`docs/ui/sc
 - Upload des écrans vers un projet claude.ai/design — aucun chemin dans les outils actuels.
 - Export PDF comme support de dev — on référence le HTML source directement.
 - Espace insécable des montants — non posée dans la maquette (tout le canvas emploie une espace normale) ; le formatage fr-FR ferme viendra d'`Intl.NumberFormat` à l'intégration React.
+
+## Issue
+Fermé le 2026-09-04 — **objectif atteint** : tous les écrans MVP d'E15 sont maquettés (identité Chêne).
+- **Dernier écran livré (cette session)** : page « Réglages » (Profil · Foyer admin · Invitations admin · dialogue Inviter), 4 rangées × 4 formats = 16 artboards ; conventions respectées (4 formats groupés, `.card` crème, « Réglages » actif dans la nav, « Plus » sur mobile).
+- Relecture de fond intégrée : copy exacte « L'ancien lien ne fonctionnera plus. », casse du rôle harmonisée (« member »), « expire dans N j » complété sur mobile, cibles tactiles ≥ 44 px.
+- Améliorations « au fil de l'eau » — 5 corrections sur Catégories : menu ⋯ ouvert (Modifier · Déplacer vers… · Archiver), état archivé grisé + Désarchiver, copy mobile « Afficher les catégories archivées », variante « Modifier la catégorie », prévention des cycles (sélecteur Parent ouvert, descendants désactivés).
+- **Source durable** : canvas Artifact « Prosperity — écrans MVP » — 101 artboards, 8 pages — https://claude.ai/code/artifact/791edba8-0fef-4b88-8643-9b26053838ef. Ré-extractible via `/design` (`--extract`) ; les `.dc.html` de travail restent éphémères (scratchpad).
+- **Aucun commit repo** : travail 100 % maquette, hors code. L'intégration réelle (React/PowerSync, données typées, tests) reste à faire, séparément, écran par écran.

@@ -1,7 +1,7 @@
 # Génération des écrans MVP en maquette + améliorations itératives
 
 Portée : hors-cycle
-Ouvert le 2026-09-03 · Actualisé le 2026-09-04 · branche `main` · HEAD `46037c3`
+Ouvert le 2026-09-03 · Actualisé le 2026-09-04 · branche `main` · HEAD `cd8a38a`
 
 ## Objectif
 Couvrir en maquette Claude Design (identité Chêne) le reste des écrans MVP d'E15
@@ -16,11 +16,11 @@ au-delà de la boucle financière cœur, et y intégrer au fil de l'eau les amé
 à situer    `client/src/components/layout/app-nav.tsx`, `app-layout.tsx` — vrais composants de coque, cible d'intégration ; pas en phase maquette
 
 ## Acquis
-- Identité « Chêne » + coque (header + sidebar rétractable rail 72px) *baked* dans chaque artboard — tout est dans le canvas, plus besoin de relire `index.css`/`nav-items.ts`.
-- Canvas « Prosperity — écrans MVP » : pages Desktop / Tablette / Mobile + Auth. Couvre la boucle financière cœur, le tableau de bord (grille 2×2 des 4 widgets, reflow mobile figé) et l'auth.
-- Écrans auth faits : 3 publics *nus* (connexion, configuration 1er admin, acceptation d'invitation), desktop + mobile ; états d'erreur documentés (« Identifiants invalides. », token expiré/410, email d'invité en lecture seule).
-- Rendu figé : montants en espaces insécables ; jamais la couleur seule (icône/libellé) ; mot de passe ≥ 12 sur setup/invitation.
-- Compte › détail + édition des membres faits (desktop/tablette/mobile). Détail d'un compte commun : en-tête (icône type · nom · nature), Solde réel, membres & quote-parts, actions [Membres] + menu ⋯ (Modifier le compte · Archiver — soft-delete), liste des transactions du compte + « Ajouter ». Édition des membres : modale (desktop/tablette) / feuille plein écran (mobile) — slider de quote-part, « Retirer », « Ajouter un membre », total = 100 % requis, « Enregistrer ». Rangée 4 sur la page Desktop.
+- Identité « Chêne » + coque (header + sidebar rétractable rail 72px) *baked* dans chaque artboard.
+- Canvas « Prosperity — écrans MVP » : pages Desktop / Tablette / Mobile + Auth. Couvre la boucle financière cœur, le tableau de bord et l'auth.
+- Écrans auth faits : 3 publics *nus* (connexion, config 1er admin, acceptation d'invitation), desktop + mobile ; états d'erreur documentés.
+- Rendu figé : montants en espaces insécables ; jamais la couleur seule ; mot de passe ≥ 12 sur setup/invitation.
+- Compte › détail + édition des membres faits (desktop/tablette/mobile), rangée 4 Desktop.
 - Les `.dc.html` de travail vivent dans le scratchpad éphémère → seule source durable = le canvas Artifact.
 
 ## Prochaine étape

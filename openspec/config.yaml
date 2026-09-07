@@ -1,0 +1,27 @@
+schema: scd
+
+# ┌─ scd-spec-dev (généré) ─ ce bloc est réécrit à chaque /setup ; éditez HORS de lui ─┐
+context: |
+  Roadmap  : docs/roadmap/ (epics E01–E19 · README.md) — chaque change ↳ une STORY d'epic
+  Archi    : invariants dans docs/adr/ (0001–0017, format Nygard) + docs/Architectures BS.md ;
+             multi-contexte via CONTEXT.md par contexte (voir CLAUDE.md · docs/agents/domain.md)
+  Test     : docs/Stratégie de tests.md ; mode de vérif (tdd / test / observé / aucun) décidé par
+             strategie-verif à la décomposition
+  Sécurité : valider toute entrée externe, aucun secret en clair ; ADR sécurité (0012, 0013, 0016)
+  UX/UI    : docs/ui/design-system.md · docs/ui/app-overview.md
+  CI       : runbooks/ci.md fait autorité sur ce qui bloque une PR (ne pas doubler)
+  Conv.    : CLAUDE.md (conventions, issue tracker gh, triage labels) · docs/agents/
+rules:
+  proposal:
+    - Backréférencer l'EPIC / la STORY (docs/roadmap/) et le comportement produit servi.
+  design:
+    - Vérifier la conformité aux invariants des ADR (docs/adr/).
+    - Décision structurante nouvelle → proposer un ADR (docs/adr/, format Nygard), ne pas la figer dans design.md.
+operations:
+  archive:
+    guidance:
+      - Cocher la STORY correspondante dans l'epic concerné (docs/roadmap/).
+# └─ fin scd-spec-dev ─┘
+
+# --- Zone humaine (éditez librement ci-dessous ; hors du bloc généré) ---
+# Per-artifact rules / per-operation guidance additionnels : voir la doc OpenSpec.

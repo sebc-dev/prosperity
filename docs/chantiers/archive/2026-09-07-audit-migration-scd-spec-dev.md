@@ -1,7 +1,7 @@
 # Suites de l'audit de la migration scd-spec-dev
 
 Portée : socle
-Ouvert le 2026-09-07 · Actualisé le 2026-09-07 · branche `chore/audit-lot-3` · HEAD `01874dc`
+Ouvert le 2026-09-07 · Actualisé le 2026-09-07 · branche `chore/audit-lot-4` · HEAD `93fd75f`
 
 ## Objectif
 Traiter, un lot par session (`/clear` entre chaque), les écarts relevés par l'audit du commit
@@ -23,16 +23,11 @@ Traiter, un lot par session (`/clear` entre chaque), les écarts relevés par l'
 - J'ai décidé de ne pas créer `docs/caps.md` ni `docs/vision.md` : aucun agent ne les exige.
 - Lot 4, constaté : `CONTEXT-MAP.md` n'existe pas ; `.planning/` existe encore ; CLAUDE.md ne mentionne ni epic ni story alors que `config.yaml` exige de backréférencer une STORY et de la cocher à l'archive.
 - Décidé : garder `/opsx:apply` et `openspec-apply-change` (possédés par OpenSpec, reviendraient au `openspec update`) ; laisser `.claude/review.json` absent.
+- Lot 4 fait (PR lot 4) : `.planning/` supprimé ; CLAUDE.md et `docs/agents/domain.md` décrivent le mono-contexte réel ; CLAUDE.md nomme `docs/roadmap/` et le lien change ↳ STORY ; « Cocher la STORY » reformulé en « clore la STORY » (issue + ligne `> **Statut**` de l'epic) car les epics n'ont pas de case par story.
 - Vu en passant, non traité : `test_property_one_result_per_mutation_in_order` (`tests/unit/test_sync_dispatcher.py`) a échoué une fois sous `-n auto`, vert seul et au re-jeu — instable, hors périmètre.
 
 ## Prochaine étape
-Lot 4 : sur `chore/audit-lot-4` depuis `main` **une fois #270 mergée**. Supprimer `.planning/` après
-avoir vérifié que rien ne le cite ; réécrire `### Domain docs` de CLAUDE.md sur ce qui existe vraiment
-(d'après `docs/agents/domain.md`) ; ajouter à CLAUDE.md le lien change ↳ STORY d'epic
-(`docs/roadmap/`) et sa clôture à l'archive ; garder ou reformuler « Cocher la STORY » selon que les
-epics ont des cases à cocher.
-Vérif : `git grep -n '\.planning'` vide et le répertoire absent ; CLAUDE.md ne cite plus un fichier
-absent ; CLAUDE.md nomme `docs/roadmap/` et la STORY ; `openspec validate --strict` vert.
+Aucune : les quatre lots sont livrés.
 
 ## Écarté
 - Supprimer `/opsx:apply` pour matérialiser l'interdiction — OpenSpec le régénère ; l'interdiction reste comportementale (CLAUDE.md).
@@ -41,3 +36,9 @@ absent ; CLAUDE.md nomme `docs/roadmap/` et la STORY ; `openspec validate --stri
 - Job grep restreint au diff de la PR — rouge à chaque `# noqa: <code>` légitime, exceptions à gérer ; ruff PGH004 + RUF100 font le contrôle sans bruit.
 - Documenter seulement le piège de `/setup` — laissait un `# noqa` nu ou mort possible sans aucun signal.
 - Renommer `runbooks/ci.md` en `docs/ci.md` — `config.yaml` et une fiche archivée le citent ; un `docs/ci.md` court qui pointe dessus suffit.
+
+## Issue
+Les quatre lots de l'audit sont livrés, chacun par sa PR depuis `main` : lot 1 (tickets + labels),
+lot 2 (`docs/architecture.md`, `docs/ci.md`, PR #269), lot 3 (filet escape-hatches porté par ruff
+PGH004 + RUF100, PR #270), lot 4 (dettes doc, branche `chore/audit-lot-4`). Reste hors périmètre le
+test instable `test_property_one_result_per_mutation_in_order` sous `-n auto`, noté dans Acquis.

@@ -2,7 +2,7 @@
 
 **Bloqué par :** 01
 **Vérif :** test
-**Fichiers :** `src/components/business/debt-summary.tsx`, `src/lib/drizzle/queries.ts` + `queries.test.ts`, `src/hooks/use-*.ts`
+**Fichiers :** `client/src/components/business/debt-summary.tsx`, `client/src/lib/drizzle/queries.ts` + `queries.test.ts`, `client/src/hooks/use-*.ts`
 
 ## Ce que ça livre
 

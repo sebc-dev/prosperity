@@ -2,7 +2,7 @@
 
 **Bloqué par :** —
 **Vérif :** test
-**Fichiers :** `src/pages/_authenticated/index.tsx`, `src/components/business/balance-panel.tsx`, `src/components/ui/skeleton.tsx`, `src/lib/format.ts` (`formatCents`), `src/lib/drizzle/queries.ts` + `queries.test.ts`, `src/hooks/use-*.ts`
+**Fichiers :** `client/src/pages/_authenticated/index.tsx`, `client/src/components/business/balance-panel.tsx`, `client/src/components/ui/skeleton.tsx`, `client/src/lib/format.ts` (`formatCents`), `client/src/lib/drizzle/queries.ts` + `queries.test.ts`, `client/src/hooks/use-*.ts`
 
 ## Ce que ça livre
 
@@ -16,7 +16,7 @@ Offline-first.
 
 ## Critères
 
-- [ ] La route `/` rend le tableau de bord dans la coque `_authenticated` (header + navigation), plus le placeholder   (SC-01a)
+- [ ] La route `/` ne rend plus le placeholder « Tableau de bord — à venir » mais le tableau de bord, dans la coque `_authenticated` (header + navigation)   (SC-01a)
 - [ ] `formatCents(123456)` rend `1 234,56 €` (fr-FR, séparateur de milliers)   (SC-01b)
 - [ ] `formatCents(-500)` rend un montant négatif signé   (SC-01c)
 - [ ] Le facteur de requête liste les comptes visibles (perso `owner` + commun `account_members`), hors `archived`   (SC-01d)

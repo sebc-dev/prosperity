@@ -2,7 +2,7 @@
 
 **Bloqué par :** 01
 **Vérif :** test
-**Fichiers :** `src/components/business/recent-transactions.tsx`, `src/components/business/transaction-row.tsx`, `src/lib/drizzle/queries.ts` + `queries.test.ts`, `src/hooks/use-*.ts`
+**Fichiers :** `client/src/components/business/recent-transactions.tsx`, `client/src/components/business/transaction-row.tsx`, `client/src/lib/drizzle/queries.ts` + `queries.test.ts`, `client/src/hooks/use-*.ts`
 
 ## Ce que ça livre
 

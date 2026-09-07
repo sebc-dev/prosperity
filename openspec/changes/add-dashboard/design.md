@@ -40,6 +40,22 @@ suivants.
 - **Intention d'interface** portée par `docs/ui/` (screens-dashboard + design-system, déjà validés) —
   non dupliquée ici.
 
+### Décisions de test
+
+- **Couture principale : les facteurs de requête/agrégation purs** du module drizzle, testés contre un
+  SQLite in-memory réel chargé du DDL généré (patron `client/src/lib/drizzle/queries.test.ts`,
+  `@vitest-environment node`) — couvre le calcul (solde, dette nette, consommation, tri/limite) au
+  plus haut, sans mock. Non couvert ici : la réactivité rendue.
+- **Couture composant : les widgets** testés en isolant `useQuery` (mock `@powersync/react` →
+  fixtures) ou en stubbant les hooks de domaine (patron
+  `client/src/features/setup/setup-form.test.tsx`) — couvre présentation, états
+  (vide/erreur/skeleton), formatage, signe+couleur+icône.
+- **Aucune couture ne pilote la réactivité PowerSync** à travers un rendu (différée) — ne pas la
+  simuler.
+- **Prior art** : `client/src/lib/drizzle/queries.test.ts`,
+  `client/src/hooks/use-account-balance.test.tsx`, `client/src/features/setup/setup-form.test.tsx`,
+  et `client/tests/render.tsx` (`renderWithProviders`).
+
 ## Risks / Trade-offs
 
 - [Consommation budget client ≠ serveur] → le calcul client peut diverger de la sémantique serveur

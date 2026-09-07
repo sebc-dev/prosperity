@@ -37,7 +37,7 @@ async def test_post_token_returns_scoped_sse_token(
     resp = await async_client.post("/sse/token", headers=_bearer(user.id))
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["expires_in"] == 300  # noqa: PLR2004 — TTL SSE (5 min)
+    assert body["expires_in"] == 300
     # Le token renvoyé est un VRAI token SSE pour ce user (audience prosperity-sse).
     verified_id, _exp = verify_sse_token(body["token"], settings=_settings)
     assert verified_id == user.id

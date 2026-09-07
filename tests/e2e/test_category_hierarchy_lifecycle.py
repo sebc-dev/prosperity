@@ -43,9 +43,7 @@ def _names(listing: list[dict[str, Any]]) -> set[str]:
     return {row["name"] for row in listing}
 
 
-async def test_category_hierarchy_lifecycle(  # noqa: PLR0915 — E2E journey is deliberately long
-    committed_client, committed_sessionmaker
-):
+async def test_category_hierarchy_lifecycle(committed_client, committed_sessionmaker):
     client = committed_client
     admin_access, _refresh, admin_email = await bootstrap_admin(client)
     admin_headers = auth_headers(admin_access)

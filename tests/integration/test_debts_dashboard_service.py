@@ -48,7 +48,7 @@ async def _count_select_debts(session: AsyncSession) -> AsyncGenerator[list[str]
     sync_conn = (await session.connection()).sync_connection
     statements: list[str] = []
 
-    def _before(conn, cursor, statement, parameters, ctx, executemany) -> None:  # noqa: ANN001, PLR0913
+    def _before(conn, cursor, statement, parameters, ctx, executemany) -> None:  # noqa: PLR0913
         statements.append(statement)
 
     event.listen(sync_conn, "before_cursor_execute", _before)

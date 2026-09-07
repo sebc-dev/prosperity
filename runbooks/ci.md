@@ -99,6 +99,30 @@ Trois leviers, **mesurés** sur la suite d'intégration (1237 tests) :
 tests) avec xdist + flags Postgres ; le profil `ci` réduit en plus les modules property-based
 (le plus lourd : 70 s → 37 s). Re-mesurer si la suite grossit.
 
+## Escape-hatches — le filet vit dans les linters, pas dans un grep
+
+Le plugin `scd-spec-dev` propose un job CI qui `git grep` six jetons (`@ts-ignore`, `as any`,
+`eslint-disable`, `.skip(`, `# noqa`, `--no-verify`) sur tout le code suivi. **Il n'est pas posé
+ici, volontairement** : sur ce dépôt brownfield il serait rouge en permanence sur plus d'une centaine
+de lignes légitimes (`# noqa: <code>` documentés, `pytest.skip` avec motif, `routeTree.gen.ts`
+généré). Ce qu'on veut interdire n'est pas le jeton, c'est l'**échappatoire sans justification** — et
+ce sont les linters déjà joués par `backend-lint` / `frontend-lint` qui le font, sans bruit :
+
+- **Backend (ruff)** : `PGH004` refuse un `# noqa` **nu** (sans code), `RUF100` refuse un `# noqa`
+  **mort** (code non activé ou plus déclenché). Un `# noqa: <code>` ciblé reste autorisé : c'est le
+  mécanisme normal de dérogation, visible en review.
+- **Frontend (eslint, `recommendedTypeChecked`)** : `no-explicit-any` et `ban-ts-comment` refusent
+  `as any` et `@ts-ignore` dans le code écrit à la main ; les fichiers générés sont dans `ignores`.
+- **Review-time** : l'`integrity-reviewer` du plugin scanne le **diff** de chaque ticket pour les
+  mêmes jetons et bloque ce qui n'est pas dérogé dans le ticket. C'est lui, pas la CI, qui juge la
+  pertinence.
+
+⚠️ **Piège au re-jeu de `/scd-spec-dev:setup`** : la commande **recrée**
+`.github/workflows/scd-escape-hatch-guard.yml` à chaque passage (fichier qu'elle considère lui
+appartenir). Après un re-jeu, **supprimer ce fichier avant de commiter** — sinon `ci-required` n'est
+pas affecté (le job n'est pas dans son `needs:`), mais le workflow tourne rouge sur chaque push et
+pollue les checks de la PR.
+
 ## Validation d'un changement de CI
 
 - **Forme** : `actionlint .github/workflows/*.yml` (local ; gate dur = job `ci-selftest`).

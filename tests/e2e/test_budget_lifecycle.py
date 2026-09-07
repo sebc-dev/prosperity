@@ -86,9 +86,7 @@ def _first_of_current_month() -> str:
     return _today().replace(day=1).isoformat()
 
 
-async def test_budget_lifecycle(  # noqa: PLR0915 — E2E journey is deliberately long
-    committed_client, committed_sessionmaker
-) -> None:
+async def test_budget_lifecycle(committed_client, committed_sessionmaker) -> None:
     client = committed_client
     admin_access, _refresh, admin_email = await bootstrap_admin(client)
     member_access = await onboard_member(client, admin_access, MEMBER_EMAIL, MEMBER_PASSWORD)

@@ -36,4 +36,6 @@ d'intégration. Un test seul : `uv run pytest tests/unit/<fichier>.py::<test> -q
 Le job `ci-required` agrège les jobs déclenchés par les chemins modifiés (matrice dans
 `runbooks/ci.md`). Une PR qui ne touche que `docs/**` ou des `*.md` ne joue rien et reste verte. La
 quality gate du plugin (`.claude/quality.json`) est volontairement **absente** : lint, typecheck et
-tests sont déjà joués par `push.yml`, les rejouer par ticket serait une double exécution.
+tests sont déjà joués par `push.yml`, les rejouer par ticket serait une double exécution. Le filet
+escape-hatches du plugin n'est pas posé non plus : les linters le portent (`runbooks/ci.md`
+§ Escape-hatches).

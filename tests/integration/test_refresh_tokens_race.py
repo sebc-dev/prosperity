@@ -104,7 +104,7 @@ async def test_rotate_replay_branch_fires_when_loser_starts_after_commit(
                 _, _new_raw = await rotate(session, raw_t0, settings=_settings)
                 await session.commit()
                 return ("success", None)
-            except Exception as exc:  # noqa: BLE001 — defensive: surface, never hang
+            except Exception as exc:
                 await session.rollback()
                 return ("winner-failed", exc)
             finally:
@@ -127,7 +127,7 @@ async def test_rotate_replay_branch_fires_when_loser_starts_after_commit(
             except InvalidRefreshTokenError as exc:
                 await session.rollback()
                 return ("invalid", exc)
-            except Exception as exc:  # noqa: BLE001 — exploratory net
+            except Exception as exc:
                 await session.rollback()
                 return ("other", exc)
 
@@ -236,7 +236,7 @@ async def test_rotate_concurrent_race_with_barrier(
             except InvalidRefreshTokenError as exc:
                 await session.rollback()
                 return ("invalid", type(exc).__name__)
-            except Exception as exc:  # noqa: BLE001 — exploratory net
+            except Exception as exc:
                 await session.rollback()
                 return ("other", type(exc).__name__)
 

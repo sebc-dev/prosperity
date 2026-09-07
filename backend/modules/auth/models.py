@@ -34,7 +34,7 @@ from sqlalchemy.orm import Mapped, mapped_column, validates
 
 # Canonical home of `UserRole` is `domain.py` (SQLAlchemy-free). Re-imported
 # here so `User.role` maps it and `auth.public` resolves it via `models`.
-from backend.modules.auth.domain import UserRole  # noqa: F401
+from backend.modules.auth.domain import UserRole
 from backend.shared.models import Base
 
 

@@ -287,7 +287,7 @@ async def test_promote_concurrent_race_with_barrier_yields_one_success_one_audit
             except AlreadyAdminError:
                 await session.rollback()
                 return "already_admin"
-            except Exception as exc:  # noqa: BLE001 — surface unexpected outcomes loudly
+            except Exception as exc:
                 await session.rollback()
                 return f"other:{type(exc).__name__}"
 
@@ -329,7 +329,7 @@ async def test_promote_loser_after_commit_yields_already_admin_one_audit(
                 await promote_to_admin(session, user_id=target_id, by_admin_id=actor_id)
                 await session.commit()
                 return "success"
-            except Exception as exc:  # noqa: BLE001 — surface, never hang
+            except Exception as exc:
                 await session.rollback()
                 return f"winner-failed:{type(exc).__name__}"
             finally:
@@ -348,7 +348,7 @@ async def test_promote_loser_after_commit_yields_already_admin_one_audit(
             except AlreadyAdminError:
                 await session.rollback()
                 return "already_admin"
-            except Exception as exc:  # noqa: BLE001 — surface unexpected outcomes loudly
+            except Exception as exc:
                 await session.rollback()
                 return f"other:{type(exc).__name__}"
 

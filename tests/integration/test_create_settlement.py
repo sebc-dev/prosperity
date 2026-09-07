@@ -853,7 +853,7 @@ async def test_insert_is_atomic_across_two_flushes(
     )
     before = await _settlement_count(household_singleton)
 
-    with pytest.raises(IntegrityError):  # noqa: PT012 — savepoint scope is intentional
+    with pytest.raises(IntegrityError):
         async with household_singleton.begin_nested():
             await create_settlement(
                 household_singleton,

@@ -46,7 +46,7 @@ def test_property_balanced_splits_are_zero_sum(splits: tuple[Split, ...]) -> Non
 @settings(max_examples=100)
 def test_property_balanced_splits_n_splits_honoured(splits: tuple[Split, ...]) -> None:
     # `n_splits` FIXE la cardinalité exacte (D4, signature de l'AC).
-    assert len(splits) == 4  # noqa: PLR2004 — n_splits demandé explicitement
+    assert len(splits) == 4
 
 
 @given(splits=balanced_splits_strategy())

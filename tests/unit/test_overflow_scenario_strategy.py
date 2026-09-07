@@ -89,7 +89,7 @@ def test_property_override_drawn_per_tx_when_unpinned(sc: OverflowScenario) -> N
 def test_property_two_member_form(sc: OverflowScenario) -> None:
     # Forme close D7 : exactement 2 membres (payer + autre), Σ ratio == 1 ⇒
     # `payer_ratio + s_o == 1` ; budget présent quand `with_budget=True`.
-    assert len(sc.account.members) == 2  # noqa: PLR2004 — exactement payer + 1 débiteur
+    assert len(sc.account.members) == 2
     assert sc.payer_ratio + sc.account.members[1].ratio == Decimal(1)
     assert sc.budget is not None
 
@@ -102,7 +102,7 @@ def test_property_budget_presence_and_roster_forced(data: st.DataObject) -> None
     sc_with = data.draw(overflow_scenario_strategy(with_budget=True, n_members=4))
     assert sc_with.budget is not None
     assert sc_with.budget.amount_cents >= 1
-    assert len(sc_with.account.members) == 4  # noqa: PLR2004 — cardinalité intermédiaire
+    assert len(sc_with.account.members) == 4
 
     sc_without = data.draw(overflow_scenario_strategy(with_budget=False))
     assert sc_without.budget is None

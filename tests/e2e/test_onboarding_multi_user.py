@@ -45,7 +45,7 @@ def _member_ids(detail: dict[str, object]) -> set[str]:
     return {m["user_id"] for m in detail["members"]}  # type: ignore[index,union-attr]
 
 
-async def test_onboarding_multi_user(committed_client, committed_sessionmaker):  # noqa: PLR0915 — E2E journey is deliberately long (D10)
+async def test_onboarding_multi_user(committed_client, committed_sessionmaker):
     client = committed_client
 
     # 1. /setup open on a fresh DB.
@@ -245,7 +245,7 @@ async def test_onboarding_accounts_etancheite(committed_client, committed_sessio
     assert bad_sum.status_code == 422, bad_sum.text
 
 
-async def test_shared_account_member_lifecycle(committed_client, committed_sessionmaker):  # noqa: PLR0915 — E2E journey is deliberately long (D10)
+async def test_shared_account_member_lifecycle(committed_client, committed_sessionmaker):
     """Parcours 1 extension (S05.4): the life of a shared account's roster, e2e.
 
     Bootstrap admin → onboard three members → admin creates a shared account of

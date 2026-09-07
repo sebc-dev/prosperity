@@ -5,7 +5,7 @@ context: |
   Roadmap  : docs/roadmap/ (epics E01–E19 · README.md) — chaque change ↳ une STORY d'epic
   Archi    : docs/architecture.md (table des invariants opposables, référent de la review) ;
              ADR dans docs/adr/ (0001–0017, format Nygard) + docs/Architectures BS.md ;
-             multi-contexte via CONTEXT.md par contexte (voir CLAUDE.md · docs/agents/domain.md)
+             contexte unique : CONTEXT.md à la racine (glossaire + règles métier, voir docs/agents/domain.md)
   Test     : docs/Stratégie de tests.md ; mode de vérif (tdd / test / observé / aucun) décidé par
              strategie-verif à la décomposition
   Sécurité : valider toute entrée externe, aucun secret en clair ; ADR sécurité (0012, 0013, 0016)
@@ -22,7 +22,10 @@ rules:
 operations:
   archive:
     guidance:
-      - Cocher la STORY correspondante dans l'epic concerné (docs/roadmap/).
+      - >-
+        Clore la STORY servie par le change : fermer son issue GitHub si elle existe (gh issue close),
+        et mettre à jour la ligne `> **Statut**` de l'epic concerné (docs/roadmap/EXX-*.md) ;
+        si l'epic est clos, aussi le tableau de docs/roadmap/README.md.
 # └─ fin scd-spec-dev ─┘
 
 # --- Zone humaine (éditez librement ci-dessous ; hors du bloc généré) ---

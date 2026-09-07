@@ -3,13 +3,15 @@ schema: scd
 # ┌─ scd-spec-dev (généré) ─ ce bloc est réécrit à chaque /setup ; éditez HORS de lui ─┐
 context: |
   Roadmap  : docs/roadmap/ (epics E01–E19 · README.md) — chaque change ↳ une STORY d'epic
-  Archi    : invariants dans docs/adr/ (0001–0017, format Nygard) + docs/Architectures BS.md ;
+  Archi    : docs/architecture.md (table des invariants opposables, référent de la review) ;
+             ADR dans docs/adr/ (0001–0017, format Nygard) + docs/Architectures BS.md ;
              multi-contexte via CONTEXT.md par contexte (voir CLAUDE.md · docs/agents/domain.md)
   Test     : docs/Stratégie de tests.md ; mode de vérif (tdd / test / observé / aucun) décidé par
              strategie-verif à la décomposition
   Sécurité : valider toute entrée externe, aucun secret en clair ; ADR sécurité (0012, 0013, 0016)
   UX/UI    : docs/ui/design-system.md · docs/ui/app-overview.md
-  CI       : runbooks/ci.md fait autorité sur ce qui bloque une PR (ne pas doubler)
+  CI       : docs/ci.md (commandes de test par stack, cap lu par ticket-briefer) ;
+             runbooks/ci.md fait autorité sur ce qui bloque une PR (ne pas doubler)
   Conv.    : CLAUDE.md (conventions, issue tracker gh, triage labels) · docs/agents/
 rules:
   proposal:

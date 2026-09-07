@@ -67,7 +67,7 @@ def _dbapi_error_with_sqlstate(sqlstate: str) -> DBAPIError:
 
 async def test_post_setup_propagates_not_null_violation(
     async_client: AsyncClient,
-    auth_schema: AsyncSession,  # noqa: ARG001
+    auth_schema: AsyncSession,
 ) -> None:
     """23502 NOT NULL violation = app bug → re-raise (→ 500 in prod), never 404."""
     exc = _integrity_error_with_sqlstate("23502")
@@ -85,7 +85,7 @@ async def test_post_setup_propagates_not_null_violation(
 
 async def test_post_setup_unique_violation_collapses_to_404(
     async_client: AsyncClient,
-    auth_schema: AsyncSession,  # noqa: ARG001
+    auth_schema: AsyncSession,
 ) -> None:
     """23505 unique_violation = race lost on PK or email → 404."""
     exc = _integrity_error_with_sqlstate("23505")
@@ -104,7 +104,7 @@ async def test_post_setup_unique_violation_collapses_to_404(
 
 async def test_post_setup_check_violation_collapses_to_404(
     async_client: AsyncClient,
-    auth_schema: AsyncSession,  # noqa: ARG001
+    auth_schema: AsyncSession,
 ) -> None:
     """23514 check_violation = singleton CHECK lost → 404."""
     exc = _integrity_error_with_sqlstate("23514")
@@ -123,7 +123,7 @@ async def test_post_setup_check_violation_collapses_to_404(
 
 async def test_post_setup_serialization_failure_collapses_to_404(
     async_client: AsyncClient,
-    auth_schema: AsyncSession,  # noqa: ARG001
+    auth_schema: AsyncSession,
 ) -> None:
     """40001 serialization_failure = REPEATABLE READ race-lost → 404.
 
@@ -147,7 +147,7 @@ async def test_post_setup_serialization_failure_collapses_to_404(
 
 async def test_post_setup_integrity_error_without_sqlstate_propagates(
     async_client: AsyncClient,
-    auth_schema: AsyncSession,  # noqa: ARG001
+    auth_schema: AsyncSession,
 ) -> None:
     """An `exc.orig` without `.sqlstate` is treated as unknown → re-raise.
 

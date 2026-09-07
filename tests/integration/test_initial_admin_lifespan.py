@@ -66,7 +66,7 @@ async def _ensure_schema(postgres_container: PostgresContainer) -> AsyncIterator
 async def test_lifespan_seeds_admin_when_env_vars_set(
     monkeypatch: pytest.MonkeyPatch,
     postgres_container: PostgresContainer,
-    _ensure_schema: None,  # noqa: PT019 — fixture pulled for its side effect
+    _ensure_schema: None,
 ) -> None:
     """Env vars set → after lifespan startup, the admin row is present + /setup is 404."""
     precomputed = PasswordHash.recommended().hash(_PLAINTEXT)
@@ -101,7 +101,7 @@ async def test_lifespan_seeds_admin_when_env_vars_set(
 async def test_lifespan_normal_mode_when_env_vars_absent(
     monkeypatch: pytest.MonkeyPatch,
     postgres_container: PostgresContainer,
-    _ensure_schema: None,  # noqa: PT019
+    _ensure_schema: None,
 ) -> None:
     """No env vars → no admin, /setup open. The standard installer experience."""
     monkeypatch.setenv("DATABASE_URL", postgres_container.get_connection_url())

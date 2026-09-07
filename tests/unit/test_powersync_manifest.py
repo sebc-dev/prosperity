@@ -17,10 +17,10 @@ import yaml
 # Side-effect imports register each module's tables on `Base.metadata` (same set
 # as alembic/env.py) — REQUIRED for test_published_tables_exist_in_metadata,
 # which is otherwise asserting against an empty MetaData.
-import backend.modules.accounts.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
-import backend.modules.auth.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
-import backend.modules.budget.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
-import backend.modules.debts.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
+import backend.modules.accounts.models  # pyright: ignore[reportUnusedImport]
+import backend.modules.auth.models  # pyright: ignore[reportUnusedImport]
+import backend.modules.budget.models  # pyright: ignore[reportUnusedImport]
+import backend.modules.debts.models  # pyright: ignore[reportUnusedImport]
 import backend.modules.transactions.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
 from backend.shared.models import Base
 from tests._powersync_tables import (

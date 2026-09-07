@@ -197,7 +197,7 @@ class TransactionFactory(SQLAlchemyModelFactory):
     # a method and would reject any non-`self` type there. The remaining params
     # and the return are typed, so no blanket `# type: ignore` is needed.
     @post_generation
-    def splits(obj, create: bool, extracted: object, **kwargs: object) -> None:  # noqa: N805
+    def splits(obj, create: bool, extracted: object, **kwargs: object) -> None:
         # `extracted is False` -> caller opts out of the auto canonical pair.
         if not create or extracted is False:
             return

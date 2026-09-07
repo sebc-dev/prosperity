@@ -45,7 +45,7 @@ from testcontainers.postgres import PostgresContainer
 # Side-effect import: registers `bank_account_external_refs` on `Base.metadata`
 # (S12.1, #176) so `auth_schema`'s `create_all` materialises the banking table
 # and the migration-parity test can diff it against the snapshot.
-import backend.modules.banking.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
+import backend.modules.banking.models  # pyright: ignore[reportUnusedImport]
 
 # Side-effect import: registers both `debts` tables (`debts` + `share_requests`)
 # on `Base.metadata`. REQUIRED here (not optional like transactions, which the
@@ -53,7 +53,7 @@ import backend.modules.banking.models  # noqa: F401  # pyright: ignore[reportUnu
 # `transactions.share_request_id → share_requests.id`, so `auth_schema`'s
 # `create_all` cannot resolve the `Transaction` FK target table unless
 # `share_requests` is registered first.
-import backend.modules.debts.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
+import backend.modules.debts.models  # pyright: ignore[reportUnusedImport]
 
 # Side-effect import: registers `sync_request_log` on `Base.metadata` (S13.2,
 # #187) so `auth_schema`'s `create_all` materialises the sync journal and the

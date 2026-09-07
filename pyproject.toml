@@ -82,6 +82,9 @@ extend-exclude = [".venv", "htmlcov", ".hypothesis", ".pytest_cache", "client"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "PL"]
+# PGH004 : pas de `# noqa` nu ; RUF100 : pas de `# noqa` mort. Le filet escape-hatches vit ici,
+# pas dans un grep CI (cf. runbooks/ci.md § Escape-hatches).
+extend-select = ["PGH004", "RUF100"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["backend"]

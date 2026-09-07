@@ -18,7 +18,7 @@ from backend.modules.auth.models import User, UserRole
 
 async def test_get_setup_returns_200_when_db_empty(
     async_client: AsyncClient,
-    auth_schema: AsyncSession,  # noqa: ARG001 — fixture materialises schema in the request connection
+    auth_schema: AsyncSession,
 ) -> None:
     resp = await async_client.get("/setup")
     assert resp.status_code == 200
@@ -27,7 +27,7 @@ async def test_get_setup_returns_200_when_db_empty(
 
 async def test_get_setup_sets_no_store_cache_headers(
     async_client: AsyncClient,
-    auth_schema: AsyncSession,  # noqa: ARG001
+    auth_schema: AsyncSession,
 ) -> None:
     resp = await async_client.get("/setup")
     assert resp.status_code == 200

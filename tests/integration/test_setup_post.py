@@ -117,7 +117,7 @@ async def test_post_setup_persists_device_label_from_user_agent(
 
 async def test_post_setup_response_carries_no_store_cache_headers(
     async_client: AsyncClient,
-    auth_schema: AsyncSession,  # noqa: ARG001
+    auth_schema: AsyncSession,
 ) -> None:
     """OWASP ASVS V8.3.4 — token-bearing responses must not be cached."""
     resp = await async_client.post("/setup", json=_setup_payload())
@@ -161,7 +161,7 @@ async def test_post_setup_returns_404_when_user_already_exists(
 
 async def test_post_setup_validates_password_min_length(
     async_client: AsyncClient,
-    auth_schema: AsyncSession,  # noqa: ARG001
+    auth_schema: AsyncSession,
 ) -> None:
     resp = await async_client.post("/setup", json=_setup_payload(password="short"))
     assert resp.status_code == 422
@@ -169,7 +169,7 @@ async def test_post_setup_validates_password_min_length(
 
 async def test_post_setup_validates_email_format(
     async_client: AsyncClient,
-    auth_schema: AsyncSession,  # noqa: ARG001
+    auth_schema: AsyncSession,
 ) -> None:
     resp = await async_client.post("/setup", json=_setup_payload(email="not-an-email"))
     assert resp.status_code == 422
@@ -177,7 +177,7 @@ async def test_post_setup_validates_email_format(
 
 async def test_post_setup_validates_display_name_not_empty(
     async_client: AsyncClient,
-    auth_schema: AsyncSession,  # noqa: ARG001
+    auth_schema: AsyncSession,
 ) -> None:
     resp = await async_client.post("/setup", json=_setup_payload(display_name=""))
     assert resp.status_code == 422
@@ -185,7 +185,7 @@ async def test_post_setup_validates_display_name_not_empty(
 
 async def test_post_setup_validates_household_name_not_empty(
     async_client: AsyncClient,
-    auth_schema: AsyncSession,  # noqa: ARG001
+    auth_schema: AsyncSession,
 ) -> None:
     resp = await async_client.post("/setup", json=_setup_payload(household_name=""))
     assert resp.status_code == 422
@@ -193,7 +193,7 @@ async def test_post_setup_validates_household_name_not_empty(
 
 async def test_post_setup_second_call_after_init_returns_404(
     async_client: AsyncClient,
-    auth_schema: AsyncSession,  # noqa: ARG001
+    auth_schema: AsyncSession,
 ) -> None:
     """Lock-after-init: a successful POST is followed by a permanent 404."""
     first = await async_client.post("/setup", json=_setup_payload())

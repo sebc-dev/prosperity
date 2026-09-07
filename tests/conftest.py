@@ -33,14 +33,14 @@ from sqlalchemy.ext.asyncio import (
 )
 from testcontainers.postgres import PostgresContainer
 
-import backend.modules.accounts.models  # noqa: F401  # pyright: ignore[reportUnusedImport]  side-effect: register tables on `Base.metadata`
+import backend.modules.accounts.models  # pyright: ignore[reportUnusedImport]  side-effect: register tables on `Base.metadata`
 
 # Side-effect: register the `debts` tables (`debts` + `share_requests`). REQUIRED
 # because S09.1 activates the FK `transactions.share_request_id →
 # share_requests.id` — `backend.main` pulls in `transactions.models` but NOT
 # `debts.models`, so the e2e `create_all` (below) cannot resolve that FK target
 # table unless `share_requests` is registered here first.
-import backend.modules.debts.models  # noqa: F401  # pyright: ignore[reportUnusedImport]
+import backend.modules.debts.models  # pyright: ignore[reportUnusedImport]
 
 # Side-effect: register `sync_request_log` (S13.2, #187) so the real-commit
 # `committed_engine` `create_all` materialises it for the purge-script test.

@@ -198,7 +198,7 @@ class TestConservationProperty:
         # unique). NB : ce n'est PAS une couverture de l'invariant
         # `MultipleCounterpartiesError` (anti-tiers), qui reste couvert PAR APPEL
         # en S10.2 — la strategy ne génère QUE {lo, hi} (cf. plan §6).
-        assert len(scenario.counterparties) == 2  # noqa: PLR2004 — exactement {A, B}
+        assert len(scenario.counterparties) == 2
         assert {c.currency for c in scenario.debt_contexts} == {"EUR"}
 
         # CŒUR PROBANT : le validateur ACCEPTE (ne lève AUCUNE

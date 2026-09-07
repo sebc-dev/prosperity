@@ -317,7 +317,7 @@ async def test_concurrent_create_same_email_one_succeeds_one_conflicts(
             except (DuplicatePendingInvitationError, IntegrityError):
                 await session.rollback()
                 return "conflict"
-            except Exception as exc:  # noqa: BLE001 — surface unexpected outcomes loudly
+            except Exception as exc:
                 await session.rollback()
                 return f"other:{type(exc).__name__}"
 

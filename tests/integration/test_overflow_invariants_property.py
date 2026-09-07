@@ -410,7 +410,7 @@ def test_overflow_origin_exclusivity_property(
                 )
             )
         ).scalar_one()
-        assert sr.amount_cents == 777  # noqa: PLR2004 — montant témoin
+        assert sr.amount_cents == 777
         assert sr.origin == "personal_share_request"
 
     _run_scenario(overflow_prop_socle, sc, _body)

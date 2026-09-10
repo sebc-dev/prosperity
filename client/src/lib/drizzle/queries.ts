@@ -1,7 +1,7 @@
-import { and, desc, eq, isNull, or, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 
 import type { Transaction } from './index'
-import { debts, splits, transactions, users_public } from './schema'
+import { account_members, accounts, debts, splits, transactions, users_public } from './schema'
 import type { SQLiteDatabase } from './types'
 
 export interface TransactionFilters {
@@ -45,6 +45,37 @@ export const selectAccountBalance = (db: SQLiteDatabase, accountId: string) =>
         isNull(transactions.voided_at),
       ),
     )
+
+// Comptes visibles par un membre du foyer : perso (`owner_id = userId`) OU commun (le membre
+// figure dans `account_members`), hors archivés (D14/dashboard). Le SOLDE n'est volontairement
+// PAS ré-agrégé ici : chaque ligne est ensuite passée à `selectAccountBalance` (réutilisée telle
+// quelle, une requête par compte, cf. `useAccountBalance`) — pas de duplication de la logique
+// « confirmed & non annulé » (D8), qui reste portée par une seule fonction.
+export const selectVisibleAccounts = (db: SQLiteDatabase, userId: string) =>
+  db
+    .select({
+      id: accounts.id,
+      name: accounts.name,
+      type: accounts.type,
+      currency: accounts.currency,
+    })
+    .from(accounts)
+    .where(
+      and(
+        isNull(accounts.archived_at),
+        or(
+          eq(accounts.owner_id, userId),
+          inArray(
+            accounts.id,
+            db
+              .select({ account_id: account_members.account_id })
+              .from(account_members)
+              .where(eq(account_members.user_id, userId)),
+          ),
+        ),
+      ),
+    )
+    .orderBy(accounts.name)
 
 // Ligne `users_public` d'un utilisateur (id, display_name, role) — synchronisée (sync rule
 // `household`). `id = ''` (utilisateur courant inconnu) → 0 ligne (la query reste valide pour

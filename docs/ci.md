@@ -34,8 +34,11 @@ d'intégration. Un test seul : `uv run pytest tests/unit/<fichier>.py::<test> -q
 ## Ce qui bloque une PR
 
 Le job `ci-required` agrège les jobs déclenchés par les chemins modifiés (matrice dans
-`runbooks/ci.md`). Une PR qui ne touche que `docs/**` ou des `*.md` ne joue rien et reste verte. La
-quality gate du plugin (`.claude/quality.json`) est volontairement **absente** : lint, typecheck et
-tests sont déjà joués par `push.yml`, les rejouer par ticket serait une double exécution. Le filet
-escape-hatches du plugin n'est pas posé non plus : les linters le portent (`runbooks/ci.md`
-§ Escape-hatches).
+`runbooks/ci.md`). Une PR qui ne touche que `docs/**` ou des `*.md` ne joue rien et reste verte.
+
+La **quality gate du plugin** (`.claude/quality.json`, jouée en phase 7½ de `/scd-spec-dev:run`,
+avant la review) rejoue les mêmes commandes **dans le cycle**, avant la PR : lint et format des deux
+stacks avec autofix sûr, pyright, `lint-imports` et `tsc` en `blocking` ; la couverture (unitaire
+backend, vitest frontend) en `advisory` sans seuil. Elle ne remplace pas la CI, qui reste le juge
+dur : elle évite d'ouvrir une PR rouge. Le filet escape-hatches du plugin n'est pas posé : les
+linters le portent (`runbooks/ci.md` § Escape-hatches).

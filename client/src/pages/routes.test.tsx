@@ -14,6 +14,14 @@ vi.mock('@/hooks/use-current-user', () => ({
   }),
 }))
 
+// La route `/` rend BalancePanel (S15.3, ticket 01), qui interroge la db Drizzle via
+// useVisibleAccounts — même limite que useCurrentUser ci-dessus (mock client, pas de vraie db) :
+// stubé en état vide pour que ces montages routés cessent de rendre un widget en échec
+// silencieux (le widget lui-même est couvert par balance-panel.test.tsx).
+vi.mock('@/hooks/use-visible-accounts', () => ({
+  useVisibleAccounts: () => ({ data: [], isLoading: false, error: undefined }),
+}))
+
 const PROTECTED = [
   ['/', /tableau de bord/i],
   ['/accounts', /comptes/i],

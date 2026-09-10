@@ -15,12 +15,19 @@ vi.mock('@/hooks/use-current-user', () => ({
     isAdmin: false,
   }),
 }))
+// La route `/` rend désormais BalancePanel (S15.3, ticket 01), qui interroge la db Drizzle via
+// useVisibleAccounts — même limite que useCurrentUser ci-dessus (mock client, pas de vraie db) :
+// stubé en état vide pour garder ce test focalisé sur le montage des providers, pas le widget
+// (couvert par balance-panel.test.tsx).
+vi.mock('@/hooks/use-visible-accounts', () => ({
+  useVisibleAccounts: () => ({ data: [], isLoading: false, error: undefined }),
+}))
 
 // Anti-régression : depuis S15.1 le __root n'est PLUS QUE des providers (ThemeProvider →
 // PowerSyncProvider → Outlet → Toaster) — le header/nav a migré dans la route de layout
 // `_authenticated` (AppLayout, P15.1.2). renderWithProviders({route:'/'}) monte ce VRAI root et
-// traverse la garde `_authenticated` (session seedée par défaut) jusqu'au placeholder dashboard ;
-// on prouve qu'il monte sans throw ni erreur console (pas « vert par foi »). La présence du header
+// traverse la garde `_authenticated` (session seedée par défaut) jusqu'au tableau de bord ; on
+// prouve qu'il monte sans throw ni erreur console (pas « vert par foi »). La présence du header
 // (toggle…) est re-testée dans components/layout/app-layout.test.tsx (P15.1.2).
 let consoleError: MockInstance<typeof console.error>
 

@@ -30,7 +30,7 @@ L'util `formatCents` SHALL convertir un montant en centimes en une chaîne EUR a
 #### Scenario: Montant négatif signé
 
 - **WHEN** `formatCents(-500)` est appelé
-- **THEN** il rend un montant négatif signé
+- **THEN** il rend `-5,00 €` : signe moins ASCII (U+002D) en tête, virgule décimale, espace insécable (U+00A0) avant `€`
 
 ### Requirement: BalancePanel — solde réel par compte
 

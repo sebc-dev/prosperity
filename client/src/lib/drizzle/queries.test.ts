@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, test } from 'vitest'
 import {
   selectAccountBalance,
   selectDebtsForUser,
+  selectNetDebtsByCounterparty,
   selectTransactions,
   selectVisibleAccounts,
 } from './queries'
@@ -89,6 +90,7 @@ function seedDebt(o: {
   from_user_id: string
   to_user_id: string
   created_at: string
+  amount_cents?: number
   account_id?: string | null
   source_transaction_id?: string | null
 }): void {
@@ -96,10 +98,18 @@ function seedDebt(o: {
     .prepare(
       `INSERT INTO debts (id, from_user_id, to_user_id, amount_cents, currency, account_id,
          source_transaction_id, origin, share_ratio, created_at)
-       VALUES (@id, @from_user_id, @to_user_id, 1000, 'EUR', @account_id, @source_transaction_id,
+       VALUES (@id, @from_user_id, @to_user_id, @amount_cents, 'EUR', @account_id, @source_transaction_id,
          'personal_share_request', '1.0000', @created_at)`,
     )
-    .run({ account_id: null, source_transaction_id: null, ...o })
+    .run({ amount_cents: 1000, account_id: null, source_transaction_id: null, ...o })
+}
+
+// `users_public` (sync rule `household`) : requis par la jointure du nom de contrepartie
+// (`selectNetDebtsByCounterparty`, cf. commentaire de la factory).
+function seedUser(o: { id: string; display_name: string; role?: 'admin' | 'member' }): void {
+  sqlite
+    .prepare(`INSERT INTO users_public (id, display_name, role) VALUES (@id, @display_name, @role)`)
+    .run({ role: 'member', ...o })
 }
 
 describe('selectTransactions', () => {
@@ -194,6 +204,50 @@ describe('selectDebtsForUser', () => {
     const rows = await selectDebtsForUser(db, 'u1')
     expect(rows[0]?.account_id).toBeNull()
     expect(rows[0]?.source_transaction_id).toBeNull()
+  })
+})
+
+describe('selectNetDebtsByCounterparty', () => {
+  test('SC-02a — net = somme signée créancier (+) − débiteur (−) des rows debts, par contrepartie', async () => {
+    seedUser({ id: 'u2', display_name: 'Bob' })
+    seedUser({ id: 'u3', display_name: 'Chloé' })
+    // u1 → u2 : u1 débiteur de 3000 (négatif pour u1) ; u2 → u1 : u1 créancier de 1000 (positif) ;
+    // net attendu pour u2 = -3000 + 1000 = -2000.
+    seedDebt({ id: 'd1', from_user_id: 'u1', to_user_id: 'u2', amount_cents: 3000, created_at: '2026-01-01' })
+    seedDebt({ id: 'd2', from_user_id: 'u2', to_user_id: 'u1', amount_cents: 1000, created_at: '2026-01-02' })
+    // Tierce (n'implique pas u1) → doit être totalement ignorée de l'agrégation.
+    seedDebt({ id: 'd3', from_user_id: 'u2', to_user_id: 'u3', amount_cents: 5000, created_at: '2026-01-03' })
+    // u1 créancier net de u3 (2000).
+    seedDebt({ id: 'd4', from_user_id: 'u3', to_user_id: 'u1', amount_cents: 2000, created_at: '2026-01-04' })
+
+    const rows = await selectNetDebtsByCounterparty(db, 'u1')
+
+    const byCounterparty = new Map(rows.map((r) => [r.counterpartyId, r]))
+    expect(byCounterparty.get('u2')).toEqual({
+      counterpartyId: 'u2',
+      counterpartyName: 'Bob',
+      netCents: -2000,
+    })
+    expect(byCounterparty.get('u3')).toEqual({
+      counterpartyId: 'u3',
+      counterpartyName: 'Chloé',
+      netCents: 2000,
+    })
+    expect(rows).toHaveLength(2) // la tierce (d3) n'a créé aucune 3e contrepartie
+  })
+
+  test('SC-02c — une contrepartie au net nul n’apparaît pas (HAVING net != 0)', async () => {
+    seedUser({ id: 'u2', display_name: 'Bob' })
+    seedUser({ id: 'u3', display_name: 'Chloé' })
+    // u1 ↔ u2 : dettes croisées de même montant → net exactement 0 pour u2.
+    seedDebt({ id: 'd1', from_user_id: 'u1', to_user_id: 'u2', amount_cents: 1000, created_at: '2026-01-01' })
+    seedDebt({ id: 'd2', from_user_id: 'u2', to_user_id: 'u1', amount_cents: 1000, created_at: '2026-01-02' })
+    // u3 reste au net non nul → prouve que le filtre est sélectif, pas une purge totale.
+    seedDebt({ id: 'd3', from_user_id: 'u1', to_user_id: 'u3', amount_cents: 500, created_at: '2026-01-03' })
+
+    const rows = await selectNetDebtsByCounterparty(db, 'u1')
+
+    expect(rows.map((r) => r.counterpartyId)).toEqual(['u3'])
   })
 })
 

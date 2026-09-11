@@ -99,7 +99,8 @@ Le widget DebtSummary SHALL afficher la dette nette par contrepartie, agrégée 
 #### Scenario: Navigation vers les dettes filtrées
 
 - **WHEN** l'utilisateur clique sur une ligne
-- **THEN** la navigation mène à `/debts` filtré sur la contrepartie de la ligne
+- **THEN** la navigation mène à `/debts?with=<id users_public de la contrepartie>` (contrat de
+  docs/ui/screens-debts.md)
 
 #### Scenario: Quatre états
 

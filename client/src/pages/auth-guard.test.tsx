@@ -23,6 +23,12 @@ vi.mock('@/hooks/use-visible-accounts', () => ({
   useVisibleAccounts: () => ({ data: [], isLoading: false, error: undefined }),
 }))
 
+// useDebtSummary — même limite que useVisibleAccounts ci-dessus (mock client, pas de vraie db) :
+// stubé en état vide pour que ces montages routés cessent de rendre un widget en échec silencieux.
+vi.mock('@/hooks/use-debt-summary', () => ({
+  useDebtSummary: () => ({ data: [], isLoading: false, isFetching: false, error: undefined }),
+}))
+
 test('sans session, une route protégée (/) redirige vers /login', async () => {
   renderWithProviders(null, { route: '/', auth: 'none' })
   // La garde `_authenticated.beforeLoad` (getToken() null) redirige → le form de connexion s'affiche.

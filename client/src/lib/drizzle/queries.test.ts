@@ -8,7 +8,12 @@ import Database from 'better-sqlite3'
 import { drizzle } from 'drizzle-orm/better-sqlite3'
 import { beforeEach, describe, expect, test } from 'vitest'
 
-import { selectAccountBalance, selectDebtsForUser, selectTransactions } from './queries'
+import {
+  selectAccountBalance,
+  selectDebtsForUser,
+  selectTransactions,
+  selectVisibleAccounts,
+} from './queries'
 import type { SQLiteDatabase } from './types'
 
 function loadDdl(): string {
@@ -57,6 +62,24 @@ function seedSplit(o: {
     .prepare(
       `INSERT INTO splits (id, transaction_id, account_id, amount_cents, currency, leg_role)
        VALUES (@id, @transaction_id, @account_id, @amount_cents, 'EUR', 'classification')`,
+    )
+    .run(o)
+}
+
+function seedAccount(o: { id: string; owner_id?: string | null; archived_at?: string | null }): void {
+  sqlite
+    .prepare(
+      `INSERT INTO accounts (id, household_id, name, type, currency, owner_id, created_at, archived_at)
+       VALUES (@id, 'h1', @id, 'courant', 'EUR', @owner_id, '2026-01-01T00:00:00Z', @archived_at)`,
+    )
+    .run({ owner_id: null, archived_at: null, ...o })
+}
+
+function seedAccountMember(o: { id: string; account_id: string; user_id: string }): void {
+  sqlite
+    .prepare(
+      `INSERT INTO account_members (id, account_id, user_id, default_share_ratio, joined_at)
+       VALUES (@id, @account_id, @user_id, '0.5000', '2026-01-01T00:00:00Z')`,
     )
     .run(o)
 }
@@ -121,6 +144,30 @@ describe('selectAccountBalance (D8)', () => {
   test('compte sans split → solde 0 (coalesce)', async () => {
     const rows = await selectAccountBalance(db, 'vide')
     expect(rows[0]?.balanceCents).toBe(0)
+  })
+
+  test('SC-01e — le solde = somme des amount_cents des splits confirmés non annulés (0 si aucun split)', async () => {
+    expect((await selectAccountBalance(db, 'nouveau'))[0]?.balanceCents).toBe(0)
+
+    seedTx({ id: 't1', account_id: 'a1', date: '2026-01-01', state: 'confirmed' })
+    seedSplit({ id: 's1', transaction_id: 't1', account_id: 'a1', amount_cents: 1500 })
+    seedTx({ id: 't2', account_id: 'a1', date: '2026-01-02', state: 'confirmed' })
+    seedSplit({ id: 's2', transaction_id: 't2', account_id: 'a1', amount_cents: 2500 })
+
+    expect((await selectAccountBalance(db, 'a1'))[0]?.balanceCents).toBe(4000)
+  })
+})
+
+describe('selectVisibleAccounts', () => {
+  test('SC-01d — liste les comptes perso (owner) et communs (account_members), exclut archivés et tiers', async () => {
+    seedAccount({ id: 'owned', owner_id: 'u1' }) // perso de u1 → visible
+    seedAccount({ id: 'shared', owner_id: 'other' })
+    seedAccountMember({ id: 'm1', account_id: 'shared', user_id: 'u1' }) // membre commun → visible
+    seedAccount({ id: 'archived-owned', owner_id: 'u1', archived_at: '2026-02-01' }) // archivé → exclu
+    seedAccount({ id: 'foreign', owner_id: 'other2' }) // ni owner ni membre → exclu
+
+    const rows = await selectVisibleAccounts(db, 'u1')
+    expect(rows.map((r) => r.id).sort()).toEqual(['owned', 'shared'])
   })
 })
 

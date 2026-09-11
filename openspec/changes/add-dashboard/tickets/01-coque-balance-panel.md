@@ -16,11 +16,11 @@ Offline-first.
 
 ## Critères
 
-- [ ] La route `/` ne rend plus le placeholder « Tableau de bord — à venir » mais le tableau de bord, dans la coque `_authenticated` (header + navigation)   (SC-01a)
-- [ ] `formatCents(123456)` rend `1 234,56 €` (fr-FR, séparateur de milliers)   (SC-01b)
-- [ ] `formatCents(-500)` rend un montant négatif signé   (SC-01c)
-- [ ] Le facteur de requête liste les comptes visibles (perso `owner` + commun `account_members`), hors `archived`   (SC-01d)
-- [ ] Le solde d'un compte = somme des `amount_cents` des splits `confirmed` avec `voided_at IS NULL` (0 si aucun split)   (SC-01e)
-- [ ] Chaque ligne de compte affiche « synchronisé il y a X min »   (SC-01f)
-- [ ] État chargement : la primitive `Skeleton` est rendue ; état vide : message + action de navigation, aucun formulaire   (SC-01g)
-- [ ] État erreur : un message d'erreur est rendu quand la requête échoue   (SC-01h)
+- [x] La route `/` ne rend plus le placeholder « Tableau de bord — à venir » mais le tableau de bord, dans la coque `_authenticated` (header + navigation)   (SC-01a)
+- [x] `formatCents(123456)` rend `1 234,56 €` (fr-FR, séparateur de milliers)   (SC-01b)
+- [x] `formatCents(-500)` rend `-5,00 €` : signe moins ASCII (U+002D) en tête, virgule décimale, espace insécable (U+00A0) avant `€`   (SC-01c)
+- [x] Le facteur de requête liste les comptes visibles (perso `owner` + commun `account_members`), hors `archived`   (SC-01d)
+- [x] Le solde d'un compte = somme des `amount_cents` des splits `confirmed` avec `voided_at IS NULL` (0 si aucun split)   (SC-01e)
+- [x] Chaque ligne de compte affiche « synchronisé il y a X min »   (SC-01f)
+- [x] État chargement : la primitive `Skeleton` est rendue ; état vide : message + action de navigation, aucun formulaire   (SC-01g)
+- [x] État erreur : un message d'erreur est rendu quand la requête échoue   (SC-01h)

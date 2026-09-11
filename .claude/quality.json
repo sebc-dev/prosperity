@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "scope": {
+    "changedOnly": true,
+    "paths": [
+      "backend/**",
+      "alembic/**",
+      "tests/**",
+      "client/src/**",
+      "client/tests/**"
+    ]
+  },
+  "checks": [
+    {
+      "id": "backend-lint",
+      "cmd": "uv run ruff check .",
+      "severity": "blocking",
+      "autofix": "uv run ruff check . --fix",
+      "agent": "quality-backend-lint"
+    },
+    {
+      "id": "backend-format",
+      "cmd": "uv run ruff format --check .",
+      "severity": "blocking",
+      "autofix": "uv run ruff format .",
+      "agent": "quality-backend-format"
+    },
+    {
+      "id": "backend-typecheck",
+      "cmd": "uv run pyright",
+      "severity": "blocking",
+      "autofix": null,
+      "agent": "quality-backend-typecheck"
+    },
+    {
+      "id": "backend-imports",
+      "cmd": "uv run lint-imports",
+      "severity": "blocking",
+      "autofix": null,
+      "agent": "quality-backend-imports"
+    },
+    {
+      "id": "backend-coverage",
+      "cmd": "uv run pytest tests/unit/ -n auto --cov=backend --cov-report=term",
+      "severity": "advisory",
+      "autofix": null,
+      "agent": "quality-backend-coverage"
+    },
+    {
+      "id": "frontend-lint",
+      "cmd": "npm --prefix client run lint",
+      "severity": "blocking",
+      "autofix": "cd client && npx eslint . --fix && npm run format",
+      "agent": "quality-frontend-lint"
+    },
+    {
+      "id": "frontend-typecheck",
+      "cmd": "npm --prefix client run typecheck",
+      "severity": "blocking",
+      "autofix": null,
+      "agent": "quality-frontend-typecheck"
+    },
+    {
+      "id": "frontend-coverage",
+      "cmd": "cd client && npx vitest run --coverage",
+      "severity": "advisory",
+      "autofix": null,
+      "agent": "quality-frontend-coverage"
+    }
+  ]
+}

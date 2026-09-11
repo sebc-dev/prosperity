@@ -1,10 +1,10 @@
-# Run du ticket 02 (DebtSummary) bloqué — l'autofix de la quality gate a effacé les tests
+# Run du ticket 02 (DebtSummary) bloqué — la quality gate bute sur le format d'un test neuf
 
 Portée : add-dashboard · ticket 02
-Ouvert le 2026-09-11 · Actualisé le 2026-09-11 · branche `impl/debt-summary-02` · HEAD `5b7774d`
+Ouvert le 2026-09-11 · Actualisé le 2026-09-11 · branche `impl/debt-summary-02` · HEAD `591de7a`
 
 ## Objectif
-Faire aboutir `/scd-spec-dev:run add-dashboard 02` — deux runs arrêtés sur de l'outillage, jamais
+Faire aboutir `/scd-spec-dev:run add-dashboard 02` — trois runs arrêtés sur de l'outillage, jamais
 sur un verdict du cycle.
 
 ## Contexte à charger
@@ -34,16 +34,31 @@ Sortie du fixer, non tronquée :
 {"applied":[],"residual":[{"checkId":"frontend-lint","severity":"blocking","status":"fail","reason":"autofix modifies test files (safety guard); cannot fix lint error in new test file without modifying it"}],"testsUntouched":false,"blockingResidual":1}
 ```
 
+- 3e run (`wf_05cbd98c-e2e`, relance franche après `git stash -u` du code du 2e run → `stash@{0}`) :
+  statut **`blocked-quality`**. Cette fois les tests ont survécu (`testsUntouched:true`), mais le
+  même check `frontend-lint` bloque sur `prettier --check` du test neuf `debt-summary.test.tsx` —
+  et le fixer refuse l'autofix parce qu'il toucherait un test. Sortie non tronquée :
+
+```
+{"applied":[],"residual":[{"checkId":"frontend-lint","severity":"blocking","status":"fail","reason":"autofix modifies test files (debt-summary.test.tsx, queries.test.ts) — test integrity constraint prevents autofix"}],"testsUntouched":true,"blockingResidual":1}
+```
+
+- Diagnostic consolidé : un défaut lint/format **dans un test neuf** est structurellement hors de
+  portée de la gate (elle n'a pas le droit d'y toucher) et personne en amont ne formate les tests.
+  Sans applier de projet, ce ticket rejouera la panne à chaque run.
+
 ## Prochaine étape
-Décider comment relancer sans rejouer la panne : (a) relance franche du run après avoir remis l'arbre
-propre (`git checkout -- . && git clean -fd client/src` puis `git rm --cached` du test vide) — le
-test-writer réécrira les tests, et l'erreur lint se reproduira sûrement ; ou (b) signaler le bug
-au plugin `scd-spec-dev` : le garde-fou du `quality-fixer` doit **restaurer** un test neuf (untracked
-ou intent-to-add) à son contenu d'avant autofix, pas à l'index, et un lint dans un test neuf devrait
-plutôt remonter au `test-writer` qu'à la gate. Puis `/scd-spec-dev:run add-dashboard 02`.
+J'allais déclarer l'**applier du projet** via `/scd-spec-dev:quality-agents` (top-level `applier`
+dans `.claude/quality.json`, seul agent du cycle autorisé à éditer les tests, borné par l'additivité
+et audité par `test-edit-validator`) — un `prettier --write` sur un test est additif-neutre. Puis
+relancer `/scd-spec-dev:run add-dashboard 02` (le code du 3e run est resté non commité, staged, sur
+la branche ; `stash@{0}` porte celui du 2e — à jeter, le 3e le remplace).
 
 ## Écarté
-- `resumeFromRunId` — le cache rejouerait le `quality-fixer` à l'identique sur un arbre déjà mutilé.
+- `resumeFromRunId` — le cache rejouerait le `quality-fixer` à l'identique.
+- Relancer une 4e fois sans rien changer — la panne est déterministe.
+- Corriger le plugin (`quality-fixer`) d'abord — vrai bug (garde-fou qui ramène un test neuf à
+  l'index vide), mais la voie supportée pour ce projet est l'applier ; à signaler à part.
 - Réparer les tests à la main dans la session principale — hors contrat de `run` (elle n'écrit pas
   de code) ; la reprise passe par le workflow.
 - Lancer le workflow `0.2.0` — sans phase `Preflight`, écarté au 1er run.

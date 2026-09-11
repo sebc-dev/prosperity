@@ -51,6 +51,18 @@ vi.mock('@/hooks/use-sync-status', () => ({
   useSyncStatus: () => ({ state: 'synced', lastSyncedAt: new Date() }),
 }))
 
+// Même limite que use-visible-accounts ci-dessus : le widget DebtSummary (S15.3 ticket 02)
+// interroge la db Drizzle via useDebtSummary, indisponible sur le mock client PowerSync. Un
+// compte NON VIDE ci-dessous : ce test échoue si le widget tombe dans son fallback.
+vi.mock('@/hooks/use-debt-summary', () => ({
+  useDebtSummary: () => ({
+    data: [{ counterpartyId: 'u2', counterpartyName: 'Bob', netCents: -5000 }],
+    isLoading: false,
+    isFetching: false,
+    error: undefined,
+  }),
+}))
+
 // Même convention que format.test.ts : `Intl.NumberFormat('fr-FR')` rend une espace fine
 // insécable (U+202F) comme séparateur de milliers et une espace insécable (U+00A0) avant `€`.
 const THIN_NBSP = '\u202f'
@@ -72,6 +84,13 @@ test('SC-01a — la route / rend le tableau de bord (plus le placeholder), dans 
   expect(row.textContent).toContain(`1${THIN_NBSP}234,56${NBSP}€`)
   // …et le fallback d'échec (BalanceError / BalanceErrorBoundary) n'est PAS rendu.
   expect(screen.queryByText(/impossible de charger les soldes/i)).not.toBeInTheDocument()
+
+  // Le widget DebtSummary (ticket 02) rend lui aussi son CONTENU, pas seulement sa coquille.
+  const debtPanel = screen.getByLabelText('Dettes') // section DebtSummary
+  const debtRow = within(debtPanel).getByRole('listitem')
+  expect(debtRow).toHaveTextContent('Bob')
+  // …et le fallback d'échec (DebtError / DebtErrorBoundary) n'est PAS rendu.
+  expect(screen.queryByText(/impossible de charger les dettes/i)).not.toBeInTheDocument()
 
   // Coque `_authenticated` : header (logo) + navigation entourent le contenu de la route.
   expect(screen.getByText('Prosperity')).toBeInTheDocument()

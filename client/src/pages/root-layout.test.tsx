@@ -22,6 +22,11 @@ vi.mock('@/hooks/use-current-user', () => ({
 vi.mock('@/hooks/use-visible-accounts', () => ({
   useVisibleAccounts: () => ({ data: [], isLoading: false, error: undefined }),
 }))
+// useDebtSummary — même limite que useVisibleAccounts ci-dessus (mock client, pas de vraie db) :
+// stubé en état vide pour que ce montage routé cesse de rendre un widget en échec silencieux.
+vi.mock('@/hooks/use-debt-summary', () => ({
+  useDebtSummary: () => ({ data: [], isLoading: false, isFetching: false, error: undefined }),
+}))
 
 // Anti-régression : depuis S15.1 le __root n'est PLUS QUE des providers (ThemeProvider →
 // PowerSyncProvider → Outlet → Toaster) — le header/nav a migré dans la route de layout

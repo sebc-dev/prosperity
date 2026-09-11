@@ -90,3 +90,41 @@ export const selectDebtsForUser = (db: SQLiteDatabase, userId: string) =>
     .from(debts)
     .where(or(eq(debts.from_user_id, userId), eq(debts.to_user_id, userId)))
     .orderBy(desc(debts.created_at))
+
+// Dette nette par contrepartie (SC-02a) : agrège les rows `debts` déjà matérialisées (ADR-0002 —
+// dettes = projection serveur, aucun recalcul de la dette elle-même ici) où l'utilisateur est
+// partie prenante (même prédicat WHERE que `selectDebtsForUser`, pas dupliqué en deux requêtes
+// créancier/débiteur séparées). Un CASE WHEN pivote, PAR ROW, le signe du montant (créancier
+// `to_user_id` → `+amount_cents`, débiteur `from_user_id` → `-amount_cents`) et détermine la
+// contrepartie (l'AUTRE partie de la row) ; un GROUP BY somme ces montants signés par
+// contrepartie. `HAVING net != 0` masque en SQL les contreparties au net nul (SC-02c) — pas un
+// filtre côté JS après coup. Convention de signe exposée : positif = l'utilisateur est créancier
+// net (« vous prête »), négatif = débiteur net (« vous devez »), cf. `debt-summary.tsx`.
+// Le nom d'affichage vient d'une jointure à `users_public` (même patron que `selectUserById`,
+// colonnes synchronisées, ADR-0003) sur la sous-requête déjà agrégée — pas une jointure avant
+// agrégation, qui dupliquerait les lignes `debts` par contrepartie.
+export const selectNetDebtsByCounterparty = (db: SQLiteDatabase, userId: string) => {
+  const counterpartyId = sql<string>`case when ${debts.from_user_id} = ${userId} then ${debts.to_user_id} else ${debts.from_user_id} end`
+  const netCents = sql<number>`sum(case when ${debts.to_user_id} = ${userId} then ${debts.amount_cents} else -${debts.amount_cents} end)`
+
+  const netByCounterparty = db
+    .select({
+      counterpartyId: counterpartyId.as('counterparty_id'),
+      netCents: netCents.as('net_cents'),
+    })
+    .from(debts)
+    .where(or(eq(debts.from_user_id, userId), eq(debts.to_user_id, userId)))
+    .groupBy(counterpartyId)
+    .having(sql`${netCents} != 0`)
+    .as('net_by_counterparty')
+
+  return db
+    .select({
+      counterpartyId: netByCounterparty.counterpartyId,
+      counterpartyName: users_public.display_name,
+      netCents: netByCounterparty.netCents,
+    })
+    .from(netByCounterparty)
+    .innerJoin(users_public, eq(users_public.id, netByCounterparty.counterpartyId))
+    .orderBy(users_public.display_name)
+}

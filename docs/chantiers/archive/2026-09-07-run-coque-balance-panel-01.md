@@ -70,3 +70,24 @@ NON-TAUTOLOGIE : queries.test.ts tourne en @vitest-environment node contre un SQ
 
 BRUIT NON BLOQUANT : index.test.tsx emet des avertissements React `An update to UserMenu / BalancePanelContent inside a test was not wrapped in act(...)` — n'echoue pas, mais passerait au rouge si ce test adoptait l'assertion anti-console.error du root-layout. Signale, non corrige (je ne repare pas).
 ```
+
+## Issue
+Chantier clos le 2026-09-11 : la chaîne aval a été rejouée à la main, phase par phase, et le ticket 01
+est livré en **PR #272** (https://github.com/sebc-dev/prosperity/pull/272, ready vers `main`).
+
+- **Quality gate** `ok` — 3 checks frontend verts, 5 backend skippés sur périmètre vide.
+- **Review 8 dimensions** en contexte frais : 31 findings (7 bloquants) → triage adversarial → 5 retenus,
+  26 écartés. Deux défauts réels que le run d'origine n'avait pas vus : (1) trois fichiers de test
+  préexistants montaient la route `/` sans stuber `use-visible-accounts`, l'error boundary avalait le
+  crash et la suite restait VERTE sur un BalancePanel planté — l'assertion SC-01a passait à l'identique
+  sur cet état d'échec (`BalanceError` rend la même `<section aria-label="Solde">`) ; (2) chemin argent,
+  une requête de solde en échec affichait « 0,00 € » comme un solde réel.
+- **Corrigé** : 4 éditions de production (CONV-1 `space-y-*`, EH-1 échec/chargement du solde par ligne,
+  COV-1 « à l'instant », CHG-1 SC-01c rendu falsifiable dans le delta et le ticket) + 4 tests neufs,
+  prouvés discriminants par mutation. 187 tests verts, lint et typecheck OK.
+- **Commits** : `087c93a`, `914fb2e`, `16a794f`, `92fbc8d` — 8 critères cochés dans le ticket.
+
+Le drapeau `testsDiffEmpty=false` qui avait bloqué le run n'a PAS été contourné : l'integrity-reviewer,
+en contexte frais, a confirmé que les deux tests préexistants sont modifiés en pur ajout (assertions
+intactes). Le correctif de la ceinture — règle additive en mode `test` — reste à porter au plugin
+`scd-spec-dev` ; il est hors de cette PR et n'a pas encore d'issue ouverte.

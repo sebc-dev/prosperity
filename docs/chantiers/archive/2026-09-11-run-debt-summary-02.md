@@ -62,3 +62,17 @@ la branche ; `stash@{0}` porte celui du 2e — à jeter, le 3e le remplace).
 - Réparer les tests à la main dans la session principale — hors contrat de `run` (elle n'écrit pas
   de code) ; la reprise passe par le workflow.
 - Lancer le workflow `0.2.0` — sans phase `Preflight`, écarté au 1er run.
+
+## Issue
+Chantier clos le 2026-09-11 : le 4e run (`wf_969a9bdd-74e`, plugin `scd-spec-dev` **0.7.1**) a abouti
+en `done` et le ticket 02 est livré en **PR #276** (https://github.com/sebc-dev/prosperity/pull/276,
+ready vers `main`).
+
+- Ce qui a débloqué : la 0.7.1 porte exactement les trois correctifs identifiés ici — le `test-writer`
+  formate/linte ses tests avant de rendre, le `verifier` défait son `git add -N`, le `quality-fixer`
+  protège les tests par snapshot/`cp` (plus de `git checkout --`) et garde un autofix additif sur un
+  test neuf, audité par `test-edit-validator`. L'applier de projet envisagé en prochaine étape n'a pas
+  été nécessaire.
+- Mode `test`, 6 critères cochés (`SC-02a` → `SC-02f`), quality gate sans advisory, review 8 dimensions :
+  2 bloquants, 4 findings appliqués / 5 écartés (motifs dans la PR). Commits `d8ae1a1`, `bc33ca6`.
+- Les deux `stash` des runs 2 et 3 ont été jetés : le code du 4e run les remplace intégralement.

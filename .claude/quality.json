@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "applier": "quality-apply",
   "scope": {
     "changedOnly": true,
     "paths": [

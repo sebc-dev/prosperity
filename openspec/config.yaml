@@ -3,8 +3,9 @@ schema: scd
 # ┌─ scd-spec-dev (généré) ─ ce bloc est réécrit à chaque /setup ; éditez HORS de lui ─┐
 context: |
   Roadmap  : docs/roadmap/ (epics E01–E19 · README.md) — chaque change ↳ une STORY d'epic
-  Archi    : docs/architecture.md (table des invariants opposables, référent de la review) ;
-             ADR dans docs/adr/ (0001–0017, format Nygard) + docs/Architectures BS.md ;
+  Archi    : modèle LikeC4 docs/architecture/*.c4 (structure : éléments, relations, sourceDir) ;
+             invariants opposables docs/architecture.md (table, référent de la review) ;
+             ADR dans docs/adr/ (0001–0019, format Nygard) + docs/Architectures BS.md ;
              contexte unique : CONTEXT.md à la racine (glossaire + règles métier, voir docs/agents/domain.md)
   Test     : docs/Stratégie de tests.md ; mode de vérif (tdd / test / observé / aucun) décidé par
              strategie-verif à la décomposition
@@ -19,6 +20,8 @@ rules:
   design:
     - Vérifier la conformité aux invariants des ADR (docs/adr/).
     - Décision structurante nouvelle → proposer un ADR (docs/adr/, format Nygard), ne pas la figer dans design.md.
+    - Citer les éléments LikeC4 touchés par leur FQN (ex. prosperity.backend).
+    - Relation nouvelle → éditer le .c4 dans le change, puis `likec4 validate --no-layout --json --project prosperity docs/architecture`.
 operations:
   archive:
     guidance:

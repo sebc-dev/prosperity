@@ -9,7 +9,7 @@ cibles, graphe complet à 12 modules, frontend) reste dans [`Architectures BS.md
 Ici, l'état **matérialisé dans le code** : les 8 modules présents et les contrats `.importlinter`
 qui les gardent.
 
-## Frontières et sens de dépendance (backend)
+## Frontières et sens de dépendance
 
 Graphe en couches tel que `.importlinter` le vérifie aujourd'hui (haut = dépend de, bas = dépendu) :
 
@@ -22,17 +22,25 @@ auth
 shared
 ```
 
-| Id | Invariant | ADR | Vérifié par |
-|---|---|---|---|
-| A01 | Un module n'importe que des modules **strictement en dessous** dans le graphe ; jamais un pair de la même couche, jamais vers le haut. | [0005](./adr/0005-directional-import-graph.md) | `.importlinter` contrat 1 (`layers`) |
-| A02 | L'import cross-module passe **uniquement** par `public.py`. `service`, `models`, `domain`, `repository`, `transports`, `handlers` d'un autre module sont privés. | [0005](./adr/0005-directional-import-graph.md) | contrats `2-<module>` (`forbidden`), un par module |
-| A03 | `backend.shared` n'importe **rien** de `backend.modules.*`. Tout module peut importer `shared`. | [0005](./adr/0005-directional-import-graph.md) | contrat 3 |
-| A04 | Un module bas communique vers le haut par un `DomainEvent` publié sur `shared/events.py` (bus in-process synchrone, même transaction DB) — jamais par un import. | [0005](./adr/0005-directional-import-graph.md) | contrat 1 (un import montant casse les couches) |
-| A05 | Les `Depends` RBAC (`require_admin`, `require_member`, `get_current_user`) vivent dans `auth` et sont exposés par `auth.public` — pas dans `shared` (A03 l'interdit). | [0005](./adr/0005-directional-import-graph.md) | contrat 3 + revue |
-| A06 | `backend.transports` est la **racine de composition** des flux cross-module : elle consomme les `public` de tous, et **n'est importée par aucun** module ni par `shared`. | [0005](./adr/0005-directional-import-graph.md) (pairs interdits → composition au-dessus) | contrat 6 |
-| A07 | Seul `banking.service.polling` importe `banking.providers` (le `BankingProvider` externe). Tout autre consommateur passe par `BankingReader` via `banking.public`. Un tool MCP ne déclenche jamais un appel synchrone au provider. | [0009](./adr/0009-banking-provider-reader-split.md) | contrat 4 |
-| A08 | `debts.domain` reste **pur** : il reçoit des scalaires, n'importe pas `Transaction`. | [0002](./adr/0002-debts-as-server-projection.md) (refined-by E09) | contrat 2-debts + revue |
-| A09 | Tout nouveau répertoire sous `backend/modules/` entre dans `.importlinter` (couche + contrat `2-<module>` + `source_modules` du contrat 6) **dans le même diff**. | [0005](./adr/0005-directional-import-graph.md) | `tests/unit/test_importlinter_coverage.py` |
+| Id | Règle | Éléments (FQN) | Classe | ADR | Vérifié par |
+|---|---|---|---|---|---|
+| A01 | Un module n'importe que des modules **strictement en dessous** dans le graphe ; jamais un pair de la même couche, jamais vers le haut. | prosperity.api.sync, prosperity.api.sse, prosperity.api.debts, prosperity.api.banking, prosperity.api.transactions, prosperity.api.budget, prosperity.api.accounts, prosperity.api.auth, prosperity.api.shared | 1 sens des dépendances | [0005](./adr/0005-directional-import-graph.md) | `.importlinter` contrat 1 (`layers`) |
+| A02 | L'import cross-module passe **uniquement** par `public.py`. `service`, `models`, `domain`, `repository`, `transports`, `handlers` d'un autre module sont privés. | prosperity.api.accounts, prosperity.api.auth, prosperity.api.banking, prosperity.api.budget, prosperity.api.debts, prosperity.api.sse, prosperity.api.sync, prosperity.api.transactions | 7 visibilité / surface d'API | [0005](./adr/0005-directional-import-graph.md) | contrats `2-<module>` (`forbidden`), un par module |
+| A03 | `backend.shared` n'importe **rien** de `backend.modules.*`. Tout module peut importer `shared`. | prosperity.api.shared | 1 sens des dépendances | [0005](./adr/0005-directional-import-graph.md) | contrat 3 |
+| A04 | Un module bas communique vers le haut par un `DomainEvent` publié sur `shared/events.py` (bus in-process synchrone, même transaction DB) — jamais par un import. | prosperity.api.shared, prosperity.api.transactions, prosperity.api.budget, prosperity.api.debts | 1 sens des dépendances | [0005](./adr/0005-directional-import-graph.md) | contrat 1 (un import montant casse les couches) |
+| A05 | Les `Depends` RBAC (`require_admin`, `require_member`, `get_current_user`) vivent dans `auth` et sont exposés par `auth.public` — pas dans `shared` (A03 l'interdit). | prosperity.api.auth, prosperity.api.shared | 5 placement | [0005](./adr/0005-directional-import-graph.md) | contrat 3 + revue |
+| A06 | `backend.transports` est la **racine de composition** des flux cross-module : elle consomme les `public` de tous, et **n'est importée par aucun** module ni par `shared`. | prosperity.api.transports, prosperity.api.shared | 1 sens des dépendances | [0005](./adr/0005-directional-import-graph.md) (pairs interdits → composition au-dessus) | contrat 6 |
+| A07 | Seul `banking.service.polling` importe `banking.providers` (le `BankingProvider` externe). Tout autre consommateur passe par `BankingReader` via `banking.public`. Un tool MCP ne déclenche jamais un appel synchrone au provider. | prosperity.api.banking | 7 visibilité / surface d'API | [0009](./adr/0009-banking-provider-reader-split.md) | contrat 4 |
+| A08 | `debts.domain` reste **pur** : il reçoit des scalaires, n'importe pas `Transaction`. | prosperity.api.debts, prosperity.api.transactions | 9 imports prohibés | [0002](./adr/0002-debts-as-server-projection.md) (refined-by E09) | contrat 2-debts + revue |
+| A09 | Tout nouveau répertoire sous `backend/modules/` entre dans `.importlinter` (couche + contrat `2-<module>` + `source_modules` du contrat 6) **dans le même diff**. | prosperity.api | 5 placement | [0005](./adr/0005-directional-import-graph.md) | `tests/unit/test_importlinter_coverage.py` |
+| A10 | `prosperity.client.ui` n'importe jamais `openapi-fetch`, `@powersync/web` ni `@microsoft/fetch-event-source` : le réseau (api, powersync) passe par `client.lib`. | prosperity.client.ui, prosperity.client.lib | 9 imports prohibés | [0018](./adr/0018-client-network-boundary-via-lib.md) | revue ; règle ESLint `no-restricted-imports` à poser par un change (ADR 0018 §Conséquences) |
+| A11 | `prosperity.client.lib` n'importe rien de `client.ui` (`app`, `pages`, `features`, `components`, `hooks`) : le sens est `ui -> lib`. | prosperity.client.lib, prosperity.client.ui | 1 sens des dépendances | [0018](./adr/0018-client-network-boundary-via-lib.md) | revue ; même règle ESLint, bloc `src/lib/**` |
+| A12 | Deux portes vers `prosperity.db`, et deux seulement : `prosperity.api.shared` (`backend/shared/db.py` — `build_engine`, `get_db`) au runtime, `prosperity.api.migrations` (`alembic/env.py` — `async_engine_from_config`) en migration. Aucun module, ni `transports`, ni `backend/scripts` ne crée d'engine ni n'ouvre de connexion. | prosperity.api.shared, prosperity.api.migrations, prosperity.db | 3 couches | [0019](./adr/0019-single-gate-to-postgres.md) | revue ; test grep des engines à poser par un change (ADR 0019 §Conséquences) |
+| A13 | `prosperity.api.migrations` (`alembic/`) n'importe des modules que leurs `models` (`backend.modules.<m>.models`), plus `backend.shared.models` et `backend.config` — jamais `service`, `domain`, `repository`, `transports`, `handlers` ni `public`. | prosperity.api.migrations, prosperity.api.shared, prosperity.api.accounts, prosperity.api.auth, prosperity.api.budget, prosperity.api.debts, prosperity.api.transactions | 7 visibilité / surface d'API | [0019](./adr/0019-single-gate-to-postgres.md) | revue ; `.importlinter` étendu à `alembic` à poser par un change (ADR 0019 §Conséquences) |
+
+Les éléments FQN sont ceux du modèle LikeC4 de [`docs/architecture/`](./architecture/model.c4)
+(`sourceDir` → rattachement d'un fichier du diff). Une ligne dont la colonne `ADR` vaut `—` est un
+**candidat** : informatif en review, jamais bloquant tant qu'un ADR ne le promeut pas.
 
 ## Artefacts prescrits et invariants de données
 
@@ -64,7 +72,8 @@ cible est celle du graphe §5 (`reconciliation | forecasting | debts | notificat
 
 ## Frontend — repères, non contraignants
 
-Aucun ADR ne contraint la structure `client/src/` ; le repère est
+Deux invariants seulement contraignent `client/src/` — A10 et A11, la frontière réseau `ui -> lib`
+([0018](./adr/0018-client-network-boundary-via-lib.md)). Pour le reste, le repère est
 [`Architectures BS.md` §7](./Architectures%20BS.md) : `app/` (router, providers), `pages/` (un fichier
 = une route), `features/` (interactions complètes), `components/business/` et `components/ui/`
 (shadcn généré, ne pas éditer à la main), `lib/` (`powersync`, `drizzle`, `api` typé OpenAPI, `sse`),

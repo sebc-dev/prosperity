@@ -1,0 +1,31 @@
+# Le réseau du client passe par `lib` : `ui -> lib`, jamais l'inverse
+
+> **Statut** : Accepté (2026-09-13). Promeut les candidats A10 et A11 de [`docs/architecture.md`](../architecture.md), observés par `/scd-spec-dev:archi` le même jour.
+
+Dans `client/src`, deux familles de dossiers coexistent sans qu'aucun document ne dise ce qui les sépare. `lib/` (`api`, `sse`, `powersync`, `drizzle`, `auth`, `storage`) porte tout ce qui parle à l'extérieur : `lib/api/client.ts` est le seul `createClient` d'`openapi-fetch` (vers `VITE_API_BASE_URL`, l'API FastAPI), `lib/sse/client.ts` le seul `fetchEventSource`, `lib/powersync/{client,connector,upload}.ts` les seuls imports de `@powersync/web` (le SDK qui ouvre la connexion au service PowerSync et qui `POST /sync/upload`). `app/`, `pages/`, `features/`, `components/`, `hooks/` — la partie `ui` — ne contiennent aucun de ces trois imports en code de production (un seul test, `app/powersync-provider.test.tsx`, importe un type de `@powersync/web`), et `lib/` n'importe rien de `ui` : le sens observé est `ui -> lib`, sans exception, sur 54 imports `@/lib/*`.
+
+C'est vrai aujourd'hui **par habitude, pas par décision** : [`docs/architecture.md`](../architecture.md) §Frontend dit « aucun ADR ne contraint la structure `client/src/` », et [`Architectures BS.md`](../Architectures%20BS.md) §7 ne donne que des repères. Le premier hook qui appellera `api.GET(...)` directement, ou le premier `lib/*` qui importera un composant pour afficher une erreur, ne violera rien d'écrit. Or cette frontière est ce qui rend le client testable sans réseau (les tests de `ui` mockent `@/lib/*`, jamais `fetch`), ce qui borne la surface d'authentification (le Bearer est injecté par le middleware de `lib/auth/session`, invisible de `ui`), et ce qui fait de `lib` le seul endroit à relire quand l'API, PowerSync ou le SSE changent.
+
+**Ce que la décision ne dit pas** : `ui` lit la base locale PowerSync directement — 8 hooks et `app/powersync-provider.tsx` importent `@powersync/react` (`useQuery`, `PowerSyncContext`) et `@powersync/drizzle-driver` (`toCompilableQuery`). Ce n'est pas du réseau : c'est une requête SQLite locale, réactive, et c'est le mode de lecture normal d'un client offline-first. La frontière figée ici est **réseau**, pas **PowerSync**.
+
+## Considered Options
+
+- **(A) Statu quo implicite** — laisser la convention vivre dans les têtes et dans `Architectures BS.md` §7. Rien à écrire, rien d'opposable : l'architecture-reviewer ne peut citer aucune règle quand un hook importe `openapi-fetch`, et le repère « non contraignant » de `docs/architecture.md` le dit explicitement. Rejeté : c'est exactement l'état qui a rendu la frontière invisible.
+- **(B) Frontière réseau : `ui` n'importe jamais `openapi-fetch`, `@powersync/web`, `@microsoft/fetch-event-source` ; `lib` n'importe jamais `ui` (retenu)** — nomme trois paquets et un sens. Vérifiable par un `grep` d'imports (classes 9 et 1 de la table), vrai aujourd'hui sans changer une ligne, et mécanisable par une règle ESLint `no-restricted-imports` scindée par dossier. Laisse `@powersync/react` et `@powersync/drizzle-driver` libres dans `ui`.
+- **(C) Tout PowerSync passe par `lib`** — `ui` n'importe aucun `@powersync/*` ; `lib` expose une façade de hooks (`useLocalQuery`…). Plus étanche sur le papier, mais c'est une refonte de 9 fichiers pour cacher un SDK de lecture locale qui n'a pas de raison d'être caché : `useQuery` de `@powersync/react` *est* déjà la façade. L'invariant serait violé le jour de son adoption et le resterait jusqu'à un change dédié. Rejeté ; ré-évaluable si un second store local apparaît.
+
+## Décision
+
+**Option B.** Dans `prosperity.client` :
+
+1. **`prosperity.client.ui`** (`client/src/{app,pages,features,components,hooks}`) **n'importe jamais** `openapi-fetch`, `@powersync/web` ni `@microsoft/fetch-event-source`. Tout appel à `prosperity.api` (HTTP, SSE, `/sync/upload`) et toute connexion à `prosperity.powersync` passent par **`prosperity.client.lib`** (`client/src/lib`). Les tests de `ui` sont exemptés : ils peuvent importer un type ou un mock de ces paquets.
+2. **`prosperity.client.lib` n'importe rien de `prosperity.client.ui`.** Le sens est `ui -> lib`, un `lib -> ui` est une inversion — y compris pour afficher une erreur : `lib` lève ou retourne, `ui` affiche (`sonner` vit côté `ui`).
+3. `@powersync/react` et `@powersync/drizzle-driver` restent importables depuis `ui` : lecture réactive de la base locale, pas un accès réseau.
+
+## Conséquences
+
+- **A10 et A11 deviennent opposables** (`docs/architecture.md`, colonne ADR = 0018) : un diff qui les viole est bloquant en review, sauf dérogation déclarée au ticket. La mention « aucun ADR ne contraint `client/src/` » du §Frontend cesse d'être vraie pour ces deux règles ; les autres repères (`pages/` = une route, `components/ui/` = shadcn) restent non contraignants.
+- **Un filet CI est à poser, par un change** : une règle `no-restricted-imports` dans `client/eslint.config.js`, scindée en deux blocs `files` — sur `src/{app,pages,features,components,hooks}/**` (hors `*.test.*`) interdire `openapi-fetch`, `@powersync/web`, `@microsoft/fetch-event-source` avec un message qui pointe `lib/` ; sur `src/lib/**` interdire les patterns `@/app/*`, `@/pages/*`, `@/features/*`, `@/components/*`, `@/hooks/*`. C'est le miroir de `.importlinter` côté backend (ADR 0005) ; le `design.md` de ce change cite cet ADR. Tant qu'il n'est pas mergé, la review est le seul garde.
+- **Toute nouvelle route API, tout nouvel événement SSE, tout nouveau flux PowerSync** se câble d'abord dans `lib` (client typé, parsing, erreurs), puis s'expose à `ui` par une fonction ou un hook de `lib`. Un ticket qui touche `client/src/lib/api/schema.d.ts` (généré par `gen:api`) touche `prosperity.client.lib`, jamais `ui`.
+- **Rien à changer dans le code aujourd'hui** : 0 import prohibé en production, 0 import remontant (mesure du 2026-09-13).
+- **Aucun delta de modèle** : `prosperity.client.ui`, `prosperity.client.lib`, `ui -[sync]-> lib`, `lib -[sync]-> api` et `lib -[sync]-> powersync` sont déjà dans `docs/architecture/model.c4` (amorçage du même jour). Cet ADR fixe la structure existante ; il n'a donc ni section « Modèle » ni vue `adr-0018`.

@@ -1,0 +1,182 @@
+// Modèle LikeC4 — posé par /scd-spec-dev:setup, possédé par le projet.
+// Amorcer avec /scd-spec-dev:archi. Valider :
+//   likec4 validate --no-layout --json --project prosperity docs/architecture
+
+specification {
+  element actor     { style { shape person } }
+  element system
+  element container
+  element component
+  element store     { style { shape storage } }
+
+  relationship sync  { title 'appelle' }
+  relationship async { title 'publie vers' }
+}
+
+model {
+  prosperity = system 'prosperity' {
+    description 'Gestion des finances personnelles auto-hébergée pour un foyer : API FastAPI modulaire, client React/Capacitor offline-first synchronisé par PowerSync sur Postgres.'
+
+    // trace : pyproject.toml, backend/main.py — un paquet Python, 8 modules + shared + transports (.importlinter)
+    api = container 'API' {
+      technology 'Python 3.13 / FastAPI'
+      metadata { sourceDir 'backend' }
+
+      // trace : backend/shared/* — noyau importé par tous les modules, n'importe aucun module (contrat 3)
+      shared = component 'shared' {
+        description 'Noyau : db (SQLAlchemy async), events (bus in-process), money, http, models.'
+        metadata { sourceDir 'backend/shared' }
+      }
+      auth = component 'auth' {
+        metadata { sourceDir 'backend/modules/auth' }
+      }
+      accounts = component 'accounts' {
+        metadata { sourceDir 'backend/modules/accounts' }
+      }
+      banking = component 'banking' {
+        metadata { sourceDir 'backend/modules/banking' }
+      }
+      transactions = component 'transactions' {
+        metadata { sourceDir 'backend/modules/transactions' }
+      }
+      budget = component 'budget' {
+        metadata { sourceDir 'backend/modules/budget' }
+      }
+      debts = component 'debts' {
+        metadata { sourceDir 'backend/modules/debts' }
+      }
+      sse = component 'sse' {
+        metadata { sourceDir 'backend/modules/sse' }
+      }
+      sync = component 'sync' {
+        description 'Write upload handler PowerSync (ADR 0014).'
+        metadata { sourceDir 'backend/modules/sync' }
+      }
+      // trace : backend/transports/imports_http.py — racine de composition cross-module (A06)
+      transports = component 'transports' {
+        metadata { sourceDir 'backend/transports' }
+      }
+      // trace : alembic/env.py — migrations Alembic, seconde porte vers Postgres (ADR 0019)
+      migrations = component 'migrations' {
+        technology 'Alembic'
+        description 'alembic/env.py + versions/ : async_engine_from_config sur DATABASE_URL, Base.metadata via les models des modules.'
+        metadata { sourceDir 'alembic' }
+      }
+
+      // Imports observés (grep '^from backend.' par module, 2026-09-13)
+      auth -[sync]-> shared 'importe db, http, models'
+      accounts -[sync]-> shared 'importe db, events, models'
+      accounts -[sync]-> auth 'importe auth.public'
+      banking -[sync]-> shared 'importe money, bank_labels'
+      transactions -[sync]-> shared 'importe db, events, money'
+      transactions -[sync]-> auth 'importe auth.public'
+      transactions -[sync]-> accounts 'importe accounts.public'
+      budget -[sync]-> shared 'importe db, events, money'
+      budget -[sync]-> auth 'importe auth.public'
+      budget -[sync]-> accounts 'importe accounts.public'
+      debts -[sync]-> shared 'importe db, events, money'
+      debts -[sync]-> auth 'importe auth.public'
+      debts -[sync]-> accounts 'importe accounts.public'
+      debts -[sync]-> transactions 'importe transactions.public'
+      debts -[sync]-> budget 'importe budget.public'
+      sse -[sync]-> shared 'importe events, http'
+      sse -[sync]-> auth 'importe auth.public'
+      sync -[sync]-> shared 'importe db, events'
+      sync -[sync]-> auth 'importe auth.public'
+      sync -[sync]-> accounts 'importe accounts.public'
+      sync -[sync]-> transactions 'importe transactions.public'
+      sync -[sync]-> budget 'importe budget.public'
+      sync -[sync]-> debts 'importe debts.public'
+      transports -[sync]-> shared 'importe db'
+      transports -[sync]-> auth 'importe auth.public'
+      transports -[sync]-> accounts 'importe accounts.public'
+      transports -[sync]-> banking 'importe banking.public'
+      transports -[sync]-> transactions 'importe transactions.public'
+      // ADR 0019 — alembic/env.py n'importe que des models (+ config)
+      migrations -[sync]-> shared 'importe shared.models (Base.metadata)'
+      migrations -[sync]-> accounts 'importe accounts.models'
+      migrations -[sync]-> auth 'importe auth.models'
+      migrations -[sync]-> budget 'importe budget.models'
+      migrations -[sync]-> debts 'importe debts.models'
+      migrations -[sync]-> transactions 'importe transactions.models'
+
+      // DomainEvents sur shared/events.py, abonnés câblés dans backend/main.py (A04) — sans trace d'import
+      transactions -[async]-> budget 'TransactionConfirmedEvent → on_transaction_confirmed'
+      transactions -[async]-> debts 'TransactionConfirmed/Voided/EditableFieldsChanged → *_overflow'
+      budget -[async]-> debts 'BudgetCreated/UpdatedEvent → recompute_overflow_on_budget_event'
+    }
+
+    // trace : client/package.json, client/src/main.tsx
+    client = container 'Client' {
+      technology 'TypeScript / React / Vite / Capacitor'
+      metadata { sourceDir 'client' }
+
+      ui = component 'ui' {
+        description 'app (router, providers), pages, features, components, hooks.'
+        metadata {
+          sourceDir ['client/src/app', 'client/src/pages', 'client/src/features', 'client/src/components', 'client/src/hooks']
+        }
+      }
+      lib = component 'lib' {
+        description 'api (openapi-fetch typé), sse, powersync (SDK + connector), drizzle, auth, storage.'
+        metadata { sourceDir 'client/src/lib' }
+      }
+
+      ui -[sync]-> lib 'importe @/lib/*'
+    }
+
+    // trace : compose/initdb/ — SQL d'initialisation (rôles, storage PowerSync, publication) ; les migrations sont api.migrations (ADR 0019)
+    db = store 'Postgres' {
+      technology 'PostgreSQL 17'
+      metadata { sourceDir 'compose/initdb' }
+    }
+
+    // trace : powersync/config.yaml, powersync/sync_rules.yaml (ADR 0003) — image journeyapps/powersync-service
+    powersync = container 'PowerSync' {
+      technology 'PowerSync Service (self-hosted)'
+      metadata { sourceDir 'powersync' }
+    }
+
+    // Relations entre conteneurs — réseau, sans trace d'import
+    client.lib -[sync]-> api 'HTTP openapi-fetch (lib/api/client.ts), SSE (lib/sse), POST /sync/upload (lib/powersync/upload.ts)'
+    client.lib -[sync]-> powersync 'SDK @powersync/web (lib/powersync/connector.ts)'
+    // ADR 0019 — deux portes vers Postgres, et deux seulement
+    api.shared -[sync]-> db 'create_async_engine / get_db (shared/db.py)'
+    api.migrations -[sync]-> db 'async_engine_from_config (alembic/env.py)'
+    powersync -[sync]-> db 'réplication logique (replication.connections) + bucket storage'
+    powersync -[sync]-> api 'client_auth.jwks_uri (powersync/config.yaml)'
+  }
+}
+
+views {
+  view index {
+    title "Vue d'ensemble"
+    include *
+  }
+
+  view api of prosperity.api {
+    title 'API'
+    include *
+  }
+
+  view client of prosperity.client {
+    title 'Client'
+    include *
+  }
+
+  view db of prosperity.db {
+    title 'Postgres'
+    include *
+  }
+
+  view powersync of prosperity.powersync {
+    title 'PowerSync'
+    include *
+  }
+
+  view adr-0019 of prosperity.api {
+    title 'ADR 0019 — une seule porte vers Postgres'
+    include *
+    include prosperity.db
+  }
+}

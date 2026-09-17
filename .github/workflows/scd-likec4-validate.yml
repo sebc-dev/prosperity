@@ -1,0 +1,22 @@
+# Généré par scd-spec-dev:setup — validation du modèle LikeC4 (dimension architecture).
+# Le job `escape-hatch-guard` du plugin n'est PAS posé ici, volontairement : voir runbooks/ci.md,
+# « Escape-hatches — le filet vit dans les linters, pas dans un grep ».
+name: likec4-validate
+on: [push, pull_request]
+jobs:
+  likec4-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Valider le modèle LikeC4
+        run: |
+          # Garde : sans modèle, le job passe sans rien faire (le dépôt peut ne pas en avoir encore).
+          if [ ! -f docs/architecture/likec4.config.json ]; then
+            echo "Pas de docs/architecture/likec4.config.json — rien à valider."
+            exit 0
+          fi
+          PROJECT=$(jq -r '.name' docs/architecture/likec4.config.json)
+          npx --yes likec4@1.59.3 validate --no-layout --json --project "$PROJECT" docs/architecture

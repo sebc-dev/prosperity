@@ -123,6 +123,10 @@ appartenir). Après un re-jeu, **supprimer ce fichier avant de commiter** — si
 pas affecté (le job n'est pas dans son `needs:`), mais le workflow tourne rouge sur chaque push et
 pollue les checks de la PR.
 
+Depuis le montage de la dimension architecture (scd-spec-dev 0.13.0), seul le job **`likec4-validate`**
+est posé, dans `.github/workflows/scd-likec4-validate.yml` : il valide `docs/architecture/` et passe
+sans rien faire si le modèle est absent. Il n'est pas dans le `needs:` de `ci-required`.
+
 ## Validation d'un changement de CI
 
 - **Forme** : `actionlint .github/workflows/*.yml` (local ; gate dur = job `ci-selftest`).

@@ -1,9 +1,10 @@
 # E18 — DevX / CI (optimisation des workflows)
 
 > **Durée estimée** : 1-2 jours
-> **Statut** : not started
+> **Statut** : in progress — S18.1 done ; S18.2 en cours (change `quality-gate-1-lint-strict`)
 > **Dépend de** : E01 (workflows `push.yml`/`nightly.yml` posés)
 > **Bloque** : — (transverse ; bénéficie à S14.7 #211 qui ajoutera les jobs frontend dans la structure)
+> **Matière** : [`docs/recherches/2026-09-12-quality-gate-sonar-sans-serveur.md`](../recherches/2026-09-12-quality-gate-sonar-sans-serveur.md) (S18.2–S18.4)
 > **ADRs activés** : aucun (infra CI, pas de code applicatif)
 
 ---
@@ -28,6 +29,35 @@ C'est un epic **transverse** (outillage), hors séquence fonctionnelle MVP — c
 | **P18.1.2** | Cache & parallélisme : durcir le cache `uv` existant ; poser la **structure de cache frontend** (`actions/setup-node` `cache: npm` + cache du build natif `better-sqlite3`/`node_modules`) prête pour les jobs de S14.7 ; cache des images/layers Docker pour les jobs `compose` (`powersync-smoke` de **`nightly.yml`**) ; fail-fast lint avant les jobs coûteux là où le gain > le coût de sérialisation. | ~90 |
 | **P18.1.3** | `runbooks/ci.md` : **matrice de déclenchement** (quel chemin → quels jobs), le pattern agrégateur, la liste des *required checks* à régler dans les *branch protection rules*, et la procédure d'ajout d'un nouveau périmètre. | ~60 |
 
+### S18.2 — Quality gate, étape 1 : lint strict et déterministe, bloquant
+
+La gate du cycle `run` (`.claude/quality.json`) ne mesure que le style, les types et la couverture.
+Cette story y met ce que SonarQube mesure et que le lint statique rapide sait porter, en **bloquant**
+dès que la base est verte : côté frontend, la passe type-aware complète (`stylisticTypeChecked`),
+un sous-ensemble `eslint-plugin-sonarjs` (complexité cognitive, fonctions identiques, chaînes
+dupliquées), `eslint-plugin-react-hooks` 6, `jsx-a11y` et les frontières `eslint-plugin-boundaries`
+(en avis tant qu'aucun ADR ne contraint `client/src/`) ; côté backend, Ruff `C90 SIM RET PERF PT`
+avec seuil mccabe, et `deptry`. Calibrage `tests/**` décidé sur mesure, jamais sur principe.
+
+| Phase | Description | Diff |
+|---|---|---|
+| **P18.2.1** | Frontend : `eslint.config.analyse.js` (type-aware strict + sonarjs + jsx-a11y + boundaries), mesure de l'arriéré, calibrage `tests/**` motivé ligne à ligne, check `frontend-analyse` dans `quality.json` | ~150 |
+| **P18.2.2** | Backend : Ruff `C90 SIM RET PERF PT` + `[tool.ruff.lint.mccabe]`, `deptry` en dépendance dev, mesure et calibrage `tests/**`, check `backend-deps` | ~60 |
+| **P18.2.3** | Diagnostiqueurs des checks neufs (`/scd-spec-dev:quality-agents`), `docs/ci.md` et `runbooks/ci.md` à jour | ~80 |
+
+### S18.3 — Quality gate, étape 2 : code mort et duplication, en avis
+
+`knip` (après génération de `routeTree.gen.ts`), `jscpd` en baseline `origin/main`
+(`--fail-on-new-clones`), `vulture` et `flake8-cognitive-complexity` côté Python — tous en
+`advisory`, promus `blocking` après un baseline propre. Un change dédié.
+
+### S18.4 — Quality gate, étape 3 : mutation hors gate
+
+StrykerJS (runner Vitest, incrémental, `--since`) sur `lib/drizzle/queries`, `hooks`, `components/business` ;
+`mutmut` 3 sur `backend/**/domain.py` avec conteneurs testcontainers session-scoped. Jamais dans la
+gate bloquante : timer nocturne + relevé, comme `colibri-cms`. Mérite un ADR (la mutation comme
+indicateur de profondeur des tests). Un change dédié.
+
 ---
 
 ## Récapitulatif
@@ -35,7 +65,10 @@ C'est un epic **transverse** (outillage), hors séquence fonctionnelle MVP — c
 | ID | Type | Diff | Cumul |
 |---|---|---|---|
 | S18.1 (3 phases) | CI path-scopée + cache + runbook | ~270 | ~270 |
-| **Total** | **1 story / 3 phases** | **~270 lignes** | |
+| S18.2 (3 phases) | Quality gate étape 1 — lint strict bloquant | ~290 | ~560 |
+| S18.3 | Quality gate étape 2 — code mort, duplication (avis) | ~120 | ~680 |
+| S18.4 | Quality gate étape 3 — mutation hors gate | ~150 | ~830 |
+| **Total** | **4 stories** | **~830 lignes** | |
 
 ---
 

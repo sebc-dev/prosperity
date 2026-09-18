@@ -29,6 +29,6 @@ Cas limite : un extra importé sous un autre nom de module (`pyjwt[crypto]` → 
 grâce à l'ignore motivé.
 
 ## Critères
-- [ ] Quand `pyproject.toml` déclare un paquet qu'aucun module de `backend/`, `alembic/` ou `tests/` n'importe, `uv run deptry .` sort en échec en nommant le paquet (`DEP002`)   (SC-07a)
-- [ ] Quand un module de `backend/` importe un paquet absent de `pyproject.toml` (transitif ou non), `uv run deptry .` sort en échec en nommant le module et l'import (`DEP001` ou `DEP003`)   (SC-07b)
-- [ ] Quand chaque dépendance déclarée est importée et chaque import est déclaré, `uv run deptry .` sort en succès — c'est l'état de la base   (SC-07c)
+- [x] Quand `pyproject.toml` déclare un paquet qu'aucun module de `backend/`, `alembic/` ou `tests/` n'importe, `uv run deptry .` sort en échec en nommant le paquet (`DEP002`)   (SC-07a)
+- [x] Quand un module de `backend/` importe un paquet absent de `pyproject.toml` (transitif ou non), `uv run deptry .` sort en échec en nommant le module et l'import (`DEP001` ou `DEP003`)   (SC-07b)
+- [x] Quand chaque dépendance déclarée est importée et chaque import est déclaré, `uv run deptry .` sort en succès — c'est l'état de la base   (SC-07c)

@@ -26,6 +26,7 @@ import asyncio
 import time
 from collections import deque
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -106,10 +107,8 @@ class _UserChannel:
         client va resync depuis le ring buffer / REST), plutôt que de dropper silencieusement
         une frame live — ce qui créerait un gap invisible cassant l'exactly-once."""
         self._conns.discard(q)
-        try:
+        with suppress(asyncio.QueueEmpty):  # pragma: no cover — la file est pleine par construction
             q.get_nowait()  # libère une place pour la sentinelle
-        except asyncio.QueueEmpty:  # pragma: no cover — la file est pleine par construction
-            pass
         q.put_nowait(OVERFLOW_FRAME)
 
     def replay_after(self, last_id: int | None) -> list[SseFrame] | None:

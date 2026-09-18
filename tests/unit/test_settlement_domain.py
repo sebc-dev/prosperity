@@ -38,6 +38,7 @@ from backend.modules.debts.domain import (
     SettlementValidationError,
     SettlementValidator,
     UnknownDebtLineError,
+    ValidatedSettlement,
 )
 from backend.shared.currency import Currency
 
@@ -628,3 +629,152 @@ class TestSettlementValidatorProperties:
             linked_transaction_amount_cents=80,
         )
         assert result.net_transfer_cents == 80
+
+
+# ---------------------------------------------------------------------------
+# SC-05b — Ticket 05 (préfactoring C901) : `validate` a été décomposé en 8
+# fonctions privées `_validate_*`/`_compute_net_transfer_cents`, une par
+# invariant, appelées EN SÉQUENCE dans `validate`. La classe `Rejections`
+# ci-dessus prouve déjà que chaque invariant ISOLÉ lève sa sous-classe. Ce que
+# ces cas isolés NE prouvent PAS — et que l'extraction en fonctions distinctes
+# aurait pu discrètement inverser si l'ORDRE des appels dans `validate` avait
+# changé — c'est la PRIORITÉ entre invariants : quand une entrée viole DEUX
+# invariants à la fois, seul le PREMIER (ordre canonique (1)…(8)) doit être
+# rapporté. Chaque test ci-dessous construit délibérément une double violation
+# adjacente et épingle laquelle des deux gagne, plus un cas valide de bout en
+# bout après refactor.
+# ---------------------------------------------------------------------------
+
+
+class TestSC05bValidateOrderPreservedAfterExtraction:
+    """Un test par frontière d'ordre (i, i+1) + un cas valide (SC-05b)."""
+
+    def test_SC_05b_rule1_empty_wins_over_any_later_rule(self) -> None:
+        # Arrange : aucune ligne, mais un `debt_contexts` qui referme une dette
+        # déjà soldée (violerait la règle (6) si elle était atteinte).
+        closed = UUID(int=100_001)
+        # Act / Assert : (1) est vérifiée avant même de regarder `debt_contexts`.
+        with pytest.raises(EmptySettlementError):
+            SettlementValidator.validate(
+                settlement_type="virtual",
+                lines=[],
+                debt_contexts={closed: _ctx(debt_id=closed, remaining_cents=0)},
+                linked_transaction_amount_cents=None,
+            )
+
+    def test_SC_05b_rule2_unknown_line_wins_over_rule3_mixed_currency(self) -> None:
+        # Arrange : deux dettes connues en devises DIFFÉRENTES (violerait (3))
+        # PLUS une ligne ciblant une dette absente de `debt_contexts` (viole (2)).
+        d1, d2, orphan = UUID(int=200_001), UUID(int=200_002), UUID(int=200_099)
+        with pytest.raises(UnknownDebtLineError):
+            SettlementValidator.validate(
+                settlement_type="virtual",
+                lines=[
+                    _line(debt_id=d1, amount_cents=10),
+                    _line(debt_id=d2, amount_cents=10),
+                    _line(debt_id=orphan, amount_cents=10),
+                ],
+                debt_contexts={
+                    d1: _ctx(debt_id=d1, currency="EUR", remaining_cents=50),
+                    d2: _ctx(debt_id=d2, currency="USD", remaining_cents=50),
+                },
+                linked_transaction_amount_cents=None,
+            )
+
+    def test_SC_05b_rule3_mixed_currency_wins_over_rule4_multiple_parties(self) -> None:
+        # Arrange : `A→B` EUR et `A→C` USD ⇒ à la fois devises mêlées (3) ET 3
+        # contreparties `{A, B, C}` (4).
+        d1, d2 = UUID(int=300_001), UUID(int=300_002)
+        with pytest.raises(MixedCurrencyError):
+            SettlementValidator.validate(
+                settlement_type="virtual",
+                lines=[
+                    _line(debt_id=d1, amount_cents=10),
+                    _line(debt_id=d2, amount_cents=10),
+                ],
+                debt_contexts={
+                    d1: _ctx(
+                        debt_id=d1, from_user_id=A, to_user_id=B, currency="EUR", remaining_cents=50
+                    ),
+                    d2: _ctx(
+                        debt_id=d2, from_user_id=A, to_user_id=C, currency="USD", remaining_cents=50
+                    ),
+                },
+                linked_transaction_amount_cents=None,
+            )
+
+    def test_SC_05b_rule4_multiple_parties_wins_over_rule5_linked_mismatch(self) -> None:
+        # Arrange : 3 contreparties `{A, B, C}` (4) ET `virtual` avec un montant
+        # lié non-nul (violerait (5) si atteinte).
+        d1, d2 = UUID(int=400_001), UUID(int=400_002)
+        with pytest.raises(MultipleCounterpartiesError):
+            SettlementValidator.validate(
+                settlement_type="virtual",
+                lines=[
+                    _line(debt_id=d1, amount_cents=10),
+                    _line(debt_id=d2, amount_cents=10),
+                ],
+                debt_contexts={
+                    d1: _ctx(debt_id=d1, from_user_id=A, to_user_id=B, remaining_cents=50),
+                    d2: _ctx(debt_id=d2, from_user_id=A, to_user_id=C, remaining_cents=50),
+                },
+                linked_transaction_amount_cents=999,
+            )
+
+    def test_SC_05b_rule5_linked_mismatch_wins_over_rule6_closed_debt(self) -> None:
+        # Arrange : dette déjà soldée (`remaining_cents=0`, violerait (6)) ET
+        # `virtual` avec un montant lié non-nul (viole (5)).
+        d = UUID(int=500_001)
+        with pytest.raises(LinkedTransactionMismatchError):
+            SettlementValidator.validate(
+                settlement_type="virtual",
+                lines=[_line(debt_id=d, amount_cents=10)],
+                debt_contexts={d: _ctx(debt_id=d, remaining_cents=0)},
+                linked_transaction_amount_cents=999,
+            )
+
+    def test_SC_05b_rule6_closed_debt_wins_over_rule7_over_settlement(self) -> None:
+        # Arrange : dette soldée (`remaining_cents=0`, viole (6)) ciblée par une
+        # ligne strictement positive qui la dépasserait forcément aussi (7).
+        d = UUID(int=600_001)
+        with pytest.raises(ClosedDebtError):
+            SettlementValidator.validate(
+                settlement_type="internal_transfer",
+                lines=[_line(debt_id=d, amount_cents=50)],
+                debt_contexts={d: _ctx(debt_id=d, remaining_cents=0)},
+                linked_transaction_amount_cents=50,
+            )
+
+    def test_SC_05b_rule7_over_settlement_wins_over_rule8_net_mismatch(self) -> None:
+        # Arrange : ligne (150) > remaining (100) ⇒ over-settlement (7) ; le
+        # `linked_transaction_amount_cents=100` fourni ne matche PAS non plus le
+        # net (150), ce qui violerait aussi (8) si (7) ne l'avait pas court-circuité.
+        d = UUID(int=700_001)
+        with pytest.raises(OverSettlementError):
+            SettlementValidator.validate(
+                settlement_type="internal_transfer",
+                lines=[_line(debt_id=d, amount_cents=150)],
+                debt_contexts={d: _ctx(debt_id=d, remaining_cents=100)},
+                linked_transaction_amount_cents=100,
+            )
+
+    def test_SC_05b_valid_entry_returns_expected_validated_settlement(self) -> None:
+        # Arrange : règlement `internal_transfer` valide, une seule ligne, sans
+        # violer aucun des 8 invariants.
+        d = UUID(int=800_001)
+        # Act : passe par les 8 fonctions privées déléguées, dans l'ordre.
+        result = SettlementValidator.validate(
+            settlement_type="internal_transfer",
+            lines=[_line(debt_id=d, amount_cents=42)],
+            debt_contexts={d: _ctx(debt_id=d, remaining_cents=42)},
+            linked_transaction_amount_cents=42,
+        )
+        # Assert : le même `ValidatedSettlement` qu'avant l'extraction.
+        assert isinstance(result, ValidatedSettlement)
+        assert result == ValidatedSettlement(
+            type="internal_transfer",
+            lines=(_line(debt_id=d, amount_cents=42),),
+            currency="EUR",
+            counterparties=frozenset({A, B}),
+            net_transfer_cents=42,
+        )

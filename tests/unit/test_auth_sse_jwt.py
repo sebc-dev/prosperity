@@ -166,3 +166,23 @@ def test_sse_token_with_non_uuid_sub_raises_invalid() -> None:
     forged = _forge_sse({"sub": "not-a-uuid", "exp": 9_999_999_999}, settings)
     with pytest.raises(InvalidTokenError):
         verify_sse_token(forged, settings=settings)
+
+
+def test_SC_05c_sse_token_without_sub_raises_invalid_not_500() -> None:
+    # SC-05c : après extraction de `_extract_sse_user_id`, un token signé (aud/iss OK,
+    # exp OK) mais SANS `sub` doit toujours rendre InvalidTokenError (401), jamais
+    # un KeyError/TypeError (500). Épingle la garde `not isinstance(sub, str)`.
+    settings = _settings()
+    forged = _forge_sse({"sub": _OMIT, "exp": 9_999_999_999}, settings)
+    with pytest.raises(InvalidTokenError):
+        verify_sse_token(forged, settings=settings)
+
+
+def test_SC_05c_sse_token_with_non_string_sub_raises_invalid_not_500() -> None:
+    # SC-05c : `sub` entier → InvalidTokenError (PyJWT le rejette dès le decode via
+    # InvalidSubjectError, mappé en InvalidTokenError ; la garde post-decode reste
+    # le filet). On n'asserte que le type d'exception, pas le message.
+    settings = _settings()
+    forged = _forge_sse({"sub": 12345, "exp": 9_999_999_999}, settings)
+    with pytest.raises(InvalidTokenError):
+        verify_sse_token(forged, settings=settings)

@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import datetime as dt
 from collections.abc import Sequence
-from typing import ClassVar
+from typing import ClassVar, Protocol
 from uuid import UUID
 
 from sqlalchemy import and_, column, or_, select, table
@@ -49,10 +49,36 @@ from backend.modules.transactions.public import (
     get_transaction,
     is_transfer,
 )
+from backend.shared.money import Money
 
 # Handle Core sur la table PEER `accounts` (gabarit `dashboard._transactions`) :
 # résout `account_id → household_id` SANS import (aucun arc import-linter).
 _accounts = table("accounts", column("id"), column("household_id"))
+
+
+class _LinkedTransactionSplit(Protocol):
+    """Duck-typing surface d'un split de la tx liée — PUREMENT STATIQUE (aucun
+    import `transactions.domain`, contrat `2-debts`, gabarit
+    `overflow_materializer._OverflowSplit`)."""
+
+    @property
+    def account_id(self) -> UUID: ...
+    @property
+    def amount(self) -> Money: ...
+
+
+class _LinkedTransaction(Protocol):
+    """Duck-typing surface de la tx liée que `create_settlement` dérive
+    (gabarit `overflow_materializer._OverflowTx`) : la concrète
+    `transactions.domain.Transaction` la satisfait structurellement, sans que
+    `debts` ne nomme jamais cet interne (`2-debts`)."""
+
+    @property
+    def account_id(self) -> UUID: ...
+    @property
+    def splits(self) -> Sequence[_LinkedTransactionSplit]: ...
+    @property
+    def state(self) -> TransactionState: ...
 
 
 class SettlementServiceError(Exception):
@@ -131,6 +157,142 @@ def derive_transfer_amount(split_amounts_cents: Sequence[int]) -> int:
     return sum(a for a in split_amounts_cents if a > 0)
 
 
+async def _load_targeted_debts(session: AsyncSession, debt_ids: Sequence[UUID]) -> list[Debt]:
+    """Étape (i) de `create_settlement` : charge les `Debt` ciblées.
+
+    Chaque `debt_id` des lignes doit EXISTER → sinon 404 uniforme (anti-oracle).
+    """
+    debts = list((await session.execute(select(Debt).where(Debt.id.in_(debt_ids)))).scalars().all())
+    by_id = {d.id: d for d in debts}
+    if any(did not in by_id for did in debt_ids):
+        raise SettlementDebtNotAccessibleError
+    return debts
+
+
+async def _load_linked_transaction(
+    session: AsyncSession, *, settlement_type: SettlementType, linked_transaction_id: UUID | None
+):
+    """Étape (ii-a) de `create_settlement` : EXISTENCE de la tx liée (requise
+    pour la garde foyer ii-bis ; `None` si `virtual`) → sinon 404 uniforme.
+
+    PAS d'annotation de retour explicite (volontaire) : le type réel inféré
+    (`transactions.domain.Transaction | None`) reste un INTERNE du module
+    `transactions` (forbidden par le contrat `2-debts`) — le nommer ici
+    exigerait un import direct interdit. L'appelant (`create_settlement`)
+    récupère cette valeur dans une variable LOCALE (non un paramètre : aucune
+    annotation requise par pyright strict) qui garde ce type nominal inféré,
+    ré-utilisable avec `is_transfer` (signature nominale) ; les autres helpers
+    qui REÇOIVENT cette tx en PARAMÈTRE la typent via le Protocol structurel
+    `_LinkedTransaction` (satisfait structurellement, sans jamais nommer
+    l'interne)."""
+    if settlement_type == "virtual":
+        return None
+    tx = (
+        await get_transaction(session, tx_id=linked_transaction_id)
+        if linked_transaction_id is not None
+        else None
+    )
+    if tx is None:
+        raise LinkedTransactionNotAccessibleError
+    return tx
+
+
+async def _assert_household_isolation(
+    session: AsyncSession, debts: Sequence[Debt], tx: _LinkedTransaction | None
+) -> None:
+    """Étape (ii-bis) de `create_settlement` : 🔒 GARDE FOYER (AVANT le
+    user-level — S-M2/S-M3), la porte la PLUS fondamentale (ADR 0011 §4).
+
+    Comptes des dettes + `tx.account_id` (racine) + comptes des splits doivent
+    tous résoudre au `household_id` du `Settlement` (= `HOUSEHOLD_ID`).
+    """
+    account_ids = {d.account_id for d in debts}
+    if tx is not None:
+        account_ids.add(tx.account_id)  # S-M3 : racine incluse
+        account_ids |= {s.account_id for s in tx.splits}
+    _assert_single_household(await _resolve_households(session, account_ids), expected=HOUSEHOLD_ID)
+
+
+async def _validate_linked_transaction(
+    session: AsyncSession,
+    tx: _LinkedTransaction | None,
+    *,
+    settlement_type: SettlementType,
+    by_user_id: UUID,
+    is_actual_transfer: bool,
+) -> int | None:
+    """Étapes (iii)/(iv) de `create_settlement` : accessibilité user-level +
+    état/forme de la tx liée, puis montant viré (`None` si `virtual`).
+
+    Accessible au caller sur TOUS ses comptes → sinon 404 ; `confirmed` →
+    sinon 422 ; pour `internal_transfer`, `is_actual_transfer` (== `is_transfer(tx)`,
+    calculé par l'appelant SUR LE TYPE NOMINAL — `tx` est ici le Protocol
+    structurel `_LinkedTransaction`, insuffisant pour la signature nominale
+    d'`is_transfer`) → sinon 422 ; `linked_transaction_amount_cents =
+    derive_transfer_amount(...)`.
+    """
+    if settlement_type == "virtual":
+        return None
+    assert tx is not None  # garanti par (ii-a) / `_load_linked_transaction`
+    # A-m1 : accessibilité sur TOUS les comptes du virement (≥2 pour un
+    # internal_transfer), pas le seul `tx.account_id`. Sous singleton V1 tout
+    # compte du foyer est accessible ; la boucle évite une assomption cachée.
+    tx_account_ids = {tx.account_id} | {s.account_id for s in tx.splits}
+    for acc_id in tx_account_ids:
+        if not await account_is_accessible(session, account_id=acc_id, user_id=by_user_id):
+            raise LinkedTransactionNotAccessibleError
+    if tx.state is not TransactionState.CONFIRMED:
+        raise LinkedTransactionNotConfirmedError
+    if settlement_type == "internal_transfer" and not is_actual_transfer:
+        raise LinkedTransactionNotTransferError
+    # (iv) montant viré = Σ splits positifs (helper pur, property-tested T-M3)
+    return derive_transfer_amount([s.amount.amount_cents for s in tx.splits])
+
+
+async def _build_debt_contexts(
+    session: AsyncSession, debts: Sequence[Debt]
+) -> dict[UUID, DebtContext]:
+    """Étape (v) de `create_settlement` : dérive les `DebtContext` (remaining
+    COURANT via S10.3, avant ce règlement).
+
+    Le restant des N dettes est batché en UNE requête (pas un N+1
+    `compute_remaining` par dette) ; toutes existent (prouvé en (i)) ⇒ chaque
+    `d.id` est dans le dict.
+    """
+    remaining_by_id = await compute_remaining_for_debts(session, debt_ids=[d.id for d in debts])
+    return {
+        d.id: DebtContext(
+            debt_id=d.id,
+            from_user_id=d.from_user_id,
+            to_user_id=d.to_user_id,
+            currency=d.currency,  # type: ignore[arg-type]  # projection serveur validée (A-m2)
+            remaining_cents=remaining_by_id[d.id],
+        )
+        for d in debts
+    }
+
+
+async def _persist_settlement_lines(
+    session: AsyncSession,
+    settlement: Settlement,
+    lines: Sequence[SettlementLineInput],
+    debt_contexts: dict[UUID, DebtContext],
+) -> None:
+    """Fin de l'étape (vii) de `create_settlement` : insère les N
+    `SettlementLine` liées à `settlement` (déjà flush pour sa PK) — MÊME
+    transaction ; flush, pas commit (`get_db`)."""
+    for ln in lines:
+        session.add(
+            SettlementLine(
+                settlement_id=settlement.id,
+                debt_id=ln.debt_id,
+                amount_cents=ln.amount_cents,
+                currency=debt_contexts[ln.debt_id].currency,  # devise de la Debt (cohérence DB)
+            )
+        )
+    await session.flush()
+
+
 async def create_settlement(  # noqa: PLR0913 — paramètres d'acte keyword-only
     session: AsyncSession,
     *,
@@ -161,69 +323,36 @@ async def create_settlement(  # noqa: PLR0913 — paramètres d'acte keyword-onl
     (v)     dérive les `DebtContext` (contreparties + devise + `remaining` S10.3) ;
     (vi)    `SettlementValidator.validate(...)` → lève `SettlementValidationError` (→ 422) ;
     (vii)   insert `Settlement` + N `SettlementLine` (MÊME transaction ; flush, pas commit).
+
+    Chaque étape est déléguée à une fonction privée dédiée (`_load_*` /
+    `_assert_*` / `_validate_*` / `_build_*` / `_persist_settlement_lines`),
+    appelée dans le MÊME ORDRE que ci-dessus (C901) — cette fonction reste une
+    simple composition séquentielle.
     """
-    # (i) dettes existantes → 404 uniforme
     debt_ids = [ln.debt_id for ln in lines]
-    debts = list((await session.execute(select(Debt).where(Debt.id.in_(debt_ids)))).scalars().all())
-    by_id = {d.id: d for d in debts}
-    if any(did not in by_id for did in debt_ids):
-        raise SettlementDebtNotAccessibleError
+    debts = await _load_targeted_debts(session, debt_ids)
 
     # (ii) caller partie de CHAQUE dette (RBAC user-level) → 404 uniforme
     if any(by_user_id not in (d.from_user_id, d.to_user_id) for d in debts):
         raise SettlementDebtNotAccessibleError
 
-    # (ii-a) EXISTENCE de la tx liée (requise pour ii-bis ; 404 uniforme)
-    tx = None
-    if settlement_type != "virtual":
-        tx = (
-            await get_transaction(session, tx_id=linked_transaction_id)
-            if linked_transaction_id is not None
-            else None
-        )
-        if tx is None:
-            raise LinkedTransactionNotAccessibleError
-
-    # (ii-bis) 🔒 GARDE FOYER (AVANT le user-level — S-M2/S-M3) : comptes des
-    # dettes + tx.account_id (racine) + comptes des splits → HOUSEHOLD_ID.
-    account_ids = {d.account_id for d in debts}
-    if tx is not None:
-        account_ids.add(tx.account_id)  # S-M3 : racine incluse
-        account_ids |= {s.account_id for s in tx.splits}
-    _assert_single_household(await _resolve_households(session, account_ids), expected=HOUSEHOLD_ID)
-
-    # (iii) accessibilité user-level + état/forme de la tx liée (non-virtuel)
-    linked_amount: int | None = None
-    if settlement_type != "virtual":
-        assert tx is not None  # garanti par (ii-a)
-        # A-m1 : accessibilité sur TOUS les comptes du virement (≥2 pour un
-        # internal_transfer), pas le seul `tx.account_id`. Sous singleton V1 tout
-        # compte du foyer est accessible ; la boucle évite une assomption cachée.
-        tx_account_ids = {tx.account_id} | {s.account_id for s in tx.splits}
-        for acc_id in tx_account_ids:
-            if not await account_is_accessible(session, account_id=acc_id, user_id=by_user_id):
-                raise LinkedTransactionNotAccessibleError
-        if tx.state is not TransactionState.CONFIRMED:
-            raise LinkedTransactionNotConfirmedError
-        if settlement_type == "internal_transfer" and not is_transfer(tx):
-            raise LinkedTransactionNotTransferError
-        # (iv) montant viré = Σ splits positifs (helper pur, property-tested T-M3)
-        linked_amount = derive_transfer_amount([s.amount.amount_cents for s in tx.splits])
-
-    # (v) DebtContext (remaining COURANT via S10.3, avant ce règlement). Le
-    # restant des N dettes est batché en UNE requête (pas un N+1 `compute_remaining`
-    # par dette) ; toutes existent (prouvé en (i)) ⇒ chaque `d.id` est dans le dict.
-    remaining_by_id = await compute_remaining_for_debts(session, debt_ids=[d.id for d in debts])
-    debt_contexts = {
-        d.id: DebtContext(
-            debt_id=d.id,
-            from_user_id=d.from_user_id,
-            to_user_id=d.to_user_id,
-            currency=d.currency,  # type: ignore[arg-type]  # projection serveur validée (A-m2)
-            remaining_cents=remaining_by_id[d.id],
-        )
-        for d in debts
-    }
+    tx = await _load_linked_transaction(
+        session, settlement_type=settlement_type, linked_transaction_id=linked_transaction_id
+    )
+    # `is_transfer` a une signature NOMINALE (`transactions.domain.Transaction`) :
+    # calculée ICI, tant que `tx` porte encore son type inféré réel (variable
+    # locale, pas un paramètre — aucune annotation Protocol requise), avant
+    # d'être passée en aval sous le Protocol structurel `_LinkedTransaction`.
+    is_actual_transfer = tx is not None and is_transfer(tx)
+    await _assert_household_isolation(session, debts, tx)
+    linked_amount = await _validate_linked_transaction(
+        session,
+        tx,
+        settlement_type=settlement_type,
+        by_user_id=by_user_id,
+        is_actual_transfer=is_actual_transfer,
+    )
+    debt_contexts = await _build_debt_contexts(session, debts)
 
     # (vi) validateur pur (lève SettlementValidationError → 422 au boundary)
     SettlementValidator.validate(
@@ -244,16 +373,7 @@ async def create_settlement(  # noqa: PLR0913 — paramètres d'acte keyword-onl
     )
     session.add(settlement)
     await session.flush()  # PK settlement disponible pour les FK des lignes
-    for ln in lines:
-        session.add(
-            SettlementLine(
-                settlement_id=settlement.id,
-                debt_id=ln.debt_id,
-                amount_cents=ln.amount_cents,
-                currency=debt_contexts[ln.debt_id].currency,  # devise de la Debt (cohérence DB)
-            )
-        )
-    await session.flush()
+    await _persist_settlement_lines(session, settlement, lines, debt_contexts)
     return settlement
 
 

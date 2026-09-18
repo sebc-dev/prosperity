@@ -369,11 +369,11 @@ async def list_overflow_budget_ids_for_categories(
     if not category_ids:
         return []
     budgets = await _concerned_budgets(session, category_ids)
-    out: list[UUID] = []
-    for budget in budgets:
-        if account_id in await _eligible_account_ids(session, budget):
-            out.append(budget.id)
-    return out
+    return [
+        budget.id
+        for budget in budgets
+        if account_id in await _eligible_account_ids(session, budget)
+    ]
 
 
 # --- Drill-down: contributing splits, paginated (S08.4 P08.4.3) -------------

@@ -36,6 +36,6 @@ ne remplacent aucun test existant.
 autre refactor.
 
 ## Critères
-- [ ] `uv run ruff check backend alembic --select C901,PERF401,SIM105` avec `max-complexity = 10` sort en succès : `validate`, `create_settlement` et `verify_sse_token` sont ≤ 10, `PERF401` et `SIM105` sont corrigés   (SC-05a)
-- [ ] `SettlementValidator.validate` conserve son comportement : pour chacun de ses 8 invariants, la même exception (`SettlementValidationError` spécialisée) est levée dans le même ordre, et une entrée valide rend le même `ValidatedSettlement`   (SC-05b)
-- [ ] `create_settlement` et `verify_sse_token` conservent leur comportement : leurs cas d'erreur et leurs sorties nominales sont inchangés, et les suites `tests/unit/`, `tests/integration/` (debts, auth) et `tests/e2e/test_debt_settlement_lifecycle.py` passent sans modification   (SC-05c)
+- [x] `uv run ruff check backend alembic --select C901,PERF401,SIM105` avec `max-complexity = 10` sort en succès : `validate`, `create_settlement` et `verify_sse_token` sont ≤ 10, `PERF401` et `SIM105` sont corrigés   (SC-05a)
+- [x] `SettlementValidator.validate` conserve son comportement : pour chacun de ses 8 invariants, la même exception (`SettlementValidationError` spécialisée) est levée dans le même ordre, et une entrée valide rend le même `ValidatedSettlement`   (SC-05b)
+- [x] `create_settlement` et `verify_sse_token` conservent leur comportement : leurs cas d'erreur et leurs sorties nominales sont inchangés, et les suites `tests/unit/`, `tests/integration/` (debts, auth) et `tests/e2e/test_debt_settlement_lifecycle.py` passent sans modification   (SC-05c)

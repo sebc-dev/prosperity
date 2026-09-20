@@ -165,24 +165,15 @@ def issue_sse_token(user_id: UUID, *, settings: Settings) -> str:
     )
 
 
-def verify_sse_token(token: str, *, settings: Settings) -> tuple[UUID, int]:
-    """Verify an SSE token and return `(user_id, exp_ts)` (S17.1).
+def _decode_sse_payload(token: str, *, settings: Settings) -> dict[str, Any]:
+    """`verify_sse_token` step 1: decode + verify signature/exp/aud/iss.
 
-    Mirror of `verify_access_token` (same hardcoded `["HS256"]` whitelist, same
-    `leeway`, same `audience=`/`issuer=` pinning that rejects a *missing* `aud`/
-    `iss`, same defense-in-depth post-decode checks) but pinned on
-    `settings.jwt_sse_audience`. `exp_ts` is returned so the stream can close the
-    connection when the token expires (it is verified only at open).
-
-    EVERY claim extraction is wrapped so a malformed token yields
-    `InvalidTokenError` (HTTP 401), never an unhandled `KeyError`/`ValueError`
-    surfacing as a 500.
-
-    Raises:
-        ExpiredTokenError / InvalidTokenError: as `verify_access_token`.
+    Extracted so `verify_sse_token` stays a flat sequence of steps (C901):
+    same hardcoded `["HS256"]` whitelist, same `leeway`, same `audience=`/
+    `issuer=` pinning (rejects a *missing* `aud`/`iss`) as `verify_access_token`.
     """
     try:
-        payload: dict[str, Any] = jwt.decode(
+        return jwt.decode(
             token,
             settings.jwt_secret.get_secret_value(),
             algorithms=["HS256"],
@@ -203,25 +194,69 @@ def verify_sse_token(token: str, *, settings: Settings) -> tuple[UUID, int]:
     except PyJWTError as exc:
         raise InvalidTokenError("SSE token is invalid") from exc
 
+
+def _check_sse_claims_present(payload: dict[str, Any]) -> None:
+    """`verify_sse_token` step 2: `aud`/`iss` presence guard."""
     if "aud" not in payload:
         raise InvalidTokenError("SSE token has no 'aud' claim")
     if "iss" not in payload:
         raise InvalidTokenError("SSE token has no 'iss' claim")
 
+
+def _check_sse_iat_not_future(payload: dict[str, Any]) -> None:
+    """`verify_sse_token` step 3: residual defense-in-depth `iat` guard (see
+    `verify_access_token` for the full rationale — PyJWT already rejects an
+    integer `iat` beyond the leeway; this covers a sub-second float straddling
+    the boundary)."""
     iat = payload.get("iat")
     if isinstance(iat, int | float):
         now_ts = int(datetime.now(tz=UTC).timestamp())
         if iat > now_ts + _CLOCK_SKEW_LEEWAY_SECONDS:
             raise InvalidTokenError("SSE token 'iat' is in the future")
 
+
+def _extract_sse_exp(payload: dict[str, Any]) -> int:
+    """`verify_sse_token` step 4: `exp` claim extraction."""
     exp = payload.get("exp")
     if not isinstance(exp, int | float):
         raise InvalidTokenError("SSE token has no valid 'exp' claim")
+    return int(exp)
 
+
+def _extract_sse_user_id(payload: dict[str, Any]) -> UUID:
+    """`verify_sse_token` step 5: `sub` claim extraction + UUID parsing."""
     sub = payload.get("sub")
     if not isinstance(sub, str):
         raise InvalidTokenError("SSE token has no valid 'sub' claim")
     try:
-        return UUID(sub), int(exp)
+        return UUID(sub)
     except ValueError as exc:
         raise InvalidTokenError("SSE token 'sub' is not a valid UUID") from exc
+
+
+def verify_sse_token(token: str, *, settings: Settings) -> tuple[UUID, int]:
+    """Verify an SSE token and return `(user_id, exp_ts)` (S17.1).
+
+    Mirror of `verify_access_token` (same hardcoded `["HS256"]` whitelist, same
+    `leeway`, same `audience=`/`issuer=` pinning that rejects a *missing* `aud`/
+    `iss`, same defense-in-depth post-decode checks) but pinned on
+    `settings.jwt_sse_audience`. `exp_ts` is returned so the stream can close the
+    connection when the token expires (it is verified only at open).
+
+    EVERY claim extraction is wrapped so a malformed token yields
+    `InvalidTokenError` (HTTP 401), never an unhandled `KeyError`/`ValueError`
+    surfacing as a 500.
+
+    Delegates each step (decode, `aud`/`iss` presence, `iat` guard, `exp`/`sub`
+    extraction) to a dedicated private helper, called in the SAME ORDER as
+    before extraction (C901) — this function is a flat composition.
+
+    Raises:
+        ExpiredTokenError / InvalidTokenError: as `verify_access_token`.
+    """
+    payload = _decode_sse_payload(token, settings=settings)
+    _check_sse_claims_present(payload)
+    _check_sse_iat_not_future(payload)
+    exp = _extract_sse_exp(payload)
+    user_id = _extract_sse_user_id(payload)
+    return user_id, exp

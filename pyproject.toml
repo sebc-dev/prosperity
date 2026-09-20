@@ -10,6 +10,7 @@ dependencies = [
     "fastapi>=0.118",
     "ofxparse>=0.21",
     "pwdlib[argon2]>=0.2.1",
+    "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
     "pyjwt[crypto]>=2.10",
     "python-multipart>=0.0.9",
@@ -34,7 +35,30 @@ dev = [
     "pre-commit>=4.0",
     "import-linter>=2.3",
     "pytest-xdist>=3.8.0",
+    "deptry>=0.25.1",
 ]
+
+# `deptry` : cohérence des dépendances Python déclarées/importées (S-quality-gate-1/S07).
+# `exclude` reprend l'exclusion par défaut de `tests/` (plus `client`, `htmlcov` et les
+# caches) — volontairement, pour que DEP004 (une dépendance du groupe `dev` importée
+# depuis `backend/` ou `alembic/`) reste détectée ; la contrepartie est qu'une dépendance
+# `[project.dependencies]` consommée uniquement depuis `tests/` doit être ignorée en
+# DEP002 avec motif (cas `email-validator`).
+# `[dependency-groups].dev` (PEP 735) est déjà reconnu nativement comme groupe dev
+# par deptry — aucune option supplémentaire n'est nécessaire pour ça.
+[tool.deptry]
+known_first_party = ["backend"]
+exclude = [".venv", "client", "htmlcov", "tests", "\\.hypothesis", "\\.pytest_cache", "\\.ruff_cache", "\\.mypy_cache", "__pycache__"]
+
+[tool.deptry.per_rule_ignores]
+# DEP002 (déclarée mais jamais importée par son nom) : chargées à l'exécution par un
+# mécanisme indirect, jamais par un `import` explicite dans backend/alembic/tests.
+# - asyncpg : driver SQLAlchemy async résolu depuis l'URL de connexion (`postgresql+asyncpg://`).
+# - python-multipart : parsing multipart/form-data fait par Starlette en interne (FastAPI File/Form).
+# - uvicorn : serveur ASGI lancé en CLI/entrypoint, jamais importé en Python.
+# - email-validator : chargé à l'exécution par pydantic.EmailStr (backend/modules/auth/schemas.py),
+#   jamais importé par son nom hors tests/ (exclu du scan).
+DEP002 = ["asyncpg", "python-multipart", "uvicorn", "email-validator"]
 
 [tool.uv]
 package = false

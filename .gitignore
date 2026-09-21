@@ -40,6 +40,8 @@ node_modules/
 client/dist/
 client/coverage/
 client/.tanstack/
+# Cache de la passe `npm run analyse` (eslint.config.analyse.js, --cache)
+client/.eslintcache-analyse
 # Env client : Vite charge nativement .env.development/.env.production — tout ignorer
 # SAUF le gabarit documentaire. L'ordre est load-bearing : le glob AVANT la négation (D12).
 client/.env

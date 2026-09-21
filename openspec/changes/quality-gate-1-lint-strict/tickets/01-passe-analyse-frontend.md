@@ -2,12 +2,12 @@
 
 **Bloqué par :** —
 **Vérif :** test
-**Fichiers :** `client/package.json`, `client/package-lock.json`, `client/eslint.config.analyse.js`, `client/tests/lint/analyse.test.ts`
+**Fichiers :** `client/package.json`, `client/package-lock.json`, `client/eslint.config.analyse.js`, `client/tests/lint/analyse.test.ts`, `.gitignore`
 
 ## Ce que ça livre
 
 Depuis `client/`, `npm run analyse` joue une configuration ESLint **séparée** de celle du style
-(`eslint.config.js`, intouchée ici) sur tous les `.ts`/`.tsx` de `src/` hors artefacts générés
+(`eslint.config.js`, intouchée ici) sur tous les `.ts`/`.tsx` de `src/` et `tests/` hors artefacts générés
 (`src/routeTree.gen.ts`, `src/lib/api/schema.d.ts`, `dist`, `coverage`, `drizzle`, `android`). Elle
 porte, une intention par bloc : typescript-eslint `recommendedTypeChecked` **+ `stylisticTypeChecked`**
 (`projectService`, comme le fichier de style — pas `strictTypeChecked`, promotion ultérieure) ; le
@@ -15,7 +15,8 @@ porte, une intention par bloc : typescript-eslint `recommendedTypeChecked` **+ `
 `no-identical-functions`, `no-duplicate-string` (seuil 5), `no-duplicated-branches`, `no-collapsible-if`,
 `no-redundant-boolean`, `no-inverted-boolean-check`, `prefer-immediate-return`, `no-useless-catch`,
 `max-switch-cases` — jamais `configs.recommended` entier ; et `eslint-plugin-jsx-a11y` (recommended).
-Le script `analyse` passe `--cache`. Versions figées au ticket avec `npm view`, pas recopiées d'un
+Le script `analyse` passe `--cache`. Le cache `client/.eslintcache-analyse` est ignoré par git
+(`.gitignore`). Versions figées au ticket avec `npm view`, pas recopiées d'un
 rapport ; `package-lock.json` à jour.
 
 **Calibrage `tests/**` sur mesure, jamais sur principe** : avant toute extinction, mesurer
@@ -40,10 +41,10 @@ attendus : complexité cognitive **15 passe / 16 échoue** ; même code fautif s
 → silence si la règle est éteinte, sous un `filePath` de `src/` → remontée.
 
 ## Critères
-- [ ] Une fonction de `src/` (hors tests) dont la complexité cognitive dépasse 15 fait échouer `npm run analyse`, et la remontée cite le fichier, la ligne, la règle `sonarjs/cognitive-complexity` et la valeur mesurée   (SC-01a)
-- [ ] Un appel de fonction rendant une `Promise` sans `await`, `void`, `.then`/`.catch` dans `src/` (hors tests) fait échouer `npm run analyse` sur `@typescript-eslint/no-floating-promises`   (SC-01b)
-- [ ] Deux fonctions d'un même fichier de `src/` (hors tests) au corps identique font échouer `npm run analyse` sur `sonarjs/no-identical-functions`   (SC-01c)
-- [ ] Une infraction dans `src/routeTree.gen.ts` ou `src/lib/api/schema.d.ts` n'est pas remontée par `npm run analyse` (fichiers hors périmètre)   (SC-01d)
-- [ ] Quand aucun fichier de `src/` n'enfreint une règle de la passe, `npm run analyse` sort en succès (code 0) sans remontée   (SC-01e)
-- [ ] Toute règle désactivée ou assouplie pour les fichiers de test dans `eslint.config.analyse.js` porte, sur sa ligne, un commentaire avec le nombre de remontées éteintes et la raison   (SC-01f)
-- [ ] La même règle, enfreinte dans `src/` hors tests, est remontée (le calibrage ne touche jamais la production)   (SC-01g)
+- [x] Une fonction de `src/` (hors tests) dont la complexité cognitive dépasse 15 fait échouer `npm run analyse`, et la remontée cite le fichier, la ligne, la règle `sonarjs/cognitive-complexity` et la valeur mesurée   (SC-01a)
+- [x] Un appel de fonction rendant une `Promise` sans `await`, `void`, `.then`/`.catch` dans `src/` (hors tests) fait échouer `npm run analyse` sur `@typescript-eslint/no-floating-promises`   (SC-01b)
+- [x] Deux fonctions d'un même fichier de `src/` (hors tests) au corps identique font échouer `npm run analyse` sur `sonarjs/no-identical-functions`   (SC-01c)
+- [x] Une infraction dans `src/routeTree.gen.ts` ou `src/lib/api/schema.d.ts` n'est pas remontée par `npm run analyse` (fichiers hors périmètre)   (SC-01d)
+- [x] Quand aucun fichier de `src/` ni de `tests/` n'enfreint une règle de la passe, `npm run analyse` sort en succès (code 0) sans remontée   (SC-01e)
+- [x] Toute règle désactivée ou assouplie pour les fichiers de test dans `eslint.config.analyse.js` porte, sur sa ligne, un commentaire avec le nombre de remontées éteintes et la raison   (SC-01f)
+- [x] La même règle, enfreinte dans `src/` hors tests, est remontée (le calibrage ne touche jamais la production)   (SC-01g)

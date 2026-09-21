@@ -48,7 +48,9 @@ dev = [
 # par deptry — aucune option supplémentaire n'est nécessaire pour ça.
 [tool.deptry]
 known_first_party = ["backend"]
-exclude = [".venv", "client", "htmlcov", "tests", "\\.hypothesis", "\\.pytest_cache", "\\.ruff_cache", "\\.mypy_cache", "__pycache__"]
+# `exclude` REMPLACE la liste par défaut de deptry (qui contient `.git`) : sans `\.git` ici,
+# un worktree du cycle (`.git/scd-worktrees/<ticket>/`) est scanné et fait rougir la gate.
+exclude = ["\\.git", ".venv", "client", "htmlcov", "tests", "\\.hypothesis", "\\.pytest_cache", "\\.ruff_cache", "\\.mypy_cache", "__pycache__"]
 
 [tool.deptry.per_rule_ignores]
 # DEP002 (déclarée mais jamais importée par son nom) : chargées à l'exécution par un

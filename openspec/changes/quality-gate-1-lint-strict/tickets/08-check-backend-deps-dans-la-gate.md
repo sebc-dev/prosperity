@@ -25,7 +25,7 @@ commande sur `main`, `diff` de `quality.json`, `grep` de `docs/ci.md`. Hors pér
 le diagnostiqueur, toute modification de `pyproject.toml`.
 
 ## Critères
-- [ ] Si `uv run deptry .` sort en succès sur `main` au moment de l'ajout, l'entrée `backend-deps` de `.claude/quality.json` porte `"severity": "blocking"`   (SC-08a)
-- [ ] Si elle sort en échec sur `main`, l'entrée porte `"severity": "advisory"` et `docs/ci.md` donne, pour `backend-deps`, le nombre de remontées mesuré, la date et la condition de promotion   (SC-08b)
-- [ ] Un check `blocking` a une base à zéro : sur une branche qui ne touche aucun fichier cité par une remontée, `backend-deps` sort en succès   (SC-08c)
-- [ ] `docs/ci.md` liste `uv run deptry .` avec son intention et son coût mesuré en secondes   (SC-08d)
+- [x] Si `uv run deptry .` sort en succès sur `main` au moment de l'ajout, l'entrée `backend-deps` de `.claude/quality.json` porte `"severity": "blocking"`   (SC-08a)
+- [x] Si elle sort en échec sur `main`, l'entrée porte `"severity": "advisory"` et `docs/ci.md` donne, pour `backend-deps`, le nombre de remontées mesuré, la date et la condition de promotion   (SC-08b)
+- [x] Un check `blocking` a une base à zéro : sur une branche qui ne touche aucun fichier cité par une remontée, `backend-deps` sort en succès   (SC-08c)
+- [x] `docs/ci.md` liste `uv run deptry .` avec son intention et son coût mesuré en secondes   (SC-08d)

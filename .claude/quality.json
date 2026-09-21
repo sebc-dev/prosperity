@@ -41,6 +41,12 @@
       "agent": "quality-backend-imports"
     },
     {
+      "id": "backend-deps",
+      "cmd": "uv run deptry .",
+      "severity": "blocking",
+      "autofix": null
+    },
+    {
       "id": "backend-coverage",
       "cmd": "uv run pytest tests/unit/ -n auto --cov=backend --cov-report=term",
       "severity": "advisory",

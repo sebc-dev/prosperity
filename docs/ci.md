@@ -13,6 +13,7 @@ Dépôt **bi-stack** : backend Python (`uv`, racine du dépôt) et frontend Type
 | Ce que la CI joue | Commande locale | Prérequis |
 |---|---|---|
 | Lint, format, types, architecture | `uv run ruff check . && uv run ruff format --check . && uv run pyright && uv run lint-imports` | — |
+| Cohérence des dépendances déclarées/importées (**gate du cycle seulement**, pas la CI) | `uv run deptry .` (≈ 0,2 s) | — |
 | **Tests unitaires** (commande de test par défaut d'un ticket backend) | `uv run pytest tests/unit/ -n auto` | — |
 | Tests d'intégration DB | `uv run pytest tests/integration/ --ignore=tests/integration/test_migrations_schema.py -n auto --dist loadscope` | Docker (testcontainers Postgres) |
 | Schéma des migrations | `uv run pytest tests/integration/test_migrations_schema.py` | Docker |
@@ -37,8 +38,9 @@ Le job `ci-required` agrège les jobs déclenchés par les chemins modifiés (ma
 `runbooks/ci.md`). Une PR qui ne touche que `docs/**` ou des `*.md` ne joue rien et reste verte.
 
 La **quality gate du plugin** (`.claude/quality.json`, jouée en phase 7½ de `/scd-spec-dev:run`,
-avant la review) rejoue les mêmes commandes **dans le cycle**, avant la PR : lint et format des deux
-stacks avec autofix sûr, pyright, `lint-imports` et `tsc` en `blocking` ; la couverture (unitaire
-backend, vitest frontend) en `advisory` sans seuil. Elle ne remplace pas la CI, qui reste le juge
-dur : elle évite d'ouvrir une PR rouge. Le filet escape-hatches du plugin n'est pas posé : les
+avant la review) rejoue les commandes de la CI **dans le cycle**, avant la PR — lint et format des
+deux stacks avec autofix sûr, pyright, `lint-imports` et `tsc` en `blocking` ; la couverture
+(unitaire backend, vitest frontend) en `advisory` sans seuil — et y ajoute `deptry` (`backend-deps`,
+`blocking`), joué par la gate seule, jamais par `push.yml`. Elle ne remplace pas la CI, qui reste le
+juge dur : elle évite d'ouvrir une PR rouge. Le filet escape-hatches du plugin n'est pas posé : les
 linters le portent (`runbooks/ci.md` § Escape-hatches).

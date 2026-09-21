@@ -1,7 +1,7 @@
 # Quality gate — boucle « Sonar sans serveur » sur les deux stacks
 
 Portée : socle
-Ouvert le 2026-09-12 · Actualisé le 2026-09-12 · branche `chore/change-quality-gate-1` · HEAD `e063134`
+Ouvert le 2026-09-12 · Fermé le 2026-09-21 · branche `chore/change-quality-gate-1` · HEAD `e063134`
 
 ## Objectif
 Réviser `.claude/quality.json` pour que la gate du cycle `run` mesure ce que SonarQube mesure (bugs,
@@ -37,7 +37,12 @@ le backend Python, et qu'un défaut dans un test neuf cesse de bloquer les ticke
   pas une capacité. Le ticket 03 reste bloqué par un `TS18048` dans un test neuf tant qu'il n'est
   pas posé.
 
-## Prochaine étape
+## Issue
+Fermé : les deux gestes ont été faits — applier `quality-apply` posé (#278), change découpé en 10 tickets
+(#280) ; côté backend 05/06/07/08 livrés (#282, #286, #281, #284), `backend-deps` bloquant dans la gate.
+La suite (frontend 01→04, 09, 10) vit dans les tickets et la fiche du run 01.
+
+## Prochaine étape (au moment de la pause)
 Deux gestes indépendants, dans cet ordre : poser l'applier (`/scd-spec-dev:quality-agents` — débloque
 le ticket 03), puis découper le change (`/scd-spec-dev:tickets quality-gate-1-lint-strict`, le plan
 P18.2.1→3 est déjà dans le design). La mesure du bruit se fait au ticket, pas avant.

@@ -1,7 +1,7 @@
 # Run bloqué — lint backend étendu (ticket 06)
 
 Portée : quality-gate-1-lint-strict · ticket 06
-Ouvert le 2026-09-20 · Actualisé le 2026-09-20 · branche `impl/lint-backend-etendu-complexite-et-idiomes-06` · HEAD `3aaceaf`
+Ouvert le 2026-09-20 · Fermé le 2026-09-21 · branche `impl/lint-backend-etendu-complexite-et-idiomes-06` · HEAD `3aaceaf`
 
 ## Objectif
 Faire aboutir le run du ticket 06 (Ruff `C90 SIM RET PERF PT W`, mccabe 10, calibrage `tests/**`,
@@ -23,7 +23,13 @@ tests `SC-06a..f`) jusqu'à sa PR — statut `blocked-quality` : la gate a écho
   avait renforcé 3 assertions (audit `test-edit-validator` : ok) mais pas résorbé celle-ci.
 - Le run s'est arrêté à la gate : la review 8 dimensions n'a pas été jouée.
 
-## Prochaine étape
+## Issue
+Fermé : run relancé en séquentiel après le hotfix #285 (`[tool.deptry] exclude` sans `.git` faisait
+rougir `backend-deps` depuis un worktree du cycle) — PR #286 ouverte, review 8 dimensions jouée.
+Piège rencontré à la relance : `oldBase = impl/…-05` (dépendance mergée) fait rejouer au rebaser les
+commits de `main` entre 05 et la fourche → conflit ; l'`oldBase` juste est le point de fourche.
+
+## Prochaine étape (au moment du blocage)
 Corriger la garde (`match = re.search(...); assert match is not None; … match.group()`), rejouer
 `uv run pyright && uv run ruff check . && uv run pytest tests/unit/ -n auto` depuis le worktree, puis
 décider : finir à la main (commit, push, PR — sans review 8 dimensions) ou sauver le diff en patch,

@@ -160,12 +160,9 @@ def test_unknown_exception_maps_to_none() -> None:
     (D-I), jamais être ack-ée comme une erreur récupérable."""
     assert to_write_error(RuntimeError("boom")) is None
     assert to_write_error(ValueError("oops")) is None
-    try:
+    with pytest.raises(ValidationError) as exc_info:
         WriteError(code="nope", message="x")  # type: ignore[arg-type]
-    except ValidationError as exc:
-        assert to_write_error(exc) is None
-    else:  # pragma: no cover — la ligne ci-dessus DOIT lever
-        pytest.fail("WriteError(code='nope') aurait dû lever une ValidationError")
+    assert to_write_error(exc_info.value) is None
 
 
 def test_message_is_static_and_leaks_no_detail() -> None:

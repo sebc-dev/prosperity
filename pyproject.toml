@@ -107,16 +107,26 @@ target-version = "py313"
 extend-exclude = [".venv", "htmlcov", ".hypothesis", ".pytest_cache", "client"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "PL"]
+# C90 (mccabe, max-complexity=10) : complexité cyclomatique. SIM/RET : idiomes de simplification
+# et de retour anticipé. PERF : pièges de performance connus (boucles, comprehensions). PT :
+# idiomes pytest (fixtures, raises, paramétrage). W : warnings pycodestyle. PLR déjà couvert par PL.
+select = ["E", "F", "I", "UP", "B", "PL", "C90", "SIM", "RET", "PERF", "PT", "W"]
 # PGH004 : pas de `# noqa` nu ; RUF100 : pas de `# noqa` mort. Le filet escape-hatches vit ici,
 # pas dans un grep CI (cf. runbooks/ci.md § Escape-hatches).
 extend-select = ["PGH004", "RUF100"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
 
 [tool.ruff.lint.isort]
 known-first-party = ["backend"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["PLR2004"]  # allow magic numbers (e.g. status codes, sample counts) in tests
+"tests/**" = [
+    "PLR2004", # allow magic numbers (e.g. status codes, sample counts) in tests
+    "PT018",   # 53 remontées : assertions composites du patron arrange/act/assert (vérifs liées regroupées)
+    "PT019",   # 16 remontées : fixtures `_`-préfixées injectées pour leur effet de bord (setup/teardown), jamais lues
+]
 
 [tool.ruff.format]
 quote-style = "double"

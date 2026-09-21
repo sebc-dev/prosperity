@@ -15,6 +15,7 @@ implementation (anti-pattern Stratégie §12).
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from uuid import UUID, uuid4
 
@@ -107,9 +108,9 @@ def test_transitive_ancestor_rejected() -> None:
 def test_deep_transitive_ancestor_rejected() -> None:
     # Six-level chain n0→n1→…→n5; move the root n0 under the leaf n5 → cycle.
     nodes = [uuid4() for _ in range(6)]
-    mapping: dict[UUID, UUID | None] = {nodes[0]: None}
-    for child, parent in zip(nodes[1:], nodes[:-1], strict=True):
-        mapping[child] = parent
+    mapping: dict[UUID, UUID | None] = {nodes[0]: None} | {
+        child: parent for child, parent in zip(nodes[1:], nodes[:-1], strict=True)
+    }
     with pytest.raises(CategoryCycleError):
         CycleDetector.detect_cycle(
             node_id=nodes[0], new_parent_id=nodes[5], get_parent=_lookup(mapping)
@@ -240,7 +241,6 @@ def test_property_walk_always_terminates(data: st.DataObject) -> None:
     event("cycle reaches node" if current == node else "walk ends at None/revisit")
     target(float(steps), label="walk depth")  # push Hypothesis toward deep walks
 
-    try:
+    # A detected cycle is a valid terminating outcome.
+    with contextlib.suppress(CategoryCycleError):
         CycleDetector.detect_cycle(node_id=node, new_parent_id=new_parent, get_parent=edges.get)
-    except CategoryCycleError:
-        pass  # a detected cycle is a valid terminating outcome

@@ -23,7 +23,7 @@ _KNOWN_CODES = ("EUR", "USD", "GBP", "CHF")
 
 
 def test_currencies_set_derives_from_literal() -> None:
-    assert CURRENCIES == set(_KNOWN_CODES)
+    assert set(_KNOWN_CODES) == CURRENCIES
 
 
 def test_symbols_cover_exactly_the_currencies() -> None:

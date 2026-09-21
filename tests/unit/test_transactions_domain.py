@@ -373,14 +373,14 @@ class TestImmutability:
     def test_editable_set_matches_model_fields(self) -> None:
         # Verrou D14 : partition gelé/éditable figée. Tout renommage/ajout de
         # champ casse ce test plutôt que de faire fuiter un champ financier.
-        assert EDITABLE_AFTER_CONFIRMED == {
+        assert {
             "category_id",
             "tags",
             "description",
             "debt_generation_override",
             "share_request_id",
-        }
-        assert EDITABLE_AFTER_CONFIRMED <= set(Transaction.model_fields)
+        } == EDITABLE_AFTER_CONFIRMED
+        assert set(Transaction.model_fields) >= EDITABLE_AFTER_CONFIRMED
 
     @given(data=st.data(), old=transaction_confirmed_strategy())
     def test_property_only_editable_fields_accepted(

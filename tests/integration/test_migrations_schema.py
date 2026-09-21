@@ -38,6 +38,8 @@ from pathlib import Path
 
 from alembic.config import Config
 from sqlalchemy import Engine, create_engine, inspect, text
+from sqlalchemy.engine import Inspector
+from sqlalchemy.engine.interfaces import Dialect
 from testcontainers.postgres import PostgresContainer
 
 from alembic import command
@@ -66,6 +68,60 @@ def _index_expression(indexdef: str) -> str:
     """
     match = re.search(r"\((.+)\)\s*$", indexdef.strip())
     return match.group(1) if match else indexdef
+
+
+def _format_table_lines(
+    table: str,
+    insp: Inspector,
+    dialect: Dialect,
+    indexes_by_table: dict[str, list[tuple[str, str]]],
+) -> list[str]:
+    """Render one `table <name>` block (columns, pk, fks, checks, indexes).
+
+    Extracted from `_format_schema` (same lines, same order) purely to bring
+    the caller's cyclomatic complexity under the `C901` threshold — no
+    behaviour change.
+    """
+    lines: list[str] = [f"table {table}"]
+    for col in sorted(insp.get_columns(table), key=lambda c: c["name"]):
+        col_type = col["type"].compile(dialect=dialect)
+        nullable = "NULL" if col["nullable"] else "NOT NULL"
+        lines.append(f"  col {col['name']}: {col_type} {nullable}")
+    pk = insp.get_pk_constraint(table)
+    pk_name = pk.get("name") or ""
+    if pk["constrained_columns"]:
+        pk_cols = ", ".join(pk["constrained_columns"])
+        lines.append(f"  pk {pk_name}({pk_cols})")
+    # FKs surface here (not via pg_indexes); the snapshot needs the
+    # `ON DELETE` action because a column/index diff is blind to it —
+    # a migration that drops `ondelete` or flips RESTRICT↔CASCADE
+    # (decision F02) would otherwise pass unnoticed. SQLAlchemy omits
+    # `NO ACTION` from `options`, so a bare FK renders without a suffix.
+    for fk in sorted(insp.get_foreign_keys(table), key=lambda f: f.get("name") or ""):
+        fk_name = fk.get("name") or ""
+        fk_cols = ", ".join(fk["constrained_columns"])
+        ref = fk["referred_table"]
+        ref_cols = ", ".join(fk["referred_columns"])
+        ondelete = (fk.get("options") or {}).get("ondelete")
+        suffix = f" ON DELETE {ondelete}" if ondelete else ""
+        lines.append(f"  fk {fk_name}: ({fk_cols}) -> {ref}({ref_cols}){suffix}")
+    # CHECK constraints surface here (not via pg_indexes); the
+    # snapshot needs them because a missing CHECK is invisible in a
+    # column-name-only diff (e.g. dropping `ck_household_singleton`
+    # would let raw SQL spawn a second foyer; ADR 0010).
+    for ck in sorted(insp.get_check_constraints(table), key=lambda c: c["name"] or ""):
+        ck_name = ck.get("name") or ""
+        ck_sql = ck.get("sqltext") or ""
+        lines.append(f"  ck {ck_name}: ({ck_sql})")
+    # pg_indexes also lists the PK-backing index under the same name;
+    # skip it to avoid duplicating the constraint above.
+    for indexname, indexdef in indexes_by_table.get(table, []):
+        if indexname == pk_name:
+            continue
+        unique = "UNIQUE" if "CREATE UNIQUE INDEX" in indexdef else "INDEX"
+        lines.append(f"  idx {indexname} {unique}: {_index_expression(indexdef)}")
+    lines.append("")
+    return lines
 
 
 def _format_schema(engine: Engine) -> str:
@@ -106,45 +162,7 @@ def _format_schema(engine: Engine) -> str:
         lines.append("")
 
     for table in sorted(insp.get_table_names()):
-        lines.append(f"table {table}")
-        for col in sorted(insp.get_columns(table), key=lambda c: c["name"]):
-            col_type = col["type"].compile(dialect=dialect)
-            nullable = "NULL" if col["nullable"] else "NOT NULL"
-            lines.append(f"  col {col['name']}: {col_type} {nullable}")
-        pk = insp.get_pk_constraint(table)
-        pk_name = pk.get("name") or ""
-        if pk["constrained_columns"]:
-            pk_cols = ", ".join(pk["constrained_columns"])
-            lines.append(f"  pk {pk_name}({pk_cols})")
-        # FKs surface here (not via pg_indexes); the snapshot needs the
-        # `ON DELETE` action because a column/index diff is blind to it —
-        # a migration that drops `ondelete` or flips RESTRICT↔CASCADE
-        # (decision F02) would otherwise pass unnoticed. SQLAlchemy omits
-        # `NO ACTION` from `options`, so a bare FK renders without a suffix.
-        for fk in sorted(insp.get_foreign_keys(table), key=lambda f: f.get("name") or ""):
-            fk_name = fk.get("name") or ""
-            fk_cols = ", ".join(fk["constrained_columns"])
-            ref = fk["referred_table"]
-            ref_cols = ", ".join(fk["referred_columns"])
-            ondelete = (fk.get("options") or {}).get("ondelete")
-            suffix = f" ON DELETE {ondelete}" if ondelete else ""
-            lines.append(f"  fk {fk_name}: ({fk_cols}) -> {ref}({ref_cols}){suffix}")
-        # CHECK constraints surface here (not via pg_indexes); the
-        # snapshot needs them because a missing CHECK is invisible in a
-        # column-name-only diff (e.g. dropping `ck_household_singleton`
-        # would let raw SQL spawn a second foyer; ADR 0010).
-        for ck in sorted(insp.get_check_constraints(table), key=lambda c: c["name"] or ""):
-            ck_name = ck.get("name") or ""
-            ck_sql = ck.get("sqltext") or ""
-            lines.append(f"  ck {ck_name}: ({ck_sql})")
-        # pg_indexes also lists the PK-backing index under the same name;
-        # skip it to avoid duplicating the constraint above.
-        for indexname, indexdef in indexes_by_table.get(table, []):
-            if indexname == pk_name:
-                continue
-            unique = "UNIQUE" if "CREATE UNIQUE INDEX" in indexdef else "INDEX"
-            lines.append(f"  idx {indexname} {unique}: {_index_expression(indexdef)}")
-        lines.append("")
+        lines.extend(_format_table_lines(table, insp, dialect, indexes_by_table))
 
     return "\n".join(lines).strip()
 

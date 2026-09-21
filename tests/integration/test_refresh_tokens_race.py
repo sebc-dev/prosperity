@@ -30,7 +30,7 @@ import asyncio
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from backend.config import get_settings
 from backend.modules.auth.models import RefreshToken, User, UserRole
@@ -276,6 +276,19 @@ async def test_rotate_concurrent_race_with_barrier(
     )
 
 
+async def _rotate_then_rollback_like_get_db(session: AsyncSession, raw_token: str) -> None:
+    """Mimic `get_db`: call `rotate()`, roll back on the resulting exception, re-raise.
+
+    Extracted so the `pytest.raises` block below stays a single statement (PT012)
+    while keeping the exact try/except/rollback/raise shape under test.
+    """
+    try:
+        await rotate(session, raw_token, settings=_settings)
+    except Exception:
+        await session.rollback()
+        raise
+
+
 async def test_rotate_replay_family_invalidation_persists_across_sessions(
     committed_engine: AsyncEngine,
 ) -> None:
@@ -330,11 +343,7 @@ async def test_rotate_replay_family_invalidation_persists_across_sessions(
     # no-op for the security tombstone.
     async with sm() as session:
         with pytest.raises(RevokedRefreshTokenError):
-            try:
-                await rotate(session, raw_t0, settings=_settings)
-            except Exception:
-                await session.rollback()
-                raise
+            await _rotate_then_rollback_like_get_db(session, raw_t0)
 
     # Independent connection observes the family. If the replay branch
     # only flushed (no commit), the rollback above would have erased

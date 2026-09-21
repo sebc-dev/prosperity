@@ -399,7 +399,6 @@ async def test_split_leg_role_check_rejects_unknown_value(
                 "ccy": "EUR",
             },
         )
-        await auth_schema.flush()
 
 
 async def test_category_id_nullable_on_both(

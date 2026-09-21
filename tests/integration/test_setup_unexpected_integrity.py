@@ -75,12 +75,14 @@ async def test_post_setup_propagates_not_null_violation(
     async def _explode(*_args: object, **_kwargs: object) -> None:
         raise exc
 
-    with patch(
-        "backend.modules.accounts.transports.http.initialize_bootstrap",
-        side_effect=_explode,
+    with (
+        patch(
+            "backend.modules.accounts.transports.http.initialize_bootstrap",
+            side_effect=_explode,
+        ),
+        pytest.raises(IntegrityError),
     ):
-        with pytest.raises(IntegrityError):
-            await async_client.post("/setup", json=_setup_payload())
+        await async_client.post("/setup", json=_setup_payload())
 
 
 async def test_post_setup_unique_violation_collapses_to_404(
@@ -162,9 +164,11 @@ async def test_post_setup_integrity_error_without_sqlstate_propagates(
     async def _explode(*_args: object, **_kwargs: object) -> None:
         raise exc
 
-    with patch(
-        "backend.modules.accounts.transports.http.initialize_bootstrap",
-        side_effect=_explode,
+    with (
+        patch(
+            "backend.modules.accounts.transports.http.initialize_bootstrap",
+            side_effect=_explode,
+        ),
+        pytest.raises(IntegrityError),
     ):
-        with pytest.raises(IntegrityError):
-            await async_client.post("/setup", json=_setup_payload())
+        await async_client.post("/setup", json=_setup_payload())

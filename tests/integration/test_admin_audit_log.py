@@ -368,7 +368,7 @@ async def test_log_admin_action_rejects_out_of_catalogue_action(
     # enforced at runtime — `log_admin_action` coerces through
     # `AdminAction(...)` so a raw string outside the catalogue is rejected
     # at the call site, keeping the `text` column and the enum in lockstep.
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="not_a_real_action.*not a valid AdminAction"):
         await log_admin_action(
             auth_schema,
             action="not_a_real_action",  # type: ignore[arg-type]

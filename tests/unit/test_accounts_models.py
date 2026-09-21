@@ -25,7 +25,7 @@ from backend.modules.accounts.models import (
 
 
 def test_singleton_uuid_is_pinned() -> None:
-    assert HOUSEHOLD_SINGLETON_UUID == uuid.UUID("00000000-0000-0000-0000-000000000001")
+    assert uuid.UUID("00000000-0000-0000-0000-000000000001") == HOUSEHOLD_SINGLETON_UUID
 
 
 def test_household_tablename_is_singular() -> None:
@@ -57,7 +57,7 @@ def test_migration_literal_matches_orm_constant() -> None:
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert module._SINGLETON_UUID_LITERAL == str(HOUSEHOLD_SINGLETON_UUID)
+    assert str(HOUSEHOLD_SINGLETON_UUID) == module._SINGLETON_UUID_LITERAL
 
 
 # ---------------------------------------------------------------------------

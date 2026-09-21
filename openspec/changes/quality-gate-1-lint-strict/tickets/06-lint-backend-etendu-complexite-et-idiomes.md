@@ -34,9 +34,9 @@ sur disque, elle entrerait dans le périmètre linté). Cas limites : mccabe **1
 le même code sous `tests/unit/x.py` et sous `backend/x.py` (partition production / test).
 
 ## Critères
-- [ ] Une fonction de `backend/` de complexité cyclomatique supérieure à 10 fait échouer `uv run ruff check .` sur `C901`, en citant la fonction et sa valeur   (SC-06a)
-- [ ] Un test de `tests/` qui utilise `pytest.raises` sans `match` ni type d'exception précis fait remonter `PT011`, sauf si le calibrage `tests/**` l'a explicitement éteint avec son motif   (SC-06b)
-- [ ] `ruff check . --fix` n'applique que les corrections marquées sûres par Ruff ; aucune règle des familles ajoutées n'introduit de correction non sûre appliquée   (SC-06c)
-- [ ] Toute règle désactivée pour les fichiers de test dans `pyproject.toml` porte, sur sa ligne, un commentaire avec le nombre de remontées éteintes et la raison   (SC-06d)
-- [ ] La même règle, enfreinte dans `backend/`, est remontée (le calibrage ne touche jamais la production)   (SC-06e)
-- [ ] `uv run ruff check .` sort en succès sur la base : le check bloquant `backend-lint` n'échoue sur aucun arriéré   (SC-06f)
+- [x] Une fonction de `backend/` de complexité cyclomatique supérieure à 10 fait échouer `uv run ruff check .` sur `C901`, en citant la fonction et sa valeur   (SC-06a)
+- [x] Un test de `tests/` qui utilise `pytest.raises` sans `match` ni type d'exception précis fait remonter `PT011`, sauf si le calibrage `tests/**` l'a explicitement éteint avec son motif   (SC-06b)
+- [x] `ruff check . --fix` n'applique que les corrections marquées sûres par Ruff ; aucune règle des familles ajoutées n'introduit de correction non sûre appliquée   (SC-06c)
+- [x] Toute règle désactivée pour les fichiers de test dans `pyproject.toml` porte, sur sa ligne, un commentaire avec le nombre de remontées éteintes et la raison   (SC-06d)
+- [x] La même règle, enfreinte dans `backend/`, est remontée (le calibrage ne touche jamais la production)   (SC-06e)
+- [x] `uv run ruff check .` sort en succès sur la base : le check bloquant `backend-lint` n'échoue sur aucun arriéré   (SC-06f)

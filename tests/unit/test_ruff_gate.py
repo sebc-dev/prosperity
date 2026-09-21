@@ -11,8 +11,9 @@ Six scenarios, one per success criterion:
   ruff itself flags `"applicability": "unsafe"` for the families added by
   this ticket — the source comes back untouched.
 - SC-06d: every rule silenced for `tests/**` in `pyproject.toml` carries,
-  on its own line, an inline comment; the two rules newly silenced by this
-  ticket (`PT018`, `PT019`) state the extinguished-occurrence count.
+  on its own line, an inline comment stating the extinguished-occurrence
+  count — PLR2004 included, not just the two rules newly silenced by this
+  ticket (`PT018`, `PT019`).
 - SC-06e: a rule silenced for `tests/**` (`PT018`) still fires the same way
   in `backend/` — the calibration never leaks into production.
 - SC-06f: `uv run ruff check .`, run as the gate runs it, succeeds on the
@@ -178,17 +179,34 @@ def test_SC_06c_unsafe_fix_from_added_families_is_never_auto_applied() -> None:
     assert pt018[0]["fix"]["applicability"] == "unsafe"
 
 
+def _parse_tests_per_file_ignores(block_text: str) -> list[tuple[str, str]]:
+    """Parse a `"tests/**" = [...]` block body into (code, comment) pairs.
+
+    Every non-empty line is inspected: a leading quoted code is captured
+    even without a trailing comma (the block's last entry needs none), and
+    any inline comment is captured verbatim — an absent comment yields
+    `""` rather than being silently dropped, so an uncommented ignore
+    surfaces instead of vanishing from the parsed entries.
+    """
+    entries: list[tuple[str, str]] = []
+    for line in block_text.splitlines():
+        if not line.strip():
+            continue
+        code_match = re.match(r'\s*"([A-Z0-9]+)"\s*,?', line)
+        if not code_match:
+            continue
+        comment_match = re.search(r"#\s*(.*?)\s*$", line)
+        comment = comment_match.group(1) if comment_match else ""
+        entries.append((code_match.group(1), comment))
+    return entries
+
+
 def _tests_per_file_ignores() -> list[tuple[str, str]]:
     """Parse `[tool.ruff.lint.per-file-ignores]."tests/**"` into (code, comment) pairs."""
     pyproject_text = (REPO_ROOT / "pyproject.toml").read_text()
     block = re.search(r'"tests/\*\*"\s*=\s*\[(.*?)\]', pyproject_text, flags=re.DOTALL)
     assert block is not None, pyproject_text
-    entries: list[tuple[str, str]] = []
-    for line in block.group(1).splitlines():
-        match = re.match(r'\s*"([A-Z0-9]+)",\s*#\s*(.+?)\s*$', line)
-        if match:
-            entries.append((match.group(1), match.group(2)))
-    return entries
+    return _parse_tests_per_file_ignores(block.group(1))
 
 
 def test_SC_06d_every_test_only_ignore_has_an_inline_comment_with_count_and_reason() -> None:
@@ -202,13 +220,32 @@ def test_SC_06d_every_test_only_ignore_has_an_inline_comment_with_count_and_reas
     for code, comment in entries:
         assert comment, f"{code} has no inline comment"
 
-    # ...and the two rules this ticket newly silences, both extinguished
-    # because of their measured volume in `tests/**`, state that count
-    # (the pattern PLR2004 already used loosely, made precise here).
+    # ...and every rule silenced for `tests/**`, PLR2004 included, states
+    # the extinguished-occurrence count measured before calibration (the
+    # pattern PLR2004 once used loosely, now made precise for every rule).
+    for code, comment in entries:
+        assert re.match(r"\d+ remontées\s*:", comment), (code, comment)
+
+
+def test_SC_06d_uncommented_ignore_is_detected() -> None:
+    # Arrange: a literal block mixing a properly commented entry, an
+    # uncommented one (the regression this parser must catch instead of
+    # silently dropping), and a last entry with no trailing comma.
+    block_text = (
+        '\n    "PT018",   # 53 remontées : x\n    "SIM300",\n    "PT011"  # dernier sans virgule\n'
+    )
+
+    # Act
+    entries = _parse_tests_per_file_ignores(block_text)
+
+    # Assert: all three codes surface, SIM300 with an empty comment rather
+    # than being silently dropped, PT011 (no trailing comma) with its
+    # comment.
     by_code = dict(entries)
-    for volumetric_code in ("PT018", "PT019"):
-        comment = by_code[volumetric_code]
-        assert re.match(r"\d+ remontées", comment), (volumetric_code, comment)
+    assert set(by_code) == {"PT018", "SIM300", "PT011"}
+    assert by_code["PT018"] == "53 remontées : x"
+    assert by_code["SIM300"] == ""
+    assert by_code["PT011"] == "dernier sans virgule"
 
 
 def test_SC_06e_rule_calibrated_off_in_tests_still_fires_in_backend() -> None:

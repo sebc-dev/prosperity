@@ -152,18 +152,33 @@ const ALLOWED = [
   'sed -n -e s/a/b/p package.json',
 ];
 
-function expectDeny(command: string): void {
-  expect(evaluateCommand(command, GLOBS)).toMatchObject({
-    decision: 'deny',
-    reason: expect.stringMatching(/\S/),
-  });
+const decisionOf = (command: string): string => evaluateCommand(command, GLOBS).decision;
+
+function reasonOf(command: string): string {
+  const verdict = evaluateCommand(command, GLOBS);
+  return verdict.decision === 'deny' ? verdict.reason : '';
 }
 
 describe('evaluateCommand : refus', () => {
-  it.each(WRITES)('refuse l’écriture shell vers un chemin protégé : %s', expectDeny);
-  it.each(HOOKS)('refuse le contournement des hooks : %s', expectDeny);
-  it.each(SIGNATURE)('refuse la signature et les clés (D-14) : %s', expectDeny);
-  it.each(GITHUB)('refuse les gestes réservés à l’humain : %s', expectDeny);
+  it.each(WRITES)('refuse l’écriture shell vers un chemin protégé : %s', (command) => {
+    expect(decisionOf(command)).toBe('deny');
+  });
+
+  it.each(HOOKS)('refuse le contournement des hooks : %s', (command) => {
+    expect(decisionOf(command)).toBe('deny');
+  });
+
+  it.each(SIGNATURE)('refuse la signature et les clés (D-14) : %s', (command) => {
+    expect(decisionOf(command)).toBe('deny');
+  });
+
+  it.each(GITHUB)('refuse les gestes réservés à l’humain : %s', (command) => {
+    expect(decisionOf(command)).toBe('deny');
+  });
+
+  it.each([...WRITES, ...HOOKS, ...SIGNATURE, ...GITHUB])('motive le refus : %s', (command) => {
+    expect(reasonOf(command)).toMatch(/\S/);
+  });
 });
 
 describe('evaluateCommand : autorisations', () => {
@@ -204,13 +219,11 @@ describe('bash-guard.ts : processus réel', () => {
   it('écrit le refus PreToolUse sur stdout avec le code 0', () => {
     const { code, out } = hook(payload('sed -i s/a/b/ eslint.config.mjs'));
     expect(code).toBe(0);
-    expect(JSON.parse(out)).toEqual({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: 'deny',
-        permissionDecisionReason: expect.stringContaining('eslint.config.mjs'),
-      },
+    const parsed: unknown = JSON.parse(out);
+    expect(parsed).toMatchObject({
+      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny' },
     });
+    expect(out).toContain('eslint.config.mjs');
   });
 
   it('refuse une fusion de PR, directe ou imbriquée dans bash -c', () => {

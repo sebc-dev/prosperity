@@ -22,7 +22,7 @@ describe('allocate', () => {
     [5n, [1n, 1n, 1n, 1n, 1n, 1n, 1n], [1n, 1n, 1n, 1n, 1n, 0n, 0n]],
     [0n, [1n, 2n], [0n, 0n]],
     [7n, [1n], [7n]],
-  ])('répartit %s centimes selon %j', (total, weights, expected) => {
+  ])('répartit %s centimes selon %s', (total, weights, expected) => {
     expect(allocate(eur(total), weights)).toEqual(parts(...expected));
   });
 
@@ -41,7 +41,7 @@ describe('allocate', () => {
   });
 
   it.each([[[]], [[0n]], [[-1n]], [[1n, 0n]], [[0n, 1n]], [[1n, -1n, 2n]], [[1n, 1n, -5n]]])(
-    'refuse les poids %j avec invalid-weights',
+    'refuse les poids %s avec invalid-weights',
     (weights) => {
       expect(allocate(eur(100n), weights)).toEqual({ ok: false, error: 'invalid-weights' });
     },

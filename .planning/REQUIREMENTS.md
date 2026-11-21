@@ -177,13 +177,104 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (rempli par le roadmap) | | |
+| QUAL-01 | Phase 1 | Pending |
+| QUAL-02 | Phase 1 | Pending |
+| QUAL-03 | Phase 1 | Pending |
+| QUAL-04 | Phase 1 | Pending |
+| QUAL-05 | Phase 1 | Pending |
+| QUAL-06 | Phase 1 | Pending |
+| QUAL-07 | Phase 1 | Pending |
+| QUAL-08 | Phase 1 | Pending |
+| QUAL-09 | Phase 1 | Pending |
+| CONN-01 | Phase 2 | Pending |
+| CONN-02 | Phase 2 | Pending |
+| CONN-03 | Phase 2 | Pending |
+| CONN-04 | Phase 2 | Pending |
+| CONN-05 | Phase 2 | Pending |
+| CONN-06 | Phase 2 | Pending |
+| CONN-07 | Phase 2 | Pending |
+| CONN-08 | Phase 2 | Pending |
+| FOY-01 | Phase 2 | Pending |
+| FOY-02 | Phase 2 | Pending |
+| FOY-03 | Phase 2 | Pending |
+| FOY-04 | Phase 2 | Pending |
+| FOY-05 | Phase 3 | Pending |
+| FOY-06 | Phase 3 | Pending |
+| CPT-01 | Phase 3 | Pending |
+| CPT-02 | Phase 4 | Pending |
+| CPT-03 | Phase 3 | Pending |
+| CPT-04 | Phase 3 | Pending |
+| TRX-01 | Phase 4 | Pending |
+| TRX-02 | Phase 4 | Pending |
+| TRX-03 | Phase 4 | Pending |
+| TRX-04 | Phase 4 | Pending |
+| TRX-05 | Phase 4 | Pending |
+| TRX-06 | Phase 4 | Pending |
+| TRX-07 | Phase 5 | Pending |
+| TRX-08 | Phase 5 | Pending |
+| TRX-09 | Phase 6 | Pending |
+| TRX-10 | Phase 4 | Pending |
+| TRX-11 | Phase 3 | Pending |
+| TRX-12 | Phase 4 | Pending |
+| POL-01 | Phase 5 | Pending |
+| POL-02 | Phase 5 | Pending |
+| POL-03 | Phase 5 | Pending |
+| POL-04 | Phase 5 | Pending |
+| POL-05 | Phase 5 | Pending |
+| POL-06 | Phase 5 | Pending |
+| POL-07 | Phase 5 | Pending |
+| BUD-01 | Phase 6 | Pending |
+| BUD-02 | Phase 6 | Pending |
+| BUD-03 | Phase 6 | Pending |
+| BUD-04 | Phase 7 | Pending |
+| BUD-05 | Phase 7 | Pending |
+| DET-01 | Phase 7 | Pending |
+| DET-02 | Phase 7 | Pending |
+| DET-03 | Phase 7 | Pending |
+| DET-04 | Phase 7 | Pending |
+| DET-05 | Phase 7 | Pending |
+| DET-06 | Phase 7 | Pending |
+| DET-07 | Phase 7 | Pending |
+| DET-08 | Phase 7 | Pending |
+| DET-09 | Phase 7 | Pending |
+| IMP-01 | Phase 8 | Pending |
+| IMP-02 | Phase 8 | Pending |
+| IMP-03 | Phase 8 | Pending |
+| IMP-04 | Phase 8 | Pending |
+| IMP-05 | Phase 8 | Pending |
+| IMP-06 | Phase 8 | Pending |
+| IMP-07 | Phase 8 | Pending |
+| BNK-01 | Phase 9 | Pending |
+| BNK-02 | Phase 9 | Pending |
+| BNK-03 | Phase 9 | Pending |
+| BNK-04 | Phase 9 | Pending |
+| EPA-01 | Phase 6 | Pending |
+| EPA-02 | Phase 6 | Pending |
+| EPA-03 | Phase 6 | Pending |
+| EPA-04 | Phase 6 | Pending |
+| UI-01 | Phase 7 | Pending |
+| UI-02 | Phase 4 | Pending |
+| UI-03 | Phase 8 | Pending |
+| UI-04 | Phase 7 | Pending |
+| UI-05 | Phase 5 | Pending |
+| UI-06 | Phase 6 | Pending |
+| UI-07 | Phase 4 | Pending |
+| UI-08 | Phase 4 | Pending |
+| UI-09 | Phase 2 | Pending |
+| ANA-01 | Phase 6 | Pending |
+| ANA-02 | Phase 6 | Pending |
+| ANA-03 | Phase 7 | Pending |
+| ANA-04 | Phase 6 | Pending |
+| OPS-01 | Phase 2 | Pending |
+| OPS-02 | Phase 3 | Pending |
+| OPS-03 | Phase 2 | Pending |
+| OPS-04 | Phase 9 | Pending |
 
 **Coverage:**
 - v1 requirements: 92 total
-- Mapped to phases: 0
-- Unmapped: 92 ⚠️
+- Mapped to phases: 92
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-11-21*
-*Last updated: 2026-11-21 after initial definition*
+*Last updated: 2026-11-21 after roadmap creation (traceability: 92/92 mapped across 9 phases)*

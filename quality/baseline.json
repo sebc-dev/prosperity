@@ -1,0 +1,26 @@
+{
+  "escapeHatches": {
+    "@ts-ignore": 0,
+    "@ts-expect-error": 0,
+    "@ts-nocheck": 0,
+    "eslint-disable": 0,
+    "biome-ignore": 0,
+    "as any": 0,
+    "as unknown as": 0,
+    "!.": 0,
+    ".skip(": 0,
+    ".todo(": 0,
+    "vi.mock(": 0,
+    "Stryker disable": 0,
+    "Stryker restore": 0,
+    "v8 ignore": 0,
+    "istanbul ignore": 0,
+    "c8 ignore": 0,
+    "nosem": 0,
+    "gitleaks:allow": 0,
+    "jscpd:ignore": 0,
+    "@public": 0,
+    "@beta": 0,
+    "@alias": 0
+  }
+}

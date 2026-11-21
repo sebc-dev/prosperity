@@ -54,7 +54,7 @@ async function judge(
 }
 
 const rules = (issues: readonly { rule: string }[]): string[] =>
-  [...new Set(issues.map((issue) => issue.rule))].sort();
+  [...new Set(issues.map((issue) => issue.rule))].sort((a, b) => a.localeCompare(b));
 
 function withThresholds(edit: (copy: typeof thresholds) => void): Record<string, string> {
   const copy = structuredClone(thresholds);

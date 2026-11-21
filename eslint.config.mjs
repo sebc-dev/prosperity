@@ -108,7 +108,15 @@ const testRules = {
 
 export default defineConfig(
   {
-    ignores: ['reports/**', 'coverage/**', '.stryker-tmp/**', 'node_modules/**', 'semgrep/**'],
+    // `.claude/**` : outillage d'agent installé localement (GSD, hooks), non suivi par git et absent en CI.
+    ignores: [
+      'reports/**',
+      'coverage/**',
+      '.stryker-tmp/**',
+      'node_modules/**',
+      'semgrep/**',
+      '.claude/**',
+    ],
   },
   { linterOptions: { reportUnusedDisableDirectives: 'error' } },
   {

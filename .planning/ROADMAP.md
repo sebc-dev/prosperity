@@ -38,19 +38,36 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 14 plans
 
 Plans:
+**Wave 1**
 - [ ] 01-01-PLAN.md — Squelette ambulant : `pnpm quality` → check `workflow-lint` → `reports/gate.json` → pré-push → CI, rattachement d'historique et PR brouillon de bootstrap (vague 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
 - [ ] 01-02-PLAN.md — Approbation humaine des dépendances, typage strict, lint type-aware, format, seuils et globs uniques (vague 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
 - [ ] 01-03-PLAN.md — Tests unitaires, canari `src/shared/money`, couverture 100 % du pur, mutation Stryker sur le diff (vague 3)
 - [ ] 01-04-PLAN.md — Sécurité : secrets, Semgrep du projet (décision Q4), CVE ≥ 7, zizmor, hadolint, lint de sécurité advisory (vague 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
 - [ ] 01-05-PLAN.md — PostgreSQL 18 réel : rôles séparés migrations / app, migration forward-only, Testcontainers, méta-tests RLS (vague 4)
 - [ ] 01-06-PLAN.md — Compteur d'échappatoires à cliquet, juge d'intégrité, chemins protégés, scripts de garde de l'agent (vague 4)
 - [ ] 01-07-PLAN.md — Décision du type de clé matérielle, juge d'approbation par commit signé (D-14, `allowed_signers` lu dans la base, présence vérifiée), check `approvals` (vague 4)
 - [ ] 01-08-PLAN.md — Garde des dépendances (`deps-approved` signé, existence et âge npm), juge hors PR `quality-verdict` qui publie le statut requis `quality` (vague 4)
+
+**Wave 5** *(blocked on Wave 4 completion)*
 - [ ] 01-09-PLAN.md — Frontières d'architecture, code mort, duplication (vague 5)
+
+**Wave 6** *(blocked on Wave 5 completion)*
 - [ ] 01-10-PLAN.md — Auto-test de la gate : runner, check `selftest`, trois cas témoins (vague 6)
+
+**Wave 7** *(blocked on Wave 6 completion)*
 - [ ] 01-11-PLAN.md — Auto-test : cas du typage, du lint et de l'architecture (QUAL-02, QUAL-03) (vague 7)
 - [ ] 01-12-PLAN.md — Auto-test : cas de sécurité, test faible, intégrité, base et dépendances (QUAL-04 à QUAL-09) (vague 7)
+
+**Wave 8** *(blocked on Wave 7 completion)*
 - [ ] 01-13-PLAN.md — Nightly, pré-commit, documentation et limites, outil D-07b, preuve CI complète (26 cas) et budgets (vague 8)
+
+**Wave 9** *(blocked on Wave 8 completion)*
 - [ ] 01-14-PLAN.md — Verrou : relecture D-01, deny et garde de l'agent (édition, écriture, signature et clés, fusion), enrôlement de la clé et `allowed_signers` par l'humain, étapes de confiance, juge hors PR et ruleset `quality`, PR réelles D-07b signées (vague 9)
 
 ### Phase 2: Connecteur Claude et identité du foyer

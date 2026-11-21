@@ -53,9 +53,15 @@ async function resolveScope(ctx: CheckContext): Promise<Scope> {
   if (ctx.env['GATE_MUTATION_SCOPE'] === 'all') {
     return { files: undefined };
   }
+  // Une base qui ressemble à une option git ne peut pas être une référence : refus avant tout appel.
+  if (ctx.base.startsWith('-')) {
+    return {
+      issue: { rule: 'invalid-base', message: `référence de base invalide « ${ctx.base} »` },
+    };
+  }
   const diff = await runTool({
     command: 'git',
-    args: ['diff', '--name-only', '--diff-filter=ACMR', `${ctx.base}...HEAD`],
+    args: ['diff', '--name-only', '--diff-filter=ACMR', `${ctx.base}...HEAD`, '--'],
     cwd: ctx.root,
     timeoutMs: 30_000,
   });

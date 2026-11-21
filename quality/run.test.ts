@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { check as lintCheck } from './checks/lint.ts';
+import { check as mutationCheck } from './checks/mutation.ts';
 import { computeVerdict, writeGateReport } from './gate-report.ts';
 import type { CheckResult, GateReport } from './gate-report.ts';
 import { runTool, verifyMiseToolVersion, verifyNpmToolVersion } from './tools.ts';
@@ -139,6 +140,34 @@ describe('vérification de version des outils', () => {
     expect(outcome.ok).toBe(false);
     expect(outcome.expected).toBe('0.0.1');
     expect(outcome.found).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+});
+
+describe('check mutation', () => {
+  it('passe avec une note quand aucun fichier mutable n’a changé depuis la base', async () => {
+    const outcome = await mutationCheck.run({
+      root: ROOT,
+      profile: 'full',
+      base: 'HEAD',
+      inCi: false,
+      env: {},
+    });
+
+    expect(outcome.status).toBe('passed');
+    expect(outcome.note).toBe('aucun fichier mutable modifié');
+  });
+
+  it('refuse une base qui ressemble à une option git', async () => {
+    const outcome = await mutationCheck.run({
+      root: ROOT,
+      profile: 'full',
+      base: '--output=zz-injection',
+      inCi: false,
+      env: {},
+    });
+
+    expect(outcome.status).toBe('failed');
+    expect(outcome.issues.map((issue) => issue.rule)).toEqual(['invalid-base']);
   });
 });
 

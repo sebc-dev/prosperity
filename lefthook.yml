@@ -1,0 +1,6 @@
+min_version: 2.2.2
+output: [failure, summary]
+pre-push:
+  jobs:
+    - name: quality-push
+      run: mise exec -- pnpm quality --profile push

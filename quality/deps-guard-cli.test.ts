@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -104,6 +104,16 @@ describe('runDepsGuardCli : échec fermé', () => {
   it('sort 2 quand un dossier de base ne contient pas package.json', async () => {
     const out = join(scratch, 'o.json');
     const argv = ['--base-dir', join(scratch, 'vide'), '--head-dir', scratch, '--out', out];
+    expect(await runDepsGuardCli(argv, io)).toBe(2);
+  });
+});
+
+describe('runDepsGuardCli : tête non fiable', () => {
+  it('sort 2 quand package.json de la tête est un lien symbolique', async () => {
+    const argv = await args(['--approved', 'deps-approved']);
+    const head = join(scratch, 'head');
+    await unlink(join(head, 'package.json'));
+    await symlink(join(scratch, 'base', 'package.json'), join(head, 'package.json'));
     expect(await runDepsGuardCli(argv, io)).toBe(2);
   });
 });

@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { buildResult } from './check-kit.ts';
@@ -200,9 +200,22 @@ async function readApprovedKinds(path: string): Promise<string[]> {
   return approved;
 }
 
+/** Lit un fichier de dépendances sans suivre de lien symbolique : la tête d'une PR n'est que des données. */
+async function readPlain(path: string): Promise<string> {
+  if ((await lstat(path)).isSymbolicLink()) {
+    throw new Error(`${path} est un lien symbolique`);
+  }
+  return readFile(path, 'utf8');
+}
+
 async function readSnapshot(dir: string): Promise<DependencySnapshot> {
-  const packageJson = await readFile(join(dir, 'package.json'), 'utf8');
-  const lockfile = await readFile(join(dir, 'pnpm-lock.yaml'), 'utf8').catch(() => '');
+  const packageJson = await readPlain(join(dir, 'package.json'));
+  const lockfile = await readPlain(join(dir, 'pnpm-lock.yaml')).catch((error: unknown) => {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return '';
+    }
+    throw error;
+  });
   return { packageJson, lockfile };
 }
 

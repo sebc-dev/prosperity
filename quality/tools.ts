@@ -20,7 +20,7 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 const TOOLS_SECTION = /^\s*\[tools\]\s*$/;
 const ANY_SECTION = /^\s*\[.+\]\s*$/;
 const PIN_LINE = /^\s*(?:"([^"]+)"|([A-Za-z0-9_.-]+))\s*=\s*"([^"]*)"/;
-const SEMVER = /\d+\.\d+\.\d+/;
+const SEMVER = /\d{1,6}\.\d{1,6}\.\d{1,6}/;
 
 /**
  * Lit les lignes `clé = "valeur"` de la section `[tools]` de `mise.toml`
@@ -117,7 +117,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-async function readJsonRecord(path: string): Promise<Record<string, unknown>> {
+export async function readJsonRecord(path: string): Promise<Record<string, unknown>> {
   try {
     const parsed: unknown = JSON.parse(await readFile(path, 'utf8'));
     return isRecord(parsed) ? parsed : {};

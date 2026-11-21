@@ -49,7 +49,7 @@ async function listWorkflows(root: string): Promise<string[]> {
     const names = await readdir(join(root, WORKFLOWS_DIR));
     return names
       .filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'))
-      .sort()
+      .sort((a, b) => a.localeCompare(b))
       .map((name) => `${WORKFLOWS_DIR}/${name}`);
   } catch {
     return [];

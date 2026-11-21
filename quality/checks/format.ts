@@ -18,18 +18,23 @@ function diagnosticPath(location: unknown): string | undefined {
   return isRecord(path) && typeof path['file'] === 'string' ? path['file'] : undefined;
 }
 
+function issueHead(diagnostic: Record<string, unknown>): Pick<Issue, 'rule' | 'message'> {
+  const category = diagnostic['category'];
+  if (category === 'format') {
+    return { rule: 'format', message: 'fichier non conforme au format Biome' };
+  }
+  const message = diagnostic['message'];
+  return {
+    rule: typeof category === 'string' ? category : 'biome',
+    message: typeof message === 'string' ? message : '',
+  };
+}
+
 function toIssue(diagnostic: unknown): Issue | undefined {
   if (!isRecord(diagnostic) || diagnostic['severity'] !== 'error') {
     return undefined;
   }
-  const category = diagnostic['category'];
-  const issue: Issue = {
-    rule: category === 'format' ? 'format' : typeof category === 'string' ? category : 'biome',
-    message:
-      category === 'format'
-        ? 'fichier non conforme au format Biome'
-        : String(diagnostic['message'] ?? ''),
-  };
+  const issue: Issue = issueHead(diagnostic);
   const file = diagnosticPath(diagnostic['location']);
   if (file !== undefined) {
     issue.file = file;

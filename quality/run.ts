@@ -58,7 +58,7 @@ function parseOptions(argv: readonly string[], env: NodeJS.ProcessEnv): Options 
   });
   const profile = values.profile;
   if (profile !== 'push' && profile !== 'full') {
-    throw new UsageError(`profil inconnu « ${String(profile)} » (attendu : push | full)`);
+    throw new UsageError(`profil inconnu « ${profile} » (attendu : push | full)`);
   }
   const baseRef = env['GITHUB_BASE_REF'];
   return {
@@ -76,7 +76,7 @@ async function discoverChecks(root: string): Promise<CheckDefinition[]> {
   const dir = join(root, 'quality', 'checks');
   const names = (await readdir(dir))
     .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
-    .sort();
+    .sort((a, b) => a.localeCompare(b));
   const checks: CheckDefinition[] = [];
   for (const name of names) {
     const mod: unknown = await import(pathToFileURL(join(dir, name)).href);

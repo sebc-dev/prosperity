@@ -24,7 +24,7 @@ Seule exception autorisée : le format de déclaration de hook, lu dans `.claude
 | `.dependency-cruiser.cjs` | config (architecture) | transform | RESEARCH § `.dependency-cruiser.cjs` | extrait vérifié |
 | `knip.json`, `.jscpd.json` | config | transform | aucun extrait ; consignes Pitfall 12 | partiel |
 | `vitest.config.ts` | config (tests) | batch | RESEARCH § `vitest.config.ts` | extrait vérifié |
-| `stryker.config.json` | config (mutation) | batch | RESEARCH § `stryker.config.json` | extrait vérifié |
+| `stryker.config.mjs` | config (mutation) | batch | RESEARCH § `stryker.config.mjs` | extrait vérifié |
 | `.gitleaks.toml` | config (secrets) | transform | aucun extrait ; Pattern 3 (piège secret) | partiel |
 | `lefthook.yml` | config (hooks git) | event-driven | RESEARCH § `lefthook.yml` | extrait vérifié |
 | `semgrep/*.yml` (+ tests) | config (SAST) | transform | RESEARCH § Règles Semgrep | extrait vérifié |
@@ -84,17 +84,17 @@ lefthook = "2.2.2"
 "pipx:semgrep" = "1.186.0"
 ```
 
-Générer `mise.lock` avec `mise lock --platform linux-x64`. Ajouter `mise.toml`, `mise.lock`, `.mise/locks/**` aux chemins protégés (D-11).
+Générer `mise.lock` avec `mise lock --platform linux-x64`. Ajouter `mise.toml`, `mise.lock`, `.mise/**` et toutes les configurations que mise fusionne (`mise.*.toml`, `.mise.toml`, `.config/mise/**`, `.tool-versions`…) aux chemins protégés (D-11, plan 01-06).
 
-### `tsconfig.json`, `eslint.config.mjs`, `vitest.config.ts`, `stryker.config.json`, `.dependency-cruiser.cjs`
+### `tsconfig.json`, `eslint.config.mjs`, `vitest.config.ts`, `stryker.config.mjs`, `.dependency-cruiser.cjs`
 
 **Source :** les blocs complets de RESEARCH § Code Examples (lignes 415-521 pour tsconfig/eslint/depcruise/stryker/vitest). Les copier tels quels comme point de départ ; ils ont été exécutés avec les versions épinglées.
 
 Adaptations à prévoir (non couvertes par les extraits) :
 - `eslint.config.mjs` : ajouter des blocs `files:` séparés pour les règles de domaine (`Date`, `process.env`, `console`, `sql.raw`) ; exception `sql.raw` limitée au bloc `files: ['src/db/sql-migration-provider.ts']`, jamais par commentaire `eslint-disable` (Pitfall 6).
 - `.dependency-cruiser.cjs` : ajouter la règle `src/db/` accessible seulement depuis `modules/*/adapters/db`, `composition`, `worker`. Sortie à lire en `json` (exit 0 même en échec, Pitfall 3).
-- `stryker.config.json` : garder `plugins` explicites (Pitfall 2) ; ajouter `disableBail: true` à mesurer (Pitfall 4) ; `reports/` et `*.stryker-incremental.json` au `.gitignore`.
-- `vitest.config.ts` : seuils 100 % sur `src/shared/**`, plancher global 85/80 comparé au cliquet par `integrity.ts`.
+- `stryker.config.mjs` : garder `plugins` explicites (Pitfall 2) ; ajouter `disableBail: true` à mesurer (Pitfall 4) ; `reports/` et `*.stryker-incremental.json` au `.gitignore`.
+- `vitest.config.ts` : seuils 100 % sur `src/shared/**`, plancher global 85/80 sur tout `src/**` (aucun dossier exclu, décision humaine), périmètre `GATE_COVERAGE_SCOPE` (`pure` pour le check `unit`, `all` pour le check `coverage`, run fusionné `unit` + `integration` du plan 01-05) ; seuils comparés au cliquet par `integrity.ts`.
 
 Layout à valider (Q5) : globs « purs » = `src/shared/**` et `src/modules/*/domain/**`.
 
@@ -222,7 +222,7 @@ Utiliser `gh api` depuis les scripts plutôt que `actions/github-script` (tag an
 
 ### `quality/escape-hatches.ts`, `baseline.json`, `protected-paths.json`
 
-**Modèle :** RESEARCH Pitfall 11. Compter `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`, `eslint-disable`, `biome-ignore`, `as any`, `as unknown as`, `!.`, `.skip`, `.todo`, `vi.mock(` sur `src/**`, `test/**` et configs racine ; exclure `quality/**`, `semgrep/**`, `.planning/**`, `.claude/**`. Lister via `git ls-files -co --exclude-standard`. Budget initial 0. `protected-paths.json` = liste unique consommée par le hook, lefthook, l'intégrité et CODEOWNERS (D-05, D-11).
+**Modèle :** RESEARCH Pitfall 11. Compter `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`, `eslint-disable`, `biome-ignore`, `as any`, `as unknown as`, `!.`, `.skip`, `.todo`, `vi.mock(`, plus les directives qui retirent du code d'un juge (`Stryker disable`/`restore`, `v8`/`istanbul`/`c8 ignore`, `nosem`, `gitleaks:allow`, `jscpd:ignore`, `@public`/`@beta`/`@alias`), sans égard à la casse ni aux espaces (plan 01-06), sur `src/**`, `test/**` et configs racine ; exclure `quality/**`, `semgrep/**`, `.planning/**`, `.claude/**`. Lister via `git ls-files -co --exclude-standard`. Budget initial 0. `protected-paths.json` = liste unique consommée par le hook, lefthook, l'intégrité et CODEOWNERS (D-05, D-11), qui inclut aussi chaque fichier de configuration ou d'exclusion qu'un outil lit de lui-même (`.gitleaksignore`, `.semgrepignore`, `.npmrc`, `.pnpmfile.*`, configs locales de mise, `lefthook-local.yml`, `.gitignore`, `.gitattributes`, harnais de test ; plan 01-06).
 
 ### `quality/agent-guard/*.ts` (middleware, event-driven)
 

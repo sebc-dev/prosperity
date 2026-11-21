@@ -237,7 +237,7 @@ mise.toml                  # outils + node + pnpm + uv (protégé)
 mise.lock                  # checksums, provenance (protégé)
 .mise/locks/**             # graphe Python de semgrep (protégé)
 package.json  pnpm-workspace.yaml  pnpm-lock.yaml     # protégés
-tsconfig.json  eslint.config.mjs  biome.json  vitest.config.ts  stryker.config.json
+tsconfig.json  eslint.config.mjs  biome.json  vitest.config.ts  stryker.config.mjs
 .dependency-cruiser.cjs  knip.json  .jscpd.json  .gitleaks.toml  lefthook.yml
 .github/workflows/quality.yml  nightly.yml  .github/CODEOWNERS  .github/zizmor.yml
 .claude/settings.json      # deny + hook de garde (protégé avec CLAUDE.md, cf. D-05)
@@ -492,7 +492,8 @@ module.exports = {
 ```
 Exécution : `depcruise src --config .dependency-cruiser.cjs --output-type json` puis lire `summary.violations[].rule.name`/`summary.error` (exit 0 même en échec). `domain-is-pure` rejette aussi les imports `npm`/`core` (`node:url`, `pg`, `fs`) hors `dependencyTypesNot`. À étendre dans le même diff que tout nouveau dossier de module (règle ARCHITECTURE.md). Règles `adapters/db` ↔ `src/db/` (seuls `modules/*/adapters/db`, `composition`, `worker` importent `src/db`) à ajouter.
 
-### `stryker.config.json` (exécuté : score 100 % → exit 0 ; test faible → 40 % → exit 1)
+### `stryker.config.mjs` (exécuté : score 100 % → exit 0 ; test faible → 40 % → exit 1)
+Contenu exécuté au format JSON ci-dessous ; le dépôt l'écrit en `stryker.config.mjs` (export par défaut du même objet) pour importer `quality/thresholds.json` et `quality/layout.json` au lieu de recopier seuils et globs (plan 01-03, tâche 3).
 ```json
 {
   "plugins": ["@stryker-mutator/vitest-runner", "@stryker-mutator/typescript-checker"],
@@ -522,7 +523,7 @@ export default defineConfig({
   },
 });
 ```
-Vitest 5.1 imprime `Running tests with seed "1795270039556"` ; relecture : `--sequence.seed=<n>`. Le plancher global (85/80) et le cliquet « jamais inférieur à `main` » sont comparés par `integrity.ts` à `quality/baseline.json` lu depuis la base. Couverture mesurée sur le projet `unit` seulement (`--project unit --coverage`).
+Vitest 5.1 imprime `Running tests with seed "1795270039556"` ; relecture : `--sequence.seed=<n>`. Le plancher global (85/80) et le cliquet « jamais inférieur à `main` » sont comparés par `integrity.ts` à `quality/baseline.json` lu depuis la base. Révisé après planification (décision humaine) : la couverture n'exclut aucun dossier de `src/` ; le check `unit` mesure les globs purs (`GATE_COVERAGE_SCOPE=pure`, `--project unit --coverage`) et le check `coverage` mesure tout `src/**` sur un seul processus `--project unit --project integration --coverage` (Vitest collecte la couverture pour tout le processus, donc fusionnée), plans 01-03 et 01-05.
 
 ### Intégration PG : fournisseur SQL + test (exécuté sur `postgres:18.7-trixie`)
 ```ts
@@ -777,7 +778,7 @@ Chaque question porte le défaut retenu par les plans, la tâche qui l'applique 
 | Property | Value |
 |----------|-------|
 | Framework | Vitest 5.1.x (projets `unit` + `integration`), fast-check 4.10.x, StrykerJS 10.1.1 |
-| Config file | `vitest.config.ts`, `stryker.config.json` (à créer, Wave 0) |
+| Config file | `vitest.config.ts`, `stryker.config.mjs` (à créer, Wave 0) |
 | Quick run command | `pnpm quality --profile push` (≤ 60 s) ; `pnpm vitest run --project unit` |
 | Full suite command | `pnpm quality` (profil `full`) ; `pnpm quality --only selftest` |
 
@@ -785,14 +786,14 @@ Chaque question porte le défaut retenu par les plans, la tâche qui l'applique 
 | Req ID | Behavior | Test Type | Automated Command | File Exists? |
 |--------|----------|-----------|-------------------|-------------|
 | QUAL-01 | Même runner/versions en push et en CI ; `gate.json` écrit ; `skipped` jamais silencieux | unit + e2e | `pnpm vitest run quality/run.test.ts` ; PR réelle (D-07b) | ❌ Wave 0 |
-| QUAL-02 | Cas `as`, `any`, complexité, `!`, `parseFloat`, directive inutile rejetés | selftest | `pnpm quality --only selftest --case lint-*` | ❌ Wave 0 |
-| QUAL-03 | Cas outil MCP → `adapters/db`, cycle, export mort, bloc dupliqué | selftest | `… --case arch-*,deadcode-*,dup-*` | ❌ Wave 0 |
-| QUAL-04 | Cas secret, SQL concaténé, handler sans `Principal`, action non épinglée, CVE≥7 | selftest | `… --case sec-*` | ❌ Wave 0 |
+| QUAL-02 | Cas `as`, `any`, complexité, `!`, `parseFloat`, directive inutile rejetés | selftest | `node quality/selftest/run.ts --case 'lint-*,types-*'` | ❌ Wave 0 |
+| QUAL-03 | Cas outil MCP → `adapters/db`, cycle, export mort, bloc dupliqué | selftest | `node quality/selftest/run.ts --case 'arch-*,deadcode-*,dup-*'` | ❌ Wave 0 |
+| QUAL-04 | Cas secret, SQL concaténé, handler sans `Principal`, action non épinglée, CVE≥7 | selftest | `node quality/selftest/run.ts --case 'sec-*,sast-*,wf-*,cve-*'` | ❌ Wave 0 |
 | QUAL-05 | Canari : couverture 100 %, Stryker ≥ 80, propriétés fast-check ; cas test faible (mutation + couverture) | unit + selftest | `pnpm vitest run --project unit --coverage` ; `pnpm stryker run` | ❌ Wave 0 |
-| QUAL-06 | Cas hausse du compteur, seuil baissé, assertion retirée, chemin protégé modifié | selftest | `… --case integrity-*` | ❌ Wave 0 |
+| QUAL-06 | Cas hausse du compteur, seuil baissé, assertion retirée, chemin protégé modifié | selftest | `node quality/selftest/run.ts --case 'integrity-*,escape-hatch-*'` | ❌ Wave 0 |
 | QUAL-07 | Édition d'un fichier de gate par l'agent refusée (deny + hook) ; ruleset `quality` | manuel guidé + e2e | tentative d'édition dans une session agent ; `gh api …/rulesets` en lecture | ❌ Wave 0 |
 | QUAL-08 | PG 18.x réel, `uuidv7()`, rôle app sans DDL, ordre aléatoire, seed loguée, méta-test RLS (à vide) + cas « table sans RLS » | integration + selftest | `pnpm vitest run --project integration` | ❌ Wave 0 |
-| QUAL-09 | Dépendance sans `deps-approved` ou trop récente rejetée | selftest + PR réelle | `… --case deps-*` ; PR manuelle | ❌ Wave 0 |
+| QUAL-09 | Dépendance sans `deps-approved` ou trop récente rejetée | selftest + PR réelle | `node quality/selftest/run.ts --case 'deps-*'` ; PR manuelle | ❌ Wave 0 |
 
 ### Sampling Rate
 - **Per task commit:** `pnpm quality --profile push`
@@ -801,7 +802,7 @@ Chaque question porte le défaut retenu par les plans, la tâche qui l'applique 
 
 ### Wave 0 Gaps
 - [ ] `quality/` (runner, registre, rapport, intégrité, approbations, deps-guard, compteur) et `quality/selftest/` (cas + runner worktree)
-- [ ] `vitest.config.ts`, `stryker.config.json`, `eslint.config.mjs`, `tsconfig.json`, `.dependency-cruiser.cjs`, `knip.json`, `.jscpd.json`, `.gitleaks.toml`, `biome.json`, `lefthook.yml`
+- [ ] `vitest.config.ts`, `stryker.config.mjs`, `eslint.config.mjs`, `tsconfig.json`, `.dependency-cruiser.cjs`, `knip.json`, `.jscpd.json`, `.gitleaks.toml`, `biome.json`, `lefthook.yml`
 - [ ] `test/` : `globalSetup` Testcontainers, méta-tests (RLS `owner_member_id`, rôle app sans DDL)
 - [ ] `src/shared/money/` + tests (exemples + propriétés), `src/db/` (fournisseur SQL, runner), `db/migrations/0001_foundation.sql`
 - [ ] Installation du framework : `mise install` puis `pnpm install --frozen-lockfile` (voir pins de repli)

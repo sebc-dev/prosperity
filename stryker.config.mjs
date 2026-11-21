@@ -3,6 +3,11 @@ import thresholds from './quality/thresholds.json' with { type: 'json' };
 
 // Mutation : seuils et globs viennent de quality/*.json, jamais recopiés ici.
 // Appel diff-scopé : `stryker run --mutate a.ts,b.ts` (la ligne de commande remplace `mutate`).
+// Le runner Vitest n'a pas d'option de projet : il joue tous ceux de `vitest.config.ts`.
+// Le projet `integration` (Docker, PostgreSQL) reste hors des runs de mutation ; les workers
+// forkés héritent de cette variable.
+process.env['GATE_INTEGRATION'] = 'off';
+
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 export default {
   // Sous pnpm, les plugins ne se découvrent pas seuls (`Cannot find Checker plugin "typescript"`).

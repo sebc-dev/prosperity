@@ -31,6 +31,22 @@ export default defineConfig({
         extends: true,
         test: { name: 'unit', include: ['src/**/*.test.ts', 'quality/**/*.test.ts'] },
       },
+      // Le runner Vitest de Stryker joue tous les projets de la config : `stryker.config.mjs`
+      // pose GATE_INTEGRATION=off pour que chaque mutant ne démarre pas PostgreSQL.
+      ...(process.env['GATE_INTEGRATION'] === 'off'
+        ? []
+        : [
+            {
+              extends: true,
+              test: {
+                name: 'integration',
+                include: ['test/**/*.int.test.ts'],
+                globalSetup: ['test/global-setup.ts'],
+                testTimeout: 120_000,
+                hookTimeout: 120_000,
+              },
+            },
+          ]),
     ],
     coverage: {
       provider: 'v8',

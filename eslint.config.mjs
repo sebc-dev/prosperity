@@ -83,6 +83,12 @@ const domainBlocks = [
       ]),
     },
   })),
+  // Exécuter un fichier SQL exige `sql.raw` : levé par configuration pour le seul fournisseur de
+  // migrations (jamais par un commentaire de désactivation) ; Semgrep interdit la concaténation.
+  {
+    files: ['src/db/sql-migration-provider.ts'],
+    rules: { 'no-restricted-syntax': restricted(SRC_NAMES.filter((name) => name !== 'sqlRaw')) },
+  },
 ];
 
 // --- Règles de tests --------------------------------------------------------

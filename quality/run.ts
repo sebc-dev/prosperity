@@ -63,7 +63,10 @@ function parseOptions(argv: readonly string[], env: NodeJS.ProcessEnv): Options 
   const baseRef = env['GITHUB_BASE_REF'];
   return {
     profile,
-    only: values.only?.split(',').map((id) => id.trim()).filter((id) => id !== ''),
+    only: values.only
+      ?.split(',')
+      .map((id) => id.trim())
+      .filter((id) => id !== ''),
     report: values.report,
     base: values.base ?? `origin/${baseRef !== undefined && baseRef !== '' ? baseRef : 'main'}`,
   };
@@ -87,7 +90,10 @@ async function discoverChecks(root: string): Promise<CheckDefinition[]> {
   return checks.sort((a, b) => a.id.localeCompare(b.id));
 }
 
-function selectChecks(all: readonly CheckDefinition[], only: string[] | undefined): CheckDefinition[] {
+function selectChecks(
+  all: readonly CheckDefinition[],
+  only: string[] | undefined,
+): CheckDefinition[] {
   if (only === undefined) {
     return [...all];
   }
@@ -148,11 +154,14 @@ async function runPool(
 ): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
   const queue = [...checks];
-  const workers = Array.from({ length: Math.min(4, availableParallelism(), queue.length) }, async () => {
-    for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
-      results.push(await execute(next, ctx));
-    }
-  });
+  const workers = Array.from(
+    { length: Math.min(4, availableParallelism(), queue.length) },
+    async () => {
+      for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+        results.push(await execute(next, ctx));
+      }
+    },
+  );
   await Promise.all(workers);
   return results.sort((a, b) => a.check.localeCompare(b.check));
 }
@@ -195,7 +204,8 @@ async function main(): Promise<number> {
   const report: GateReport = {
     profile: options.profile,
     commit: (await gitOutput(root, ['rev-parse', 'HEAD'])) ?? 'unknown',
-    base: (await gitOutput(root, ['rev-parse', '--verify', '--quiet', options.base])) ?? options.base,
+    base:
+      (await gitOutput(root, ['rev-parse', '--verify', '--quiet', options.base])) ?? options.base,
     generated_at: new Date().toISOString(),
     verdict,
     checks: results,

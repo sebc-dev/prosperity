@@ -113,6 +113,43 @@ export function runMiseTool(
   });
 }
 
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+async function readJsonRecord(path: string): Promise<Record<string, unknown>> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(path, 'utf8'));
+    return isRecord(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Compare la version de `node_modules/<pkg>/package.json` au pin exact de
+ * `package.json` (devDependencies puis dependencies). Un pin absent, non exact
+ * ou différent de la version installée donne `{ ok: false }`.
+ */
+export async function verifyNpmToolVersion(
+  root: string,
+  pkg: string,
+): Promise<{ ok: boolean; found: string; expected: string }> {
+  const manifest = await readJsonRecord(join(root, 'package.json'));
+  const installed = await readJsonRecord(join(root, 'node_modules', pkg, 'package.json'));
+  const pins = [manifest['devDependencies'], manifest['dependencies']];
+  let expected = '';
+  for (const group of pins) {
+    const pin = isRecord(group) ? group[pkg] : undefined;
+    if (typeof pin === 'string') {
+      expected = pin;
+      break;
+    }
+  }
+  const found = typeof installed['version'] === 'string' ? installed['version'] : '';
+  return { ok: expected !== '' && found === expected, found, expected };
+}
+
 /**
  * Compare la première version `x.y.z` de la sortie de l'outil au pin de
  * `mise.toml`. La clé du pin est le nom de l'outil.

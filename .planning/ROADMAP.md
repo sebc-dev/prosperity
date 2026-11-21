@@ -35,20 +35,22 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Sur un module canari, un test faible fait échouer la gate par le score de mutation Stryker et par la couverture du domaine pur sous 100 %. Un test d'intégration tourne contre un PostgreSQL 18 réel démarré par Testcontainers, en ordre aléatoire, avec la seed loguée.
   4. Sans approbation humaine explicite (label ou CODEOWNERS), la CI bloque une PR qui baisse un seuil, retire une assertion, ajoute une échappatoire (`@ts-ignore`, `.skip`, `vi.mock(`…) ou modifie un chemin protégé (`.github/**`, configuration de la gate, `deploy/**`). Les permissions de l'agent refusent l'édition de ces chemins.
   5. Une dépendance ajoutée sans label `deps-approved`, ou plus récente que l'âge minimal de publication, fait échouer l'installation ou la CI.
-**Plans**: 11 plans
+**Plans**: 13 plans
 
 Plans:
 - [ ] 01-01-PLAN.md — Squelette ambulant : `pnpm quality` → check `workflow-lint` → `reports/gate.json` → pré-push → CI, rattachement d'historique et PR brouillon de bootstrap (vague 1)
 - [ ] 01-02-PLAN.md — Approbation humaine des dépendances, typage strict, lint type-aware, format, seuils et globs uniques (vague 2)
 - [ ] 01-03-PLAN.md — Tests unitaires, canari `src/shared/money`, couverture 100 % du pur, mutation Stryker sur le diff (vague 3)
-- [ ] 01-04-PLAN.md — Sécurité : secrets, Semgrep du projet (décision Q4), CVE ≥ 7, zizmor, hadolint (vague 3)
-- [ ] 01-05-PLAN.md — PostgreSQL 18 réel : migration forward-only, Testcontainers, méta-tests RLS (vague 4)
+- [ ] 01-04-PLAN.md — Sécurité : secrets, Semgrep du projet (décision Q4), CVE ≥ 7, zizmor, hadolint, lint de sécurité advisory (vague 3)
+- [ ] 01-05-PLAN.md — PostgreSQL 18 réel : rôles séparés migrations / app, migration forward-only, Testcontainers, méta-tests RLS (vague 4)
 - [ ] 01-06-PLAN.md — Compteur d'échappatoires à cliquet, juge d'intégrité, chemins protégés, scripts de garde de l'agent (vague 4)
-- [ ] 01-07-PLAN.md — Approbation par label liée au dernier push, garde des dépendances nouvelles (vague 4)
+- [ ] 01-07-PLAN.md — Approbation par label liée au dernier push (allowlist lue dans la base), garde des dépendances, juge hors PR `quality-verdict` (vague 4)
 - [ ] 01-08-PLAN.md — Frontières d'architecture, code mort, duplication (vague 5)
-- [ ] 01-09-PLAN.md — Auto-test de la gate : 26 cas, une violation et une règle attendue chacun (vague 6)
-- [ ] 01-10-PLAN.md — Nightly, pré-commit, documentation et limites, outil D-07b, preuve CI complète et budgets (vague 7)
-- [ ] 01-11-PLAN.md — Verrou : relecture D-01, deny et garde de l'agent, étapes de confiance, ruleset `quality`, PR réelles D-07b (vague 8)
+- [ ] 01-09-PLAN.md — Auto-test de la gate : runner, check `selftest`, trois cas témoins (vague 6)
+- [ ] 01-10-PLAN.md — Auto-test : cas du typage, du lint et de l'architecture (QUAL-02, QUAL-03) (vague 7)
+- [ ] 01-11-PLAN.md — Auto-test : cas de sécurité, test faible, intégrité, base et dépendances (QUAL-04 à QUAL-09) (vague 7)
+- [ ] 01-12-PLAN.md — Nightly, pré-commit, documentation et limites, outil D-07b, preuve CI complète (26 cas) et budgets (vague 8)
+- [ ] 01-13-PLAN.md — Verrou : relecture D-01, deny et garde de l'agent (édition, écriture, labels, fusion), étapes de confiance, juge hors PR et ruleset `quality`, PR réelles D-07b (vague 9)
 
 ### Phase 2: Connecteur Claude et identité du foyer
 **Goal:** As a membre du foyer, I want to ajouter Prosperity comme connecteur personnalisé dans mon propre compte claude.ai et m'y authentifier par passkey, so that Claude agisse sous mon identité, sur une instance joignable et conforme, avant qu'existe la moindre donnée financière.
@@ -177,7 +179,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Socle et quality gate | 0/11 | Planned | - |
+| 1. Socle et quality gate | 0/13 | Planned | - |
 | 2. Connecteur Claude et identité du foyer | 0/TBD | Not started | - |
 | 3. Comptes cloisonnés et catégories | 0/TBD | Not started | - |
 | 4. Saisie conversationnelle et soldes | 0/TBD | Not started | - |

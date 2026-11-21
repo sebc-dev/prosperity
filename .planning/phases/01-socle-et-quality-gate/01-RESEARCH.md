@@ -274,6 +274,7 @@ test/                      # intégration PG (`*.int.test.ts`), méta-tests
 
 **What:** en CI, `quality/integrity.ts`, `approvals.ts`, `deps-guard.ts` et `protected-paths.json` sont lus/exécutés **depuis une copie de la ref de base** (`git worktree add ../base origin/<base_ref>`), jamais depuis la PR. Sinon une PR qui modifie le script d'intégrité (ou la liste des chemins protégés) se juge elle-même. **When:** tout job qui compare la PR à une baseline. Le premier PR de la phase (base = ancien `main` Python, sans `quality/`) est un cas d'amorçage : baseline absente côté base = « amorçage », approbation humaine requise une fois.
 **Limite documentée :** le workflow `quality.yml` de la PR est celui qui s'exécute (`pull_request`) ; une PR peut donc le réécrire. Contrôle restant : fusion humaine seule (aucun bypass, aucune auto-fusion), lecture du diff `.github/**` par `sebc-dev`. [CITED: .claude/CLAUDE.md §10 « Limite : une PR peut modifier son propre workflow »]
+**Révision du plan (2026-11-21) :** cette limite est fermée par un juge hors PR. Le job de la PR est renommé `gate` et n'est pas requis ; le seul check requis, le statut `quality`, est publié par un workflow `workflow_run` (`quality-verdict`), dont GitHub lit toujours la définition sur la branche par défaut, avec le jeton d'une application GitHub dédiée dont la clé vit dans un environnement restreint à `main`. Ce juge rejoue approbations, intégrité et dépendances depuis `main` sur la tête lue comme données, sans exécuter de code de la PR. Une PR qui réécrit son workflow obtient `gate` vert mais `quality` rouge (`protected-path-changed`). La documentation GitHub des rulesets confirme qu'on peut fixer une application comme source attendue d'un statut requis et qu'un statut posé par un autre acteur ne permet pas la fusion. Plans 01-07 (juge) et 01-13 (bascule).
 
 ### Pattern 3 : auto-test = patch jetable + règle attendue
 
@@ -730,23 +731,22 @@ La règle `pull_request` et ses paramètres exacts sont **[ASSUMED]** (non rejou
 | A7 | Les packs registre Semgrep dérivent dans le temps (pas de versionnage de pack) | Q4 | Si stables, les garder en blocking tels quels |
 | A8 | `mise` reste sur le `PATH` des hooks git du poste (client en ligne de commande) | lefthook | Hooks en 127 ; documenter `PATH` ou chemin absolu |
 | A9 | Le seuil `max_severity >= 7.0` correspond à « high/critical » pour osv-scanner | Pitfall 3 | Seuil trop laxiste/strict ; ajustable dans le runner |
-| A10 | Le mode « Required workflows » d'organisation n'est pas disponible (compte utilisateur) | Pattern 2 | S'il l'est, il fermerait le trou « la PR réécrit son workflow » |
+| A10 | Le mode « Required workflows » d'organisation n'est pas disponible (compte utilisateur) | Pattern 2 | Sans objet depuis la révision : le juge hors PR (`workflow_run` + application dédiée) ferme ce trou sans organisation |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Q1 : pins de CLAUDE.md vs `minimumReleaseAge` (bloquant pour l'exécution)**
-   - Known: 7 pins échouent aujourd'hui ; repli installé OK ; maturité entre 2026-11-22 et 2026-11-27 (knip en dernier).
-   - Unclear: préférence entre (a) pins de repli puis montée par PR labellisée, (b) attendre le 2026-11-27, (c) exclusions temporaires d'exact versions.
-   - Recommendation: (a). Documenter dans le plan que la table de CLAUDE.md §3/§4 est la cible, pas le premier état.
-2. **Q2 : mitigation de #6335** — mesurer en Wave 0 (20 exécutions du canari avec/sans `disableBail`) ; sinon relance des survivants. Décision à l'exécution, pas au plan.
-3. **Q3 : ruleset `ci-required` → `quality`** — action humaine et ordre : ne basculer qu'après une première PR verte, sinon aucune PR ne peut passer ; faire le changement dans le plan de verrou, avec un point de relecture explicite (D-01).
-4. **Q4 : Semgrep « déterministe »** — les packs registre changent sans versionnage. Option : packs en **advisory/nightly**, règles du projet (`semgrep/`) seules en **blocking** ; ou vendoriser un snapshot des règles utiles dans `semgrep/vendor/`. CLAUDE.md demande les packs en blocking sur ERROR : à confirmer avec l'humain.
-5. **Q5 : layout `src/`** — voir § Architecture (globs `src/shared/**`, `src/modules/*/{domain,application}/**`).
-6. **Q6 : knip en mode `--production`** — non activé en phase 1 ; à introduire quand `src/index.ts` (phase 2) existe.
-7. **Q7 : jeton de l'agent** — l'agent agit avec les identifiants de `sebc-dev`. Faut-il, dès cette phase, créer un second compte/jeton à droits réduits pour l'agent (idée différée dans CONTEXT) ? Hors périmètre sauf décision contraire ; le plan doit au minimum documenter la limite.
-8. **Q8 : `.claude/CLAUDE.md` et GSD** — GSD y écrit ; accepter la friction ou ne protéger qu'en CI.
-9. **Q9 : hadolint sans Containerfile** — aucun `Containerfile` en phase 1 (phase 2/OPS) : le check retourne `passed` avec note « non applicable » (pas `skipped`). Confirmer.
-10. **Q10 : Renovate** — `minimumReleaseAge` côté Renovate et groupement des patches ne sont pas dans QUAL-01..09 ; différé sauf besoin pour tenir D-08.
+Chaque question porte le défaut retenu par les plans, la tâche qui l'applique et, quand un humain doit le confirmer, le point de contrôle qui le confirme (les checkpoints restent des confirmations d'un défaut déjà planifié, pas des questions ouvertes).
+
+1. **Q1 : pins de CLAUDE.md vs `minimumReleaseAge`** — RESOLVED : option (a), pins de repli de « Standard Stack » pour toute version publiée depuis moins de 7 jours à la date d'exécution, montée vers les pins cibles par PR labellisée `deps-approved` ; aucune exclusion d'âge. La table de CLAUDE.md §3/§4 est la cible, pas le premier état. Appliqué : plan 01-02 tâche 1 (table des versions retenues), confirmé par l'humain au même checkpoint `blocking-human` (réponse `wait` possible jusqu'au 2026-11-27).
+2. **Q2 : mitigation de #6335** — RESOLVED : `disableBail: true` par défaut ; si les 10 exécutions avec `disableBail` ne sont pas stables, une relance unique limitée aux survivants avant de conclure ; seuil `break` jamais baissé. Appliqué et mesuré : plan 01-03 tâche 3 (20 exécutions consignées).
+3. **Q3 : ruleset `ci-required` → `quality`** — RESOLVED (révisé) : bascule humaine en deux temps au verrou, après le premier vert. Ruleset transitoire `gate` (GitHub Actions, 15368) pour fusionner la seule PR de bootstrap, protégée par la relecture D-01 ; puis ruleset final : unique check requis `quality`, statut publié par le juge hors PR (workflow `quality-verdict`, application dédiée) avec cette application comme source. Appliqué : plan 01-13 tâche 3, étapes 5 et 7 ; mécanisme du juge : plan 01-07 tâche 3.
+4. **Q4 : Semgrep « déterministe »** — RESOLVED : défaut `packs-advisory` (règles du projet `semgrep/` bloquantes, packs du registre joués en advisory en profil full et au nightly). Appliqué : plan 01-04 tâches 1 et 3 ; confirmé par l'humain au checkpoint de décision du plan 01-04 tâche 1 (écart à CLAUDE.md §10.2, décision réversible).
+5. **Q5 : layout `src/`** — RESOLVED : défaut A (globs `src/shared/**`, `src/modules/*/{domain,application}/**`) dans le fichier unique `quality/layout.json`. Appliqué : plan 01-02 tâche 3 ; confirmé au point de relecture D-01, plan 01-13 tâche 1.
+6. **Q6 : knip en mode `--production`** — RESOLVED : non activé en phase 1 (les exports du canari ne sont utilisés que par des tests) ; introduit en phase 2 avec `src/index.ts`. Appliqué : plan 01-08 tâche 2 ; consigné comme décision réversible dans `docs/quality-gate.md` (plan 01-12 tâche 2).
+7. **Q7 : jeton de l'agent** — RESOLVED : aucun second compte ni jeton en phase 1 (idée différée de CONTEXT.md). La limite est documentée (`docs/quality-gate.md`, « Limites connues », plan 01-12 tâche 2) et réduite par les règles deny et le garde Bash sur labels, fusion, réglages et API en écriture (plans 01-06 tâche 3 et 01-13 tâche 2), l'auto-fusion désactivée et le juge hors PR (plan 01-07 tâche 3) ; le résiduel est porté au registre de menaces (T-01-49).
+8. **Q8 : `.claude/CLAUDE.md` et GSD** — RESOLVED : défaut `approve`, D-05 appliqué tel quel (protégé par le deny, le garde, le pré-commit et l'intégrité) ; variante `approve-claude-md-ci-only` disponible. Appliqué : plan 01-06 tâche 2 (liste) et plan 01-13 tâche 2 (`agentExempt`) ; confirmé au point de relecture D-01, plan 01-13 tâche 1.
+9. **Q9 : hadolint sans Containerfile** — RESOLVED : `passed` avec la note « non applicable : aucun Containerfile suivi », jamais `skipped`. Appliqué : plan 01-04 tâche 2 ; consigné dans `docs/quality-gate.md` (plan 01-12).
+10. **Q10 : Renovate** — RESOLVED : différé, hors QUAL-01..09 ; les montées de version passent par des PR labellisées et l'auto-test les juge (D-08). Hors périmètre de la phase 1 (SKELETON « Out of Scope »).
 
 ## Environment Availability
 

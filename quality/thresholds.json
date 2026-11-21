@@ -1,0 +1,16 @@
+{
+  "lint": {
+    "maxWarnings": 0,
+    "cognitiveComplexity": 10,
+    "maxLinesPerFunction": 60,
+    "maxDepth": 3,
+    "maxParams": 4,
+    "maxLines": 300
+  },
+  "coverage": {
+    "pure": { "lines": 100, "branches": 100, "functions": 100, "statements": 100 },
+    "global": { "lines": 85, "branches": 80 }
+  },
+  "mutation": { "break": 80, "low": 80, "high": 90 },
+  "supplyChain": { "minimumReleaseAgeMinutes": 10080, "packageMinAgeDays": 30 }
+}

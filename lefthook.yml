@@ -1,5 +1,9 @@
 min_version: 2.2.2
 output: [failure, summary]
+pre-commit:
+  jobs:
+    - name: gitleaks-staged
+      run: mise exec -- gitleaks git --staged --redact --no-banner
 pre-push:
   jobs:
     - name: quality-push

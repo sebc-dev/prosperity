@@ -1,0 +1,6 @@
+# Règles par défaut de gitleaks (même version qu'en CI, mise.toml) ; aucune allowlist
+# tant qu'aucun faux positif n'est constaté.
+title = "prosperity"
+
+[extend]
+useDefault = true

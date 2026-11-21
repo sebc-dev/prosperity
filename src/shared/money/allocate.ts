@@ -6,12 +6,9 @@ interface Share {
   readonly remainder: bigint;
 }
 
-/** Plus grand reste d'abord ; à égalité, l'indice le plus petit d'abord. */
-function byLargestRemainder(a: Share, b: Share): number {
-  if (a.remainder !== b.remainder) {
-    return a.remainder > b.remainder ? -1 : 1;
-  }
-  return a.index - b.index;
+/** `a` passe avant `b` : plus grand reste d'abord ; à égalité, l'indice le plus petit d'abord. */
+function beats(a: Share, b: Share): boolean {
+  return a.remainder > b.remainder || (a.remainder === b.remainder && a.index < b.index);
 }
 
 /**
@@ -34,10 +31,10 @@ export function allocate(
     return { index, base: scaled / weightSum, remainder: scaled % weightSum };
   });
   const leftover = magnitude - shares.reduce((acc, share) => acc + share.base, 0n);
+  // Rang d'une part = nombre de parts qui la devancent ; les `leftover` premiers rangs reçoivent un centime.
   const winners = new Set(
-    [...shares]
-      .sort(byLargestRemainder)
-      .filter((_, rank) => BigInt(rank) < leftover)
+    shares
+      .filter((share) => BigInt(shares.filter((other) => beats(other, share)).length) < leftover)
       .map((share) => share.index),
   );
   return {

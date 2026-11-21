@@ -1,6 +1,12 @@
 ---
-gsd_state_version: '1.0'
+gsd_state_version: "1.0"
+current_phase: 1
+current_phase_name: Socle et quality gate
 status: planning
+stopped_at: Phase 1 context gathered
+last_updated: "2026-11-21T13:44:34.921Z"
+last_activity: "2026-11-21 : roadmap créé (9 phases, 92/92 exigences v1 couvertes)"
+state_head: e4efa041d4a12352e7db29e5cc1e3a9b594f781d
 progress:
   total_phases: 9
   completed_phases: 0
@@ -82,6 +88,6 @@ Items acknowledged and deferred at milestone close, most recent first:
 
 ## Session Continuity
 
-Last session: 2026-11-21
-Stopped at: Roadmap et STATE initialisés ; phase 1 prête à planifier
-Resume file: None
+Last session: 2026-11-21T13:44:34.893Z
+Stopped at: Phase 1 context gathered
+Resume file: .planning/phases/01-socle-et-quality-gate/01-CONTEXT.md

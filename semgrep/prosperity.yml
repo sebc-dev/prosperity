@@ -1,0 +1,42 @@
+rules:
+  - id: prosperity.tool-handler-without-principal
+    languages: [typescript]
+    severity: ERROR
+    message: "Un handler d'outil MCP doit recevoir un Principal en premier parametre (defineTool)."
+    paths:
+      include: ["**/mcp/tools/**"]
+    patterns:
+      - pattern-either:
+          - pattern: "defineTool($NAME, $CFG, async ($ARG: $T) => { ... })"
+          - pattern: "defineTool($NAME, $CFG, async ($ARG) => { ... })"
+          - pattern: "defineTool($NAME, $CFG, async () => { ... })"
+      - pattern-not: "defineTool($NAME, $CFG, async ($P: Principal, ...) => { ... })"
+  - id: prosperity.raw-registertool
+    languages: [typescript]
+    severity: ERROR
+    message: "registerTool direct interdit, passer par defineTool"
+    paths:
+      exclude: ["**/mcp/define-tool.ts"]
+    pattern: "$S.registerTool(...)"
+  - id: prosperity.sql-concatenation
+    languages: [typescript]
+    severity: ERROR
+    message: "SQL construit par concatenation ou interpolation"
+    pattern-either:
+      - pattern: "sql.raw($A + ...)"
+      - pattern: "sql.raw(`...${$X}...`)"
+      - pattern: "$DB.query($A + ...)"
+      - pattern: "$DB.query(`...${$X}...`)"
+  - id: prosperity.insecure-random-token
+    languages: [typescript]
+    severity: ERROR
+    message: "Math.random interdit pour un jeton ou secret"
+    pattern: "Math.random()"
+  - id: prosperity.non-constant-time-secret-compare
+    languages: [typescript]
+    severity: ERROR
+    message: "Comparaison non constante d'un secret : utiliser timingSafeEqual"
+    pattern-either:
+      - pattern: "$A.token === $B"
+      - pattern: "$A.secret === $B"
+      - pattern: "$A.signature === $B"

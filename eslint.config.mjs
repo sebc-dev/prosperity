@@ -98,6 +98,8 @@ const testRules = {
   'vitest/no-disabled-tests': 'error',
   'vitest/no-focused-tests': 'error',
   'vitest/no-conditional-expect': 'error',
+  // `test.prop([...])(titre, corps)` (@fast-check/vitest) est un bloc de test.
+  'vitest/no-standalone-expect': ['error', { additionalTestBlockFunctions: ['test.prop'] }],
   'vitest/no-conditional-tests': 'error',
   'vitest/valid-expect': 'error',
   'vitest/no-identical-title': 'error',

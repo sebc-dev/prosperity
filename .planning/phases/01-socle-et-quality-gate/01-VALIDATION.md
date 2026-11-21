@@ -57,10 +57,11 @@ created: "2026-11-21"
 | 01-05-T3 | 01-05 | 4 | QUAL-08 | T-01-18, T-01-42 | Méta-tests RLS et rôles, check `integration` | integration | `pnpm quality --only integration` ; `--profile push` → `ci-only` | ❌ W0 | ⬜ pending |
 | 01-06-T1 | 01-06 | 4 | QUAL-06 | — | Compteur d'échappatoires à cliquet (budget 0) | tdd + négatif | `vitest … escape-hatches.test.ts` ; `@ts-expect-error` ajouté → code 1 | ❌ W0 | ⬜ pending |
 | 01-06-T2 | 01-06 | 4 | QUAL-06, QUAL-07 | T-01-21, T-01-22 | Intégrité jugée depuis la base (seuils, assertions, politique pnpm) | tdd + négatif | `vitest … integrity.test.ts` ; `mutation.break` 70 → `threshold-lowered` | ❌ W0 | ⬜ pending |
-| 01-06-T3 | 01-06 | 4 | QUAL-07 | T-01-23, T-01-24 | Garde Bash : écritures protégées, labels, fusion refusés | tdd + e2e processus | `vitest … bash-guard.test.ts` ; stdin PreToolUse `sed -i` et `gh pr merge` → deny | ❌ W0 | ⬜ pending |
-| 01-07-T1 | 01-07 | 4 | QUAL-06, QUAL-09 | T-01-25, T-01-26, T-01-27, T-01-43 | Label lié au dernier push ; allowlist lue dans la seule copie de base | tdd | `vitest … approvals.test.ts` ; `pnpm quality --only approvals` → `ci-only` | ❌ W0 | ⬜ pending |
-| 01-07-T2 | 01-07 | 4 | QUAL-09 | T-01-28 | Dépendance ajoutée sans `deps-approved` refusée ; registre et âge | tdd + négatif | `vitest … deps-guard.test.ts` ; `ms` ajouté → `dependency-added` | ❌ W0 | ⬜ pending |
-| 01-07-T3 | 01-07 | 4 | QUAL-07 | T-01-44, T-01-45 | Juge hors PR : statut `quality` publié par l'application, aucun code de PR exécuté | tdd + statique | `vitest … verdict.test.ts` ; `pnpm quality --only workflow-lint,workflow-audit,typecheck,lint` | ❌ W0 | ⬜ pending |
+| 01-06-T3 | 01-06 | 4 | QUAL-07 | T-01-23, T-01-24 | Garde Bash : écritures protégées, signature et clés (D-14), labels (hygiène), fusion refusés | tdd + e2e processus | `vitest … bash-guard.test.ts` ; stdin PreToolUse `sed -i` et `gh pr merge` → deny | ❌ W0 | ⬜ pending |
+| 01-07-T1 | 01-07 | 4 | QUAL-06, QUAL-07 | T-01-27 | Type de clé matérielle et politique de présence décidés par l'humain (D-14, costly) | checkpoint:decision | manuel (réponse consignée) | n/a | ⬜ pending |
+| 01-07-T2 | 01-07 | 4 | QUAL-06, QUAL-09 | T-01-25, T-01-26, T-01-27, T-01-43, T-01-51, T-01-52 | Commit d'approbation signé en tête, vérifié contre `allowed_signers` de la base, drapeaux de présence contrôlés par la CI | tdd (vrais `git` et `ssh-keygen`) | `vitest … sshsig.test.ts approvals.test.ts` ; `pnpm quality --only approvals` → `ci-only` | ❌ W0 | ⬜ pending |
+| 01-07-T3 | 01-07 | 4 | QUAL-09 | T-01-28 | Dépendance ajoutée sans `deps-approved` refusée ; registre et âge | tdd + négatif | `vitest … deps-guard.test.ts` ; `ms` ajouté → `dependency-added` | ❌ W0 | ⬜ pending |
+| 01-07-T4 | 01-07 | 4 | QUAL-07 | T-01-44, T-01-45 | Juge hors PR : statut `quality` publié par l'application, aucun code de PR exécuté | tdd + statique | `vitest … verdict.test.ts` ; `pnpm quality --only workflow-lint,workflow-audit,typecheck,lint` | ❌ W0 | ⬜ pending |
 | 01-08-T1 | 01-08 | 5 | QUAL-03 | T-01-29 | Frontières d'architecture (outil MCP → base interdit) | négatif | `pnpm quality --only arch` ; `src/mcp/tools` → `adapters/db` refusé | ❌ W0 | ⬜ pending |
 | 01-08-T2 | 01-08 | 5 | QUAL-03 | T-01-30 | Code mort et duplication bloquants | négatif | `pnpm quality` ; export inutilisé → `exports` | ❌ W0 | ⬜ pending |
 | 01-09-T1 | 01-09 | 6 | QUAL-02, QUAL-04, QUAL-06 | T-01-32, T-01-33 | Runner d'auto-test : règle attendue exigée, worktrees nettoyés | tdd | `vitest … selftest/run.test.ts` ; `--profile push --only selftest` → `ci-only` | ❌ W0 | ⬜ pending |
@@ -74,12 +75,12 @@ created: "2026-11-21"
 | 01-12-T2 | 01-12 | 8 | QUAL-01 | T-01-35, T-01-36 | Limites documentées ; outil D-07b refusé sans variable humaine | statique + négatif | `pnpm quality --only typecheck,lint,format,deadcode` ; `demo-prs.ts` sans variable → code ≠ 0 | ❌ W0 | ⬜ pending |
 | 01-12-T3 | 01-12 | 8 | QUAL-01, QUAL-05 | — | Profil complet en CI, 26 cas verts, budgets mesurés | e2e CI + selftest | artefact `gate` du run (`gh run download`) ; `node quality/selftest/run.ts` → 26 cas | n/a | ⬜ pending |
 | 01-13-T1 | 01-13 | 9 | QUAL-07 | — | Relecture humaine D-01 avant le verrou | checkpoint:decision | manuel (réponse consignée) | n/a | ⬜ pending |
-| 01-13-T2 | 01-13 | 9 | QUAL-07, QUAL-06, QUAL-01 | T-01-37, T-01-39, T-01-41, T-01-49 | Verrou : deny Edit (couvre Write), garde, `--base-dir`, job `gate`, verdict `--dry-run` | unit + e2e processus | `pnpm vitest run --project unit quality/lock.test.ts` ; `pnpm quality --only workflow-lint,workflow-audit,lint,format,typecheck` | ❌ W0 | ⬜ pending |
-| 01-13-T3 | 01-13 | 9 | QUAL-07, QUAL-09, QUAL-01 | T-01-38, T-01-40, T-01-49, T-01-50 | Ruleset `quality` (source = application), refus de l'agent, D-07b dont `workflow-rewrite` | checkpoint:human-action + lecture API | manuel ; puis `gh api repos/sebc-dev/prosperity/rules/branches/main` (lecture) | n/a | ⬜ pending |
+| 01-13-T2 | 01-13 | 9 | QUAL-07, QUAL-06, QUAL-01 | T-01-37, T-01-39, T-01-41, T-01-49, T-01-54 | Verrou : deny Edit (couvre Write), deny signature et clés (D-14), garde, `--base-dir`, job `gate` seul, verdict `--dry-run` | unit + e2e processus | `pnpm vitest run --project unit quality/lock.test.ts` ; `pnpm quality --only workflow-lint,workflow-audit,lint,format,typecheck` | ❌ W0 | ⬜ pending |
+| 01-13-T3 | 01-13 | 9 | QUAL-07, QUAL-09, QUAL-01 | T-01-38, T-01-40, T-01-49, T-01-50, T-01-53, T-01-54 | Clé matérielle enrôlée et `allowed_signers` humain, ruleset `quality` (source = application), sept refus de l'agent, D-07b signés dont `workflow-rewrite` | checkpoint:human-action + lecture API | manuel ; puis `gh api repos/sebc-dev/prosperity/rules/branches/main` (lecture) | n/a | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky* — commandes abrégées ; la commande exacte et son `<fails_when>` sont dans la tâche du PLAN. Toutes les commandes s'exécutent avec `mise exec --`.
 
-Sampling : chaque tâche `auto` a au moins une commande `<automated>` ; les seules tâches sans commande sont des checkpoints humains (01-01-T2, 01-02-T1, 01-04-T1, 01-13-T1, 01-13-T3). Aucune fenêtre de trois tâches d'implémentation consécutives sans vérification automatique.
+Sampling : chaque tâche `auto` a au moins une commande `<automated>` ; les seules tâches sans commande sont des checkpoints humains (01-01-T2, 01-02-T1, 01-04-T1, 01-07-T1, 01-13-T1, 01-13-T3). Aucune fenêtre de trois tâches d'implémentation consécutives sans vérification automatique.
 
 Correspondance exigences → tests (depuis 01-RESEARCH.md § Validation Architecture) :
 
@@ -101,7 +102,7 @@ Correspondance exigences → tests (depuis 01-RESEARCH.md § Validation Architec
 
 Couverture par les plans (case cochée = créé par une tâche planifiée, non encore exécutée ; `wave_0_complete` passera à `true` à l'exécution) :
 
-- [x] `quality/` : runner, rapport, outils (01-01-T1), registre de checks (un fichier par check, 01-01 à 01-08), intégrité et compteur (01-06-T1/T2), approbations, deps-guard et verdict hors PR (01-07-T1/T2/T3) ; `quality/selftest/` : runner (01-09-T1) et 26 cas (01-09-T2, 01-10, 01-11)
+- [x] `quality/` : runner, rapport, outils (01-01-T1), registre de checks (un fichier par check, 01-01 à 01-08), intégrité et compteur (01-06-T1/T2), approbation signée, deps-guard et verdict hors PR (01-07-T2/T3/T4, après la décision de clé 01-07-T1) ; `quality/selftest/` : runner (01-09-T1) et 26 cas (01-09-T2, 01-10, 01-11)
 - [x] `vitest.config.ts` (01-03-T1, projet `integration` 01-05-T2), `stryker.config.mjs` (01-03-T3), `eslint.config.mjs` et `tsconfig.json` (01-02), `eslint.security.config.mjs` (01-04-T3), `.dependency-cruiser.cjs`, `knip.json`, `.jscpd.json` (01-08), `.gitleaks.toml` (01-04-T2), `biome.json` (01-02-T2), `lefthook.yml` (01-01-T1, complété 01-04, 01-12, 01-13)
 - [x] `test/` : `globalSetup` Testcontainers et `test/db.ts` (01-05-T2), méta-tests RLS `owner_member_id`, rôle app sans DDL et rôle de migration (01-05-T3)
 - [x] `src/shared/money/` + tests par exemples et propriétés (01-03-T2), `src/db/` (fournisseur SQL, `migrateToLatest`, `provisionMigrator`, 01-05-T1), `db/migrations/0001_foundation.sql` (01-05-T1)
@@ -114,11 +115,12 @@ Couverture par les plans (case cochée = créé par une tâche planifiée, non e
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| Le check requis `quality` (statut publié par l'application `prosperity-gate`) bloque le merge sur `main` | QUAL-01, QUAL-07 | Seul GitHub le prouve (ruleset, source du statut) | PR réelle rouge → merge refusé (01-13-T3, étape 7) |
-| Une PR qui réécrit `.github/workflows/quality.yml` obtient `gate` vert mais `quality` rouge | QUAL-07 (critère 4) | Le juge `workflow_run` ne tourne que sur GitHub, depuis `main` | Scénario `workflow-rewrite` de `demo-prs.ts` (01-13-T3, étape 8) ; preuve locale par `quality/verdict.ts --dry-run` dans `quality/lock.test.ts` |
-| Label posé par `sebc-dev` accepté, par un autre acteur refusé, retiré au push suivant | QUAL-06 | Événements de PR GitHub réels | Passage manuel guidé D-07b |
+| Le check requis `quality` (statut publié par l'application `prosperity-gate`) bloque le merge sur `main` | QUAL-01, QUAL-07 | Seul GitHub le prouve (ruleset, source du statut) | PR réelle rouge → merge refusé (01-13-T3, étape 8) |
+| Une PR qui réécrit `.github/workflows/quality.yml` obtient `gate` vert mais `quality` rouge | QUAL-07 (critère 4) | Le juge `workflow_run` ne tourne que sur GitHub, depuis `main` | Scénario `workflow-rewrite` de `demo-prs.ts` (01-13-T3, étape 9) ; preuve locale par `quality/verdict.ts --dry-run` dans `quality/lock.test.ts` |
+| Approbation signée par la clé matérielle acceptée, invalidée par le push suivant (`approval-stale`), non signée refusée (`approval-unsigned`), signée par une clé hors `allowed_signers` refusée (`approval-signer-not-allowlisted`) | QUAL-06 | Seul l'humain peut actionner la clé ; le juge hors PR ne tourne que sur GitHub | Scénarios `signed-approval`, `unsigned-approval`, `foreign-key-approval` de `demo-prs.ts` (01-13-T3, étape 9) ; première preuve par la PR de bootstrap (étape 5) |
 | Dépendance ajoutée sans `deps-approved` bloquée | QUAL-09 | PR réelle | Passage manuel guidé D-07b |
-| Édition ou écriture d'un fichier de la gate, pose de label et fusion par l'agent refusées | QUAL-07 | Session agent réelle | Tentatives Edit, Write, `sed -i`, `gh pr edit --add-label`, `gh pr merge` en session Claude Code neuve (01-13-T3, étape 2) |
+| Édition ou écriture d'un fichier de la gate, pose de label, fusion, commit signé et ajout de clé par l'agent refusés | QUAL-07 | Session agent réelle | Tentatives Edit, Write, `sed -i`, `gh pr edit --add-label`, `gh pr merge`, `git commit -S` d'approbation, `gh ssh-key add` en session Claude Code neuve (01-13-T3, étape 3) |
+| Clé d'approbation enrôlée avec présence physique, `quality/allowed_signers` écrit et committé par l'humain | QUAL-06, QUAL-07 | Geste physique sur l'authentificateur | 01-13-T3, étapes 1 et 2 ; empreintes consignées |
 
 ---
 

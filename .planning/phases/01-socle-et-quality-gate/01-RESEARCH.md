@@ -11,7 +11,7 @@
 
 **Amorçage des protections**
 - **D-01:** Les chemins protégés sont écrits librement pendant la phase 1. Le **dernier plan** active le verrou complet (deny agent, CODEOWNERS, job d'intégrité, ruleset sur `main`) et le prouve par un test : une tentative d'édition d'un fichier de config de la gate par l'agent est refusée. Avant ce plan, la relecture humaine de la config de la gate est la seule protection : le plan final doit inclure un point de relecture explicite.
-- **D-02:** « Approbation humaine » = **label posé par `sebc-dev`, vérifié par la CI**. Le job lit les événements de la PR (API issues events, `labeled`, `actor.login`) et n'accepte `gate-change-approved` / `deps-approved` que si (a) l'auteur est dans une allowlist versionnée (aujourd'hui : `sebc-dev`) et (b) le label a été posé **après le dernier commit** de la PR. Tout nouveau push retire le label (job sur `synchronize`) : l'approbation est à refaire. Raison : dépôt public, un seul collaborateur, GitHub refuse l'auto-approbation, donc la revue CODEOWNERS native ne peut pas servir. CODEOWNERS reste présent (documentation, et filet si un collaborateur arrive). — **Reversibility:** reversible — on peut passer plus tard à un commit d'approbation signé sans toucher au reste.
+- **D-02:** **[Remplacée par D-14 le 2026-11-21 pour le canal d'approbation.]** « Approbation humaine » = **label posé par `sebc-dev`, vérifié par la CI**. Le job lit les événements de la PR (API issues events, `labeled`, `actor.login`) et n'accepte `gate-change-approved` / `deps-approved` que si (a) l'auteur est dans une allowlist versionnée (aujourd'hui : `sebc-dev`) et (b) le label a été posé **après le dernier commit** de la PR. Tout nouveau push retire le label (job sur `synchronize`) : l'approbation est à refaire. Raison : dépôt public, un seul collaborateur, GitHub refuse l'auto-approbation, donc la revue CODEOWNERS native ne peut pas servir. CODEOWNERS reste présent (documentation, et filet si un collaborateur arrive). — **Reversibility:** reversible — on peut passer plus tard à un commit d'approbation signé sans toucher au reste.
 - **D-03:** L'agent n'a pas le droit de poser ni retirer des labels : règles deny sur `gh pr edit*--add-label*`, `gh pr edit*--remove-label*`, `gh label*`, `gh api*labels*` (et `gh issue edit*label*`).
 - **D-04:** Arrêt local de l'agent en trois couches, la CI restant le juge final : (1) règles `deny` Edit/Write sur les chemins protégés dans `.claude/settings.json` (versionné) ; (2) hook `PreToolUse` sur Bash qui refuse les écritures shell courantes vers ces chemins (`sed -i`, `>`/`>>`, `tee`, `mv`, `cp`, `rm`, `git checkout --`/`restore` sur ces chemins) ; (3) pré-commit lefthook qui refuse un commit touchant ces chemins sans variable d'autorisation humaine. `--no-verify` et `git push --force*` sont refusés à l'agent. Le hook n'a pas besoin d'être exhaustif : le job d'intégrité CI rattrape les contournements exotiques.
 - **D-05:** Sous `.claude/`, seul le **sous-ensemble qui peut désarmer la gate** est protégé : `.claude/settings*.json` et `.claude/CLAUDE.md` (plus `CLAUDE.md`/`AGENTS.md` racine s'ils existent). Les dossiers installés par GSD (`.claude/agents/`, `.claude/commands/`, `.claude/gsd-core/`, `.claude/hooks/gsd-*`, `.claude/scripts/`) restent libres pour les mises à jour de GSD. Cela **remplace** l'entrée `.claude/**` de la liste des chemins protégés de SUMMARY.md.
@@ -29,6 +29,7 @@
 - **D-11:** Les outils hors npm (gitleaks 8.30.1, semgrep 1.186.0, osv-scanner 2.7.1, actionlint 1.7.12, zizmor 1.32.0, hadolint 2.15.1 ; trufflehog en nightly) **et** Node/pnpm sont épinglés dans un **`mise.toml` versionné**, lu par lefthook sur le poste et par `jdx/mise-action` (épinglée par SHA) en CI. `mise.toml` est ajouté aux chemins protégés. Raison principale : dépôt public, gitleaks doit arrêter un secret en pré-commit, dans la même version qu'en CI.
 - **D-12:** Un seul point d'entrée `pnpm quality`, avec un **profil `push`** pour le pré-push (budget ≤ 60 s) qui joue les mêmes checks dans les mêmes versions mais saute les checks lourds (Stryker sur diff, intégration PG complète, osv-scanner, hadolint, zizmor, e2e) en les déclarant `skipped: ci-only` dans `reports/gate.json` — jamais en silence. La CI joue le profil complet. **Lecture du critère de succès 1 et de QUAL-01 pour cette phase :** « même verdict pour chaque check joué en local et en CI, mêmes versions, même commande ; la CI est le seul juge ». Le vérificateur de phase doit le lire ainsi, pas comme « pré-push = CI complète ».
 - **D-13:** La CI tourne sur les **runners hébergés par GitHub** (`ubuntu-latest` épinglé à une version d'image explicite), jamais sur un runner auto-hébergé : le dépôt est public et du code de fork s'exécuterait sur le homelab. Les workflows utilisent `pull_request`, jamais `pull_request_target`.
+- **D-14 (ajoutée le 2026-11-21, voir CONTEXT.md) :** l'approbation humaine est un commit vide en tête de PR, signé au format SSH par une clé matérielle exigeant la présence physique à chaque signature, listée dans `quality/allowed_signers` lu dans la base ; elle remplace le label de D-02 pour `gate-change-approved` et `deps-approved`. — **Reversibility:** costly.
 
 ### Claude's Discretion
 - Découpage exact des plans de la phase 1 (le découpage « squelette → types/lint → archi → tests/mutation → sécurité/deps → CI + verrou » des pages de décision est indicatif), à condition que le verrou (D-01) soit le dernier plan.
@@ -36,7 +37,6 @@
 - Détails du parseur shell du hook de garde (D-04).
 
 ### Deferred Ideas (OUT OF SCOPE)
-- Commit d'approbation signé (clé inaccessible à l'agent) en remplacement du label, si un jour l'agent dispose d'un jeton capable de contourner D-02/D-03.
 - Runner CI auto-hébergé : écarté tant que le dépôt est public.
 </user_constraints>
 
@@ -60,7 +60,7 @@
 
 La phase 1 n'est pas un problème d'invention : tout l'outillage retenu (TS 6.0.3, ESLint 10.15 + typescript-eslint 8.73, dependency-cruiser 18.8, knip 6.47, jscpd 5.4.3, Vitest 5.1, fast-check 4.10, StrykerJS 10.1.1, Testcontainers 12.2, gitleaks, Semgrep, osv-scanner, zizmor, mise) a été **installé et exécuté** dans un bac à sable pendant cette recherche, avec les versions épinglées de CLAUDE.md. Les formats de sortie JSON/SARIF permettant à l'auto-test de dire « échoue POUR LA RÈGLE ATTENDUE » sont connus et listés (§ Architecture). Le risque de la phase n'est pas l'outillage mais cinq écarts entre les documents de cadrage et la réalité, détaillés ci-dessous.
 
-**Cinq écarts à connaître avant de planifier.** (1) **Les pins de CLAUDE.md ne s'installent pas aujourd'hui avec la politique supply-chain retenue** : `minimumReleaseAge: 10080` fait échouer `pnpm install` sur vitest 5.1.1, fast-check 4.10.3, knip 6.47.0, testcontainers 12.2.2, typescript-eslint 8.73.0, dependency-cruiser 18.8.0, biome 2.6.8 (publiés il y a moins de 7 jours). Un jeu de pins de repli, tous âgés de plus de 7 jours, a été **installé avec succès** (520 paquets) ; les pins cibles arrivent à maturité entre le 2026-11-22 et le 2026-11-27. (2) **StrykerJS n'a pas de `--since`** (CLAUDE.md §10 le suppose) : le mode « fichiers modifiés » se fait en passant `--mutate <liste issue de git diff>`. De plus, le bug ouvert **#6335** (2026-11-18) fait lire des mutants tués comme survivants avec `vitest-runner` 10.1.1 + Vitest 5.1.x : le seuil bloquant peut échouer au hasard, jamais l'inverse. (3) **Le ruleset `Main` existant sur `main` exige le check `ci-required`** de l'ancien projet Python, sans acteur de contournement : tant qu'il n'est pas remplacé par `quality`, plus rien ne peut être fusionné. (4) **L'agent utilise le jeton `gh` de `sebc-dev`** : l'allowlist d'acteur de D-02 ne distingue donc pas l'agent de l'humain ; seules les règles deny/hook de D-03 protègent le label (limite à documenter, pas à nier). (5) **Le layout `src/` de CLAUDE.md (`src/domain/**`) et celui d'ARCHITECTURE.md (`src/modules/<m>/…`, `src/shared/`) divergent** ; le canari vit dans `src/shared/money` : les globs de couverture et de mutation doivent viser `src/shared/**` et `src/modules/*/{domain,application}/**` (recommandation § Architecture).
+**Cinq écarts à connaître avant de planifier.** (1) **Les pins de CLAUDE.md ne s'installent pas aujourd'hui avec la politique supply-chain retenue** : `minimumReleaseAge: 10080` fait échouer `pnpm install` sur vitest 5.1.1, fast-check 4.10.3, knip 6.47.0, testcontainers 12.2.2, typescript-eslint 8.73.0, dependency-cruiser 18.8.0, biome 2.6.8 (publiés il y a moins de 7 jours). Un jeu de pins de repli, tous âgés de plus de 7 jours, a été **installé avec succès** (520 paquets) ; les pins cibles arrivent à maturité entre le 2026-11-22 et le 2026-11-27. (2) **StrykerJS n'a pas de `--since`** (CLAUDE.md §10 le suppose) : le mode « fichiers modifiés » se fait en passant `--mutate <liste issue de git diff>`. De plus, le bug ouvert **#6335** (2026-11-18) fait lire des mutants tués comme survivants avec `vitest-runner` 10.1.1 + Vitest 5.1.x : le seuil bloquant peut échouer au hasard, jamais l'inverse. (3) **Le ruleset `Main` existant sur `main` exige le check `ci-required`** de l'ancien projet Python, sans acteur de contournement : tant qu'il n'est pas remplacé par `quality`, plus rien ne peut être fusionné. (4) **L'agent utilise le jeton `gh` de `sebc-dev`** : l'allowlist d'acteur de D-02 ne distingue donc pas l'agent de l'humain ; seules les règles deny/hook de D-03 protègent le label (limite à documenter, pas à nier ; révision du 2026-11-21 : D-14 remplace le label par un commit signé par clé matérielle). (5) **Le layout `src/` de CLAUDE.md (`src/domain/**`) et celui d'ARCHITECTURE.md (`src/modules/<m>/…`, `src/shared/`) divergent** ; le canari vit dans `src/shared/money` : les globs de couverture et de mutation doivent viser `src/shared/**` et `src/modules/*/{domain,application}/**` (recommandation § Architecture).
 
 Autres résultats vérifiés qui changent le plan : `Migrator` n'est plus exporté par la racine de `kysely` 0.29 (importer depuis `kysely/migration`) ; `dependency-cruiser` rend **exit 0** en sortie `json` même avec des violations (parser `summary.error`) ; osv-scanner 2.7.1 n'a **aucun** seuil de sévérité (parser `groups[].max_severity`) ; `LEFTHOOK=0 git commit` désarme le pré-commit (prouvé) ; les types `Temporal` sont présents dans TS 6.0.3 via `lib: ["ESNext.Temporal"]` ; Node 26.13 exécute des `.ts` sans transpileur (scripts de gate sans `tsx`).
 
@@ -75,7 +75,7 @@ Ici les « tiers » sont les lieux d'exécution de la gate, pas des couches appl
 | Verdict final de la gate (`quality`) | CI GitHub (runner hébergé) | — | D-12/D-13 : la CI est l'unique juge ; le local est un confort contournable |
 | Rejouer la gate (`pnpm quality`, profil `push`) | Poste développeur | CI (profil `full`) | Même runner, mêmes versions (mise) ; profil `push` ≤ 60 s |
 | Arrêt de l'agent (deny, hook, pré-commit) | Poste développeur (Claude Code + lefthook) | CI (job d'intégrité) | Confort local ; la CI rattrape (D-04) |
-| Preuve « approbation humaine » (label) | CI (API GitHub, lecture) | GitHub (ruleset, réglages Actions) | Seule la CI voit les événements de PR ; le ruleset rend le check bloquant |
+| Preuve « approbation humaine » (commit signé, D-14) | CI (juge hors PR : `git` et `ssh-keygen`, aucune API) | GitHub (ruleset, réglages Actions) | La signature matérielle est vérifiée contre `allowed_signers` de la base ; le ruleset rend le check bloquant |
 | Épinglage des outils hors npm et de Node/pnpm | `mise.toml` + `mise.lock` (dépôt) | `jdx/mise-action` en CI | Mêmes versions au poste et en CI (D-11) |
 | Politique supply-chain npm | pnpm (`pnpm-workspace.yaml`) | script de diff de lockfile (CI) | pnpm bloque à l'installation ; le script exige l'approbation humaine |
 | Intégrité des seuils et des chemins protégés | CI, scripts exécutés **depuis la ref de base** | — | Une PR ne doit pas juger avec son propre code modifié |
@@ -125,7 +125,7 @@ Les versions et dates de publication ci-dessous ont été lues avec `npm view <p
 ```
 **Preuve que le jeu de repli passe** [VERIFIED: exécution] : avec les pins de repli du tableau, la même politique (`minimumReleaseAge: 10080`, `trustPolicy: no-downgrade`, `blockExoticSubdeps: true`, `strictDepBuilds: true`) installe 520 paquets sans erreur.
 
-**Recommandation (à faire arbitrer, voir Open Questions Q1) :** démarrer avec les pins de repli sous `minimumReleaseAge: 10080`, puis monter vers les pins cibles par PR de dépendances (label `deps-approved`) quand ils ont mûri. Ne **pas** utiliser `minimumReleaseAgeExclude` pour passer en force : ce serait affaiblir la politique que QUAL-09 doit prouver.
+**Recommandation (à faire arbitrer, voir Open Questions Q1) :** démarrer avec les pins de repli sous `minimumReleaseAge: 10080`, puis monter vers les pins cibles par PR de dépendances (approbation signée `deps-approved`, D-14) quand ils ont mûri. Ne **pas** utiliser `minimumReleaseAgeExclude` pour passer en force : ce serait affaiblir la politique que QUAL-09 doit prouver.
 
 ### Supporting (hors npm, épinglés dans `mise.toml`)
 
@@ -204,7 +204,7 @@ Les paquets non-npm (binaires mise) ne passent pas par ce seam : leur légitimit
 ```
  Poste dev (agent ou humain)                         GitHub
  ───────────────────────────                         ──────
- git commit ──► lefthook pre-commit (≤10 s)            PR ouverte / push / label
+ git commit ──► lefthook pre-commit (≤10 s)            PR ouverte / push
    biome, eslint (staged), gitleaks --staged,             │
    protected-paths, compteur échappatoires                ▼
         │  (LEFTHOOK=0 / --no-verify = contournable)   workflow quality.yml  (pull_request, jamais _target)
@@ -215,10 +215,10 @@ Les paquets non-npm (binaires mise) ne passent pas par ce seam : leur légitimit
  pnpm quality ─► quality/run.ts ◄─────────────────────────┤─ pnpm quality  (profil full)
    registre de checks                                       │     └─► reports/gate.json  (artefact)
    ├ typecheck tsc            ──► texte TSxxxx              ├─ integrity   (depuis BASE : seuils, chemins, assertions)
-   ├ lint eslint -f json      ──► ruleId                    ├─ approvals   (API : events labeled + runs Actions)
+   ├ lint eslint -f json      ──► ruleId                    ├─ approvals   (commit de tête signé, D-14)
    ├ format biome                                           ├─ deps-guard  (diff package.json / lockfile)
    ├ arch depcruise json      ──► summary.violations        └─ selftest    (si chemin protégé touché, ou nightly)
-   ├ deadcode knip json       ──► issues[]                job "reset-approval" (synchronize, perms write, best effort)
+   ├ deadcode knip json       ──► issues[]                (révision D-14 : plus de job de retrait de label)
    ├ duplication jscpd json   ──► statistics.newClones       │
    ├ secrets gitleaks json    ──► RuleID                    ▼
    ├ sast semgrep json        ──► check_id                 ruleset sur main : check requis "quality"
@@ -246,7 +246,7 @@ quality/
 ├── checks/*.ts            # un fichier par check (tool, severity, profils, parseur de sortie)
 ├── gate-report.ts         # schéma + écriture de reports/gate.json
 ├── integrity.ts           # exécuté depuis la ref de base en CI
-├── approvals.ts           # label : acteur, horodatage, ancre serveur
+├── approvals.ts           # commit d'approbation signé (D-14) : signature, allowed_signers, drapeaux
 ├── deps-guard.ts          # diff package.json / pnpm-lock.yaml, âge npm
 ├── escape-hatches.ts      # compteur à cliquet
 ├── baseline.json          # seuils et compteurs (cliquet)
@@ -296,10 +296,11 @@ test/                      # intégration PG (`*.int.test.ts`), méta-tests
 | mutation | `reports/mutation/mutation.json` | `files[<f>].mutants[].{status,mutatorName,location}` ; exit 1 sous `thresholds.break` | exécuté |
 | couverture | stderr Vitest + `json-summary` | `ERROR: Coverage for lines (50%) does not meet "src/shared/**" threshold (100%)` | exécuté |
 
-### Pattern 4 : approbation par label liée au dernier push (D-02)
+### Pattern 4 : approbation par label liée au dernier push (D-02) — remplacé par D-14, voir la révision ci-dessous
 
 **What:** `approvals.ts` (exécuté depuis la base) appelle l'API pour la PR courante : (1) `GET /repos/{o}/{r}/issues/{n}/events` → événements `labeled` avec `actor.login`, `label.name`, `created_at` ; (2) **ancre « dernier push » côté serveur** : `GET /repos/{o}/{r}/actions/runs?head_sha=<sha>&event=pull_request` → plus petit `created_at` = moment où GitHub a vu ce SHA (les commits forgent leur date, pas les runs). Approuvé si le dernier `labeled` d'un label requis a `actor.login` dans l'allowlist versionnée **et** `created_at` > ancre, **et** le label est encore présent. Les `unlabeled` annulent. [VERIFIED: appels `gh api` sur une PR publique — champs `actor.login`, `label.name`, `created_at` des `labeled` ; runs filtrés par `head_sha` avec `created_at` serveur ≈ 5 s après la date du commit]
 **Pourquoi pas les dates de commit :** `committer.date` est contrôlable par l'auteur ; `head_ref_force_pushed` n'existe que pour les force-push. **Retrait du label :** job séparé `reset-approval` (`synchronize`, `pull-requests: write`, `continue-on-error: true`) ; l'autorité reste la comparaison d'horodatage, le retrait n'est que de l'hygiène. Pour une PR de fork, `GITHUB_TOKEN` est en lecture seule [CITED: docs.github.com — « The `GITHUB_TOKEN` has read-only permissions in pull requests from forked repositories »] : le retrait échoue sans conséquence, la lecture des événements fonctionne. Permissions du job `quality` : `contents: read`, `pull-requests: read`, `actions: read`.
+**Révision (2026-11-21, D-14) : ce pattern est remplacé, plus aucun label n'approuve.** L'agent détient le jeton de `sebc-dev` (Pitfall 8) : un label posé avec ce jeton est indiscernable d'un label humain. L'approbation devient un **commit vide en tête de PR**, à parent unique, de sujet `gate-approval: <sortes>` et de corps `Approved-Parent: <SHA du parent>`, signé au format SSH (`gpg.format=ssh`) par une clé matérielle listée dans `quality/allowed_signers`, lu dans la copie de base. Vérification par le juge (`quality/approvals.ts`, plan 01-07) : extraction de l'en-tête `gpgsig` et du contenu signé (`git cat-file commit`), `ssh-keygen -Y find-principals` puis `ssh-keygen -Y verify -n git` contre `allowed_signers`, puis lecture de la signature SSHSIG (PROTOCOL.sshsig) pour le type de clé et, pour une clé `sk-*` (PROTOCOL.u2f : `string type, string signature, byte flags, uint32 counter`), les drapeaux 0x01 (présence, contact) et 0x04 (vérification, PIN). **`ssh-keygen -Y verify` ne contrôle pas ces drapeaux** : `sig_details->sk_flags` n'est qu'imprimé en débogage, et la ligne d'`allowed_signers` n'accepte que `cert-authority`, `namespaces`, `valid-after`, `valid-before` [VERIFIED: sources openssh-portable `sshsig.c` et `ssh-keygen.c`, page de manuel `ssh-keygen(1)`, 2026-11-21] ; le juge les contrôle donc lui-même, ce qui rend inutile un fichier de poignée modifié par l'agent pour supprimer le contact. `git verify-commit` échoue bien sur une clé inconnue (repli `check-novalidate` puis échec) [VERIFIED: source git `gpg-interface.c`], mais le juge appelle `ssh-keygen` directement pour distinguer « signataire hors liste » et « signature invalide ». Le badge « Verified » de GitHub n'est jamais lu. Plus d'ancre horaire ni de job de retrait : tout commit poussé après l'approbation l'invalide par construction. Aucun jeton ni API pour le juge ; le juge hors PR récupère la tête à la profondeur 2 (parent nécessaire). Type de clé tranché au plan 01-07 tâche 1.
 
 ### Pattern 5 : arrêt de l'agent en trois couches (D-04), ce que Claude Code fait déjà
 
@@ -331,7 +332,7 @@ test/                      # intégration PG (`*.int.test.ts`), méta-tests
 | Jeu de règles CI | revue manuelle | actionlint + zizmor | |
 | Montants | `Number`/décimaux | `bigint` + parseur chaîne maison (D-09, seul « maison » légitime) | invariant du domaine |
 
-**Key insight:** la seule logique maison légitime est la **colle** : runner/rapport, auto-test, approbation par label, compteur d'échappatoires, diff de dépendances, hook de garde. Tout le reste est de la configuration d'outils existants.
+**Key insight:** la seule logique maison légitime est la **colle** : runner/rapport, auto-test, approbation signée (D-14), compteur d'échappatoires, diff de dépendances, hook de garde. Tout le reste est de la configuration d'outils existants.
 
 ## Common Pitfalls
 
@@ -358,6 +359,7 @@ Prouvés : `LEFTHOOK=0 git commit` passe (le script de hook généré contient `
 
 ### Pitfall 8 : l'agent a le jeton de l'humain
 `gh` est authentifié en tant que `sebc-dev` (`gh auth status`) ; un `labeled` posé par l'agent aurait `actor.login = sebc-dev` et passerait l'allowlist. Les règles D-03 sont donc **la seule barrière** (pas une défense en profondeur). Étendre le deny : `gh api` en écriture (`-X POST|PUT|PATCH|DELETE`, `--method`), `gh api graphql` avec `addLabelsToLabelable`, `gh auth token`, `gh pr edit*`, `gh issue edit*`, `gh label*`, `gh api*rulesets*`, `gh api*actions/permissions*`. Résiduel assumé : `sh -c`, binaire par chemin absolu ; atténuation durable = jeton distinct sans droit d'écriture de labels (idée différée) ou commit signé.
+**Révision (2026-11-21, D-14) :** le commit signé par clé matérielle est adopté ; un label posé par l'agent ne sert plus à rien et D-03 n'est plus qu'une hygiène. Ce qui reste vrai : le jeton est administrateur ; un agent qui contournerait règles deny et garde pourrait encore modifier le ruleset, les réglages Actions ou l'environnement du juge, ou ajouter une clé au compte (sans effet sur le juge, qui ignore le badge « Verified »). Le deny s'étend à la signature et aux clés : `git commit* -S*`, `--gpg-sign`, `commit.gpgsign`, `user.signingkey`, `gpg.format`, `gpg.ssh.*`, `ssh-keygen`, `ssh-add`, `gh ssh-key`, `gh gpg-key`, `gh api*keys*`.
 
 ### Pitfall 9 : le ruleset `Main` existant bloque tout
 `GET /repos/sebc-dev/prosperity/rulesets/17645569` : règles `deletion`, `non_fast_forward`, `required_status_checks` avec `{"context":"ci-required","integration_id":15368}`, `bypass_actors: []`, cible `~DEFAULT_BRANCH`, `enforcement: active` [VERIFIED: gh api]. Aucune exigence de PR. Le plan de verrou doit **remplacer** `ci-required` par `quality` (même `integration_id` 15368 = GitHub Actions, pour qu'une autre application ne puisse pas usurper le check) et ajouter une règle `pull_request`. Cette action est humaine (deny agent sur `gh api*rulesets*`).
@@ -372,7 +374,7 @@ Un workflow filtré par `paths:` ou un job renommé laisse `quality` en attente 
 Les exports de `src/shared/money` ne sont utilisés que par des tests. Avec la config knip par défaut (fichiers de test = entrées), ils sont considérés utilisés [VERIFIED partiellement : knip signale bien les fichiers/exports/dépendances orphelins, y compris `kysely`, `pg`, `fast-check`, `jscpd`… tant qu'aucun usage n'existe]. Un run `--production` signalerait ces exports : à ne pas activer en phase 1 (Q6). Les binaires (`biome`, `jscpd`, `depcruise`) sont vus comme utilisés seulement s'ils apparaissent dans `package.json` `scripts` ou dans un fichier d'entrée : les invoquer depuis `quality/checks/*.ts` (entrée knip) et les déclarer dans `scripts`.
 
 ### Pitfall 13 : le premier PR contre l'ancien `main`
-Base = `origin/main` contient le code Python hérité (`.github/workflows/push.yml`, `.pre-commit-config.yaml`…). `jscpd --baseline-from-ref`, la diff de dépendances, la liste Stryker et l'intégrité comparent à cette base : prévoir le mode « amorçage » (baseline absente → label d'approbation une fois ; jscpd sur `--format typescript` ne voit pas le Python). Vérifier aussi les workflows hérités qui se déclencheraient sur la PR.
+Base = `origin/main` contient le code Python hérité (`.github/workflows/push.yml`, `.pre-commit-config.yaml`…). `jscpd --baseline-from-ref`, la diff de dépendances, la liste Stryker et l'intégrité comparent à cette base : prévoir le mode « amorçage » (baseline absente → approbation humaine une fois, commit signé de D-14 ; jscpd sur `--format typescript` ne voit pas le Python). Vérifier aussi les workflows hérités qui se déclencheraient sur la PR.
 
 ### Pitfall 14 : `.claude/CLAUDE.md` protégé vs GSD
 GSD réécrit des sections de `.claude/CLAUDE.md` (profil développeur, sections générées). `Edit(/.claude/CLAUDE.md)` en deny bloquera ces mises à jour par l'agent : accepter la friction (l'humain lève temporairement) ou protéger seulement en CI. À trancher au plan de verrou (Q8).
@@ -630,7 +632,7 @@ pre-push:
 name: quality
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened]   # révision D-14 : plus d'événement de label
 permissions: {}
 jobs:
   quality:
@@ -731,22 +733,23 @@ La règle `pull_request` et ses paramètres exacts sont **[ASSUMED]** (non rejou
 | A7 | Les packs registre Semgrep dérivent dans le temps (pas de versionnage de pack) | Q4 | Si stables, les garder en blocking tels quels |
 | A8 | `mise` reste sur le `PATH` des hooks git du poste (client en ligne de commande) | lefthook | Hooks en 127 ; documenter `PATH` ou chemin absolu |
 | A9 | Le seuil `max_severity >= 7.0` correspond à « high/critical » pour osv-scanner | Pitfall 3 | Seuil trop laxiste/strict ; ajustable dans le runner |
+| A11 | `ssh-keygen` (OpenSSH 9.6) est préinstallé sur `ubuntu-24.04`, avec `-Y find-principals` et la vérification des signatures `sk-*` | Pattern 4 (révision D-14) | Le juge échoue fermé (`approval-verifier-error`) ; installer `openssh-client` dans l'étape |
 | A10 | Le mode « Required workflows » d'organisation n'est pas disponible (compte utilisateur) | Pattern 2 | Sans objet depuis la révision : le juge hors PR (`workflow_run` + application dédiée) ferme ce trou sans organisation |
 
 ## Open Questions (RESOLVED)
 
 Chaque question porte le défaut retenu par les plans, la tâche qui l'applique et, quand un humain doit le confirmer, le point de contrôle qui le confirme (les checkpoints restent des confirmations d'un défaut déjà planifié, pas des questions ouvertes).
 
-1. **Q1 : pins de CLAUDE.md vs `minimumReleaseAge`** — RESOLVED : option (a), pins de repli de « Standard Stack » pour toute version publiée depuis moins de 7 jours à la date d'exécution, montée vers les pins cibles par PR labellisée `deps-approved` ; aucune exclusion d'âge. La table de CLAUDE.md §3/§4 est la cible, pas le premier état. Appliqué : plan 01-02 tâche 1 (table des versions retenues), confirmé par l'humain au même checkpoint `blocking-human` (réponse `wait` possible jusqu'au 2026-11-27).
+1. **Q1 : pins de CLAUDE.md vs `minimumReleaseAge`** — RESOLVED : option (a), pins de repli de « Standard Stack » pour toute version publiée depuis moins de 7 jours à la date d'exécution, montée vers les pins cibles par PR approuvée `deps-approved` (commit signé, D-14) ; aucune exclusion d'âge. La table de CLAUDE.md §3/§4 est la cible, pas le premier état. Appliqué : plan 01-02 tâche 1 (table des versions retenues), confirmé par l'humain au même checkpoint `blocking-human` (réponse `wait` possible jusqu'au 2026-11-27).
 2. **Q2 : mitigation de #6335** — RESOLVED : `disableBail: true` par défaut ; si les 10 exécutions avec `disableBail` ne sont pas stables, une relance unique limitée aux survivants avant de conclure ; seuil `break` jamais baissé. Appliqué et mesuré : plan 01-03 tâche 3 (20 exécutions consignées).
-3. **Q3 : ruleset `ci-required` → `quality`** — RESOLVED (révisé) : bascule humaine en deux temps au verrou, après le premier vert. Ruleset transitoire `gate` (GitHub Actions, 15368) pour fusionner la seule PR de bootstrap, protégée par la relecture D-01 ; puis ruleset final : unique check requis `quality`, statut publié par le juge hors PR (workflow `quality-verdict`, application dédiée) avec cette application comme source. Appliqué : plan 01-13 tâche 3, étapes 5 et 7 ; mécanisme du juge : plan 01-07 tâche 3.
+3. **Q3 : ruleset `ci-required` → `quality`** — RESOLVED (révisé) : bascule humaine en deux temps au verrou, après le premier vert. Ruleset transitoire `gate` (GitHub Actions, 15368) pour fusionner la seule PR de bootstrap, protégée par la relecture D-01 ; puis ruleset final : unique check requis `quality`, statut publié par le juge hors PR (workflow `quality-verdict`, application dédiée) avec cette application comme source. Appliqué : plan 01-13 tâche 3, étapes 6 et 8 ; mécanisme du juge : plan 01-07 tâche 3.
 4. **Q4 : Semgrep « déterministe »** — RESOLVED : défaut `packs-advisory` (règles du projet `semgrep/` bloquantes, packs du registre joués en advisory en profil full et au nightly). Appliqué : plan 01-04 tâches 1 et 3 ; confirmé par l'humain au checkpoint de décision du plan 01-04 tâche 1 (écart à CLAUDE.md §10.2, décision réversible).
 5. **Q5 : layout `src/`** — RESOLVED : défaut A (globs `src/shared/**`, `src/modules/*/{domain,application}/**`) dans le fichier unique `quality/layout.json`. Appliqué : plan 01-02 tâche 3 ; confirmé au point de relecture D-01, plan 01-13 tâche 1.
 6. **Q6 : knip en mode `--production`** — RESOLVED : non activé en phase 1 (les exports du canari ne sont utilisés que par des tests) ; introduit en phase 2 avec `src/index.ts`. Appliqué : plan 01-08 tâche 2 ; consigné comme décision réversible dans `docs/quality-gate.md` (plan 01-12 tâche 2).
-7. **Q7 : jeton de l'agent** — RESOLVED : aucun second compte ni jeton en phase 1 (idée différée de CONTEXT.md). La limite est documentée (`docs/quality-gate.md`, « Limites connues », plan 01-12 tâche 2) et réduite par les règles deny et le garde Bash sur labels, fusion, réglages et API en écriture (plans 01-06 tâche 3 et 01-13 tâche 2), l'auto-fusion désactivée et le juge hors PR (plan 01-07 tâche 3) ; le résiduel est porté au registre de menaces (T-01-49).
+7. **Q7 : jeton de l'agent** — RESOLVED (révisé le 2026-11-21 par la décision humaine D-14) : le jeton `gh` partagé ne permet plus d'approuver. L'approbation humaine est un commit d'approbation signé par une clé matérielle qui exige la présence physique à chaque signature (type tranché par l'humain au plan 01-07 tâche 1 ; recommandation : FIDO2 `ed25519-sk` avec `verify-required`) ; la CI vérifie la signature contre `quality/allowed_signers` lu dans la base et contrôle elle-même les drapeaux de présence et de vérification, que `ssh-keygen -Y verify` ne contrôle pas ; le badge « Verified » de GitHub n'est jamais lu. Toujours aucun second compte ni jeton en phase 1 : le résiduel restant (modification du ruleset, des réglages ou de l'environnement du juge par un agent qui contournerait règles deny et garde avec le jeton administrateur ; contact ou PIN accordé par l'humain à une demande qu'il n'a pas lancée) est documenté (`docs/quality-gate.md`, « Limites connues », plan 01-12 tâche 2) et porté au registre (T-01-38, T-01-49, T-01-54). Appliqué : plan 01-07 tâches 1 et 2 (décision de clé, juge), plan 01-06 tâche 3 et plan 01-13 tâche 2 (refus de signature et de gestion des clés pour l'agent), plan 01-13 tâche 3 (enrôlement de la clé, `quality/allowed_signers` committé par l'humain, scénarios D-07b signés).
 8. **Q8 : `.claude/CLAUDE.md` et GSD** — RESOLVED : défaut `approve`, D-05 appliqué tel quel (protégé par le deny, le garde, le pré-commit et l'intégrité) ; variante `approve-claude-md-ci-only` disponible. Appliqué : plan 01-06 tâche 2 (liste) et plan 01-13 tâche 2 (`agentExempt`) ; confirmé au point de relecture D-01, plan 01-13 tâche 1.
 9. **Q9 : hadolint sans Containerfile** — RESOLVED : `passed` avec la note « non applicable : aucun Containerfile suivi », jamais `skipped`. Appliqué : plan 01-04 tâche 2 ; consigné dans `docs/quality-gate.md` (plan 01-12).
-10. **Q10 : Renovate** — RESOLVED : différé, hors QUAL-01..09 ; les montées de version passent par des PR labellisées et l'auto-test les juge (D-08). Hors périmètre de la phase 1 (SKELETON « Out of Scope »).
+10. **Q10 : Renovate** — RESOLVED : différé, hors QUAL-01..09 ; les montées de version passent par des PR approuvées par commit signé (D-14) et l'auto-test les juge (D-08). Hors périmètre de la phase 1 (SKELETON « Out of Scope »).
 
 ## Environment Availability
 
@@ -814,7 +817,7 @@ Chaque question porte le défaut retenu par les plans, la tâche qui l'applique 
 |---------------|---------|-----------------|
 | V2 Authentication | no | (phase 2) |
 | V3 Session Management | no | (phase 2) |
-| V4 Access Control | yes (accès aux chemins protégés et aux labels) | deny Claude Code + hook + allowlist d'acteur + ruleset sans bypass |
+| V4 Access Control | yes (accès aux chemins protégés et à l'approbation) | deny Claude Code + hook + commit d'approbation signé par clé matérielle (`allowed_signers` de la base, drapeaux de présence vérifiés, D-14) + ruleset sans bypass |
 | V5 Input Validation | yes (parse de montants ; entrées de workflow) | parseur `bigint` maison testé fast-check ; aucune interpolation `${{ }}` dans `run:` (zizmor) |
 | V6 Cryptography | partiel (pas de crypto ; interdiction de `Math.random`, comparaison non constante) | règles Semgrep ; `crypto.timingSafeEqual`/`randomBytes` à venir |
 | V10 Malicious code / supply chain | yes | pnpm `minimumReleaseAge`, `trustPolicy`, `blockExoticSubdeps`, `allowBuilds` ; `mise.lock` (checksums, attestations) ; actions par SHA ; osv-scanner |
@@ -825,11 +828,11 @@ Chaque question porte le défaut retenu par les plans, la tâche qui l'applique 
 | Pattern | STRIDE | Standard Mitigation |
 |---------|--------|---------------------|
 | Injection de commande via contexte de workflow (`${{ github.event.pull_request.title }}`) | Tampering/EoP | zizmor `template-injection` (vérifié) ; variables d'environnement intermédiaires |
-| Usurpation d'approbation (label posé par bot ou par l'agent) | Spoofing/EoP | allowlist d'acteur + horodatage serveur ; deny `gh`; limite documentée (jeton partagé) |
-| Date de commit antidatée pour contourner « label après dernier commit » | Tampering | ancre = `created_at` des runs Actions pour le SHA |
+| Usurpation d'approbation (commit non signé, clé hors allowlist, clé logicielle, label ou badge « Verified ») | Spoofing/EoP | D-14 : `ssh-keygen -Y verify` contre `allowed_signers` de la base, type de clé et drapeaux UP/UV contrôlés par le juge ; labels et badge jamais lus ; deny signature et clés pour l'agent |
+| Approbation rejouée sur un autre contenu | Tampering | seul le commit de tête compte ; commit vide, parent unique, `Approved-Parent` = parent ; tout push suivant l'invalide |
 | PR qui réécrit baseline, scripts d'intégrité ou liste des chemins | Tampering | exécution depuis la ref de base ; fusion humaine unique |
 | Secrets exposés aux PR de fork | Info disclosure | `pull_request` (pas de secrets, jeton en lecture seule) ; approbation des contributeurs externes |
-| Dépendance malveillante/typosquattée ajoutée par un agent | Tampering | âge minimal, existence/âge npm, label `deps-approved`, `allowBuilds` explicite |
+| Dépendance malveillante/typosquattée ajoutée par un agent | Tampering | âge minimal, existence/âge npm, approbation signée `deps-approved`, `allowBuilds` explicite |
 | Binaire d'outil compromis (cf. incident Trivy) | Tampering | `mise.lock` avec checksum + attestation ; versions épinglées ; osv-scanner |
 | Désarmement local de la gate (`LEFTHOOK=0`, `disableAllHooks`, `--no-verify`) | Repudiation/EoP | deny + hook ; CI = seul juge |
 | Faux secret littéral dans un patch d'auto-test | Info disclosure (faux positif) | secret généré à l'application |

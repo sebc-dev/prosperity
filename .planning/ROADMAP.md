@@ -33,8 +33,8 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. `pnpm quality` rend le même verdict en pré-push et en CI et écrit `reports/gate.json` ; la protection de branche n'exige qu'un seul check, `quality`.
   2. Des PR de démonstration, une violation chacune, sont toutes rejetées par la CI : assertion `as`, `any`, fonction trop complexe, outil MCP qui importe `adapters/db`, cycle de modules, export mort, bloc dupliqué, secret en clair, SQL concaténé, handler sans `Principal`, action CI non épinglée.
   3. Sur un module canari, un test faible fait échouer la gate par le score de mutation Stryker et par la couverture du domaine pur sous 100 %. Un test d'intégration tourne contre un PostgreSQL 18 réel démarré par Testcontainers, en ordre aléatoire, avec la seed loguée.
-  4. Sans approbation humaine explicite (label ou CODEOWNERS), la CI bloque une PR qui baisse un seuil, retire une assertion, ajoute une échappatoire (`@ts-ignore`, `.skip`, `vi.mock(`…) ou modifie un chemin protégé (`.github/**`, configuration de la gate, `deploy/**`). Les permissions de l'agent refusent l'édition de ces chemins.
-  5. Une dépendance ajoutée sans label `deps-approved`, ou plus récente que l'âge minimal de publication, fait échouer l'installation ou la CI.
+  4. Sans approbation humaine explicite (commit d'approbation signé par une clé matérielle, D-14), la CI bloque une PR qui baisse un seuil, retire une assertion, ajoute une échappatoire (`@ts-ignore`, `.skip`, `vi.mock(`…) ou modifie un chemin protégé (`.github/**`, configuration de la gate, `deploy/**`). Les permissions de l'agent refusent l'édition de ces chemins.
+  5. Une dépendance ajoutée sans approbation signée `deps-approved`, ou plus récente que l'âge minimal de publication, fait échouer l'installation ou la CI.
 **Plans**: 13 plans
 
 Plans:
@@ -44,13 +44,13 @@ Plans:
 - [ ] 01-04-PLAN.md — Sécurité : secrets, Semgrep du projet (décision Q4), CVE ≥ 7, zizmor, hadolint, lint de sécurité advisory (vague 3)
 - [ ] 01-05-PLAN.md — PostgreSQL 18 réel : rôles séparés migrations / app, migration forward-only, Testcontainers, méta-tests RLS (vague 4)
 - [ ] 01-06-PLAN.md — Compteur d'échappatoires à cliquet, juge d'intégrité, chemins protégés, scripts de garde de l'agent (vague 4)
-- [ ] 01-07-PLAN.md — Approbation par label liée au dernier push (allowlist lue dans la base), garde des dépendances, juge hors PR `quality-verdict` (vague 4)
+- [ ] 01-07-PLAN.md — Décision du type de clé matérielle, approbation par commit signé (D-14, `allowed_signers` lu dans la base, présence vérifiée), garde des dépendances, juge hors PR `quality-verdict` (vague 4)
 - [ ] 01-08-PLAN.md — Frontières d'architecture, code mort, duplication (vague 5)
 - [ ] 01-09-PLAN.md — Auto-test de la gate : runner, check `selftest`, trois cas témoins (vague 6)
 - [ ] 01-10-PLAN.md — Auto-test : cas du typage, du lint et de l'architecture (QUAL-02, QUAL-03) (vague 7)
 - [ ] 01-11-PLAN.md — Auto-test : cas de sécurité, test faible, intégrité, base et dépendances (QUAL-04 à QUAL-09) (vague 7)
 - [ ] 01-12-PLAN.md — Nightly, pré-commit, documentation et limites, outil D-07b, preuve CI complète (26 cas) et budgets (vague 8)
-- [ ] 01-13-PLAN.md — Verrou : relecture D-01, deny et garde de l'agent (édition, écriture, labels, fusion), étapes de confiance, juge hors PR et ruleset `quality`, PR réelles D-07b (vague 9)
+- [ ] 01-13-PLAN.md — Verrou : relecture D-01, deny et garde de l'agent (édition, écriture, signature et clés, fusion), enrôlement de la clé et `allowed_signers` par l'humain, étapes de confiance, juge hors PR et ruleset `quality`, PR réelles D-07b signées (vague 9)
 
 ### Phase 2: Connecteur Claude et identité du foyer
 **Goal:** As a membre du foyer, I want to ajouter Prosperity comme connecteur personnalisé dans mon propre compte claude.ai et m'y authentifier par passkey, so that Claude agisse sous mon identité, sur une instance joignable et conforme, avant qu'existe la moindre donnée financière.

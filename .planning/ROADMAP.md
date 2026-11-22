@@ -35,7 +35,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Sur un module canari, un test faible fait échouer la gate par le score de mutation Stryker et par la couverture du domaine pur sous 100 %. Un test d'intégration tourne contre un PostgreSQL 18 réel démarré par Testcontainers, en ordre aléatoire, avec la seed loguée.
   4. Sans approbation humaine explicite (label posé par `sebc-dev` après le dernier push et vérifié par la CI, D-15), la CI bloque une PR qui baisse un seuil, retire une assertion, ajoute une échappatoire (`@ts-ignore`, `.skip`, `vi.mock(`…) ou modifie un chemin protégé (`.github/**`, configuration de la gate, `deploy/**`). Les permissions de l'agent refusent l'édition de ces chemins.
   5. Une dépendance ajoutée sans approbation `deps-approved` (label vérifié, D-15), ou plus récente que l'âge minimal de publication, fait échouer l'installation ou la CI.
-**Plans**: 9/15 plans executed
+**Plans**: 10/15 plans executed
 
 Plans:
 **Wave 1**
@@ -60,7 +60,7 @@ Plans:
 - [x] 01-09-PLAN.md — Frontières d'architecture, code mort, duplication (vague 6)
 
 **Wave 7** *(blocked on Wave 6 completion)*
-- [ ] 01-10-PLAN.md — Auto-test de la gate : runner, check `selftest`, trois cas témoins (vague 7)
+- [x] 01-10-PLAN.md — Auto-test de la gate : runner, check `selftest`, trois cas témoins (vague 7)
 
 **Wave 8** *(blocked on Wave 7 completion)*
 - [ ] 01-11-PLAN.md — Auto-test : cas du typage, du lint et de l'architecture (QUAL-02, QUAL-03) (vague 8)
@@ -202,7 +202,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Socle et quality gate | 9/15 | In Progress | - |
+| 1. Socle et quality gate | 10/15 | In Progress | - |
 | 2. Connecteur Claude et identité du foyer | 0/TBD | Not started | - |
 | 3. Comptes cloisonnés et catégories | 0/TBD | Not started | - |
 | 4. Saisie conversationnelle et soldes | 0/TBD | Not started | - |

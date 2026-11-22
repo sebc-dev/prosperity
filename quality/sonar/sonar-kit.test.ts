@@ -122,7 +122,9 @@ describe('validateSonarConfig : jeton, couverture et moteur', () => {
 
 describe('readScannerImage', () => {
   it('accepte l’image officielle épinglée par digest', () => {
-    expect(readScannerImage({ image: IMAGE, tag: '12.1', published: '2026-11-09' })).toBe(IMAGE);
+    expect(readScannerImage({ image: IMAGE, tag: '12.1', published: '2026-11-09' })).toStrictEqual({
+      image: IMAGE,
+    });
   });
 
   it.each([

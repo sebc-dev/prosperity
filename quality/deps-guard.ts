@@ -86,7 +86,7 @@ export async function evaluateDependencies(
     ? []
     : needing.map((entry) => ({
         rule: entry.kind,
-        message: `${describeChange(entry)} exige l'approbation signée ${APPROVAL_KIND}`,
+        message: `${describeChange(entry)} exige le label ${APPROVAL_KIND} (posé par un humain après le dernier push, D-15)`,
       }));
   const fresh = needing.filter(
     (e) => e.kind === 'dependency-added' || e.kind === 'transitive-added',

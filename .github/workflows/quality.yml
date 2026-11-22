@@ -1,8 +1,11 @@
 name: quality
 
+# Un label posé ou retiré rejoue la gate complète, sans allègement : le juge hors PR
+# (`quality-verdict`) reprend la conclusion de ce run et recalcule le statut `quality`, qui suit
+# ainsi la pose ou le retrait d'un label d'approbation (D-15).
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
 
 permissions: {}
 
@@ -34,3 +37,20 @@ jobs:
         with:
           name: gate
           path: reports/gate.json
+
+  # Hygiène (D-15) : chaque push retire les labels d'approbation. L'autorité reste la comparaison
+  # d'horodatage faite par le juge hors PR ; ce job n'en dépend pas et son échec est sans effet.
+  reset-approval:
+    name: reset-approval
+    if: github.event.action == 'synchronize'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    continue-on-error: true
+    permissions:
+      pull-requests: write # retrait des labels d'approbation au push (hygiène, D-15)
+    steps:
+      - run: gh pr edit "$PR" --repo "$REPO" --remove-label gate-change-approved --remove-label deps-approved
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}

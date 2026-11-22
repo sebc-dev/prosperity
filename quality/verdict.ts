@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { collectApprovalEvidence } from './approval-evidence.ts';
 import { parseCheckResult, writeJsonAtomic } from './deps-guard.ts';
 import {
   extractHeadFromGit,
@@ -32,6 +33,7 @@ export interface VerdictDeps {
   baseDir: string;
   workDir: string;
   extractHead(sha: string): Promise<string>;
+  collectEvidence(target: VerdictTarget, out: string): Promise<void>;
   judge(name: JudgeName, args: readonly string[]): Promise<unknown>;
   publish(sha: string, body: StatusBody): Promise<void>;
 }
@@ -42,23 +44,53 @@ function checkArgs(
   deps: VerdictDeps,
   name: 'integrity' | 'deps',
   headDir: string,
-  signed: boolean,
+  withApprovals: boolean,
 ) {
   return [
     ...['--base-dir', deps.baseDir, '--head-dir', headDir],
-    ...(signed ? ['--approvals-report', join(deps.workDir, 'approvals.json')] : []),
+    ...(withApprovals ? ['--approvals-report', join(deps.workDir, 'approvals.json')] : []),
     ...['--out', join(deps.workDir, `${name}.json`)],
   ];
 }
 
+type Attempt = <T>(name: string, run: () => Promise<T>) => Promise<T | undefined>;
+
 /**
- * Rejoue l'approbation signée, l'intégrité et les dépendances depuis la base sur la tête lue comme
- * données, puis publie `quality` exactement une fois, y compris quand un juge lève une erreur.
+ * Preuves collectées par le code de `main` (jeton du workflow), puis juge lancé sans jeton sur le
+ * fichier de preuves. Sans PR, ou si la collecte échoue, le juge n'est pas lancé : rapport absent.
+ */
+async function labelApprovals(deps: VerdictDeps, attempt: Attempt) {
+  const { target, baseDir, workDir } = deps;
+  const { pr } = target;
+  if (pr === undefined) {
+    return undefined;
+  }
+  const evidence = join(workDir, 'approval-evidence.json');
+  const collected = await attempt('approval-evidence', async () => {
+    await deps.collectEvidence(target, evidence);
+    return true;
+  });
+  if (collected === undefined) {
+    return undefined;
+  }
+  return readApprovalsReport(
+    await attempt('approvals', () =>
+      deps.judge('approvals', [
+        ...['--base-dir', baseDir, '--head-sha', target.headSha, '--pr', String(pr)],
+        ...['--evidence', evidence, '--out', join(workDir, 'approvals.json')],
+      ]),
+    ),
+  );
+}
+
+/**
+ * Rejoue l'approbation par label (D-15), l'intégrité et les dépendances depuis la base sur la tête
+ * lue comme données, puis publie `quality` exactement une fois, y compris quand un juge lève une erreur.
  */
 export async function runVerdict(deps: VerdictDeps): Promise<VerdictDecision> {
-  const { target, baseDir, workDir } = deps;
+  const { target } = deps;
   const failed: string[] = [];
-  const attempt = async <T>(name: string, run: () => Promise<T>): Promise<T | undefined> => {
+  const attempt: Attempt = async (name, run) => {
     try {
       return await run();
     } catch {
@@ -67,19 +99,7 @@ export async function runVerdict(deps: VerdictDeps): Promise<VerdictDecision> {
     }
   };
   const headDir = await attempt('extract-head', () => deps.extractHead(target.headSha));
-  const approvalsOut = join(workDir, 'approvals.json');
-  const approvals = readApprovalsReport(
-    await attempt('approvals', () =>
-      deps.judge('approvals', [
-        '--base-dir',
-        baseDir,
-        '--head-sha',
-        target.headSha,
-        '--out',
-        approvalsOut,
-      ]),
-    ),
-  );
+  const approvals = await labelApprovals(deps, attempt);
   const judgeCheck = async (name: 'integrity' | 'deps') =>
     headDir === undefined
       ? undefined
@@ -174,6 +194,7 @@ function dryRunDeps(opts: Options, env: NodeJS.ProcessEnv): VerdictDeps {
     baseDir: opts.baseDir,
     workDir: opts.workDir,
     extractHead: () => Promise.resolve(resolve(headDir)),
+    collectEvidence: () => Promise.resolve(),
     judge: async (name, args) => {
       if (name !== 'approvals') {
         return run(name, args);
@@ -222,6 +243,16 @@ async function liveDeps(opts: Options, env: NodeJS.ProcessEnv): Promise<VerdictD
     baseDir: opts.baseDir,
     workDir: opts.workDir,
     extractHead: extractHeadFromGit(opts.baseDir, opts.workDir, env),
+    collectEvidence: async (forTarget, out) => {
+      const { pr, headSha } = forTarget;
+      if (pr === undefined) {
+        throw new Error('aucune pull request à juger');
+      }
+      await writeJsonAtomic(
+        out,
+        await collectApprovalEvidence({ repository: repo, pr, headSha, env }),
+      );
+    },
     judge: nodeJudge(opts.baseDir, opts.workDir, env),
     publish: githubPublisher(repo, token, env),
   };

@@ -27,7 +27,8 @@ jobs:
     environment: gate-verdict
     permissions:
       contents: read
-      pull-requests: read
+      pull-requests: read # PR, labels et événements lus en lecture seule (approbation par label, D-15)
+      actions: read # runs du SHA de tête : ancre serveur du dernier push (D-15)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -35,7 +35,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Sur un module canari, un test faible fait échouer la gate par le score de mutation Stryker et par la couverture du domaine pur sous 100 %. Un test d'intégration tourne contre un PostgreSQL 18 réel démarré par Testcontainers, en ordre aléatoire, avec la seed loguée.
   4. Sans approbation humaine explicite (label posé par `sebc-dev` après le dernier push et vérifié par la CI, D-15), la CI bloque une PR qui baisse un seuil, retire une assertion, ajoute une échappatoire (`@ts-ignore`, `.skip`, `vi.mock(`…) ou modifie un chemin protégé (`.github/**`, configuration de la gate, `deploy/**`). Les permissions de l'agent refusent l'édition de ces chemins.
   5. Une dépendance ajoutée sans approbation `deps-approved` (label vérifié, D-15), ou plus récente que l'âge minimal de publication, fait échouer l'installation ou la CI.
-**Plans**: 7/15 plans executed
+**Plans**: 8/15 plans executed
 
 Plans:
 **Wave 1**
@@ -54,7 +54,7 @@ Plans:
 - [x] 01-08-PLAN.md — Garde des dépendances (`deps-approved`, existence et âge npm), juge hors PR `quality-verdict` qui publie le statut requis `quality` (vague 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 01-07-PLAN.md — Juge d'approbation par label (D-15) : preuves lues par l'API en lecture seule, ancre serveur du dernier push, allowlist `quality/approvers.json` de la base, collecte par le verdict hors PR, gate rejouée sur pose ou retrait de label, labels retirés au push, check `approvals` (vague 5)
+- [x] 01-07-PLAN.md — Juge d'approbation par label (D-15) : preuves lues par l'API en lecture seule, ancre serveur du dernier push, allowlist `quality/approvers.json` de la base, collecte par le verdict hors PR, gate rejouée sur pose ou retrait de label, labels retirés au push, check `approvals` (vague 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
 - [ ] 01-09-PLAN.md — Frontières d'architecture, code mort, duplication (vague 6)
@@ -202,7 +202,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Socle et quality gate | 7/15 | In Progress | - |
+| 1. Socle et quality gate | 8/15 | In Progress | - |
 | 2. Connecteur Claude et identité du foyer | 0/TBD | Not started | - |
 | 3. Comptes cloisonnés et catégories | 0/TBD | Not started | - |
 | 4. Saisie conversationnelle et soldes | 0/TBD | Not started | - |

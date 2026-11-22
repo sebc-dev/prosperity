@@ -1,0 +1,5 @@
+{
+  "check": "lint",
+  "rule": "@typescript-eslint/consistent-type-assertions",
+  "install": "frozen"
+}

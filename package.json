@@ -7,7 +7,14 @@
     "node": "26.13.0"
   },
   "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint .",
+    "format": "biome format .",
+    "test": "vitest run",
+    "mutation": "stryker run",
     "arch": "depcruise src --config .dependency-cruiser.cjs",
+    "deadcode": "knip",
+    "duplication": "jscpd --config .jscpd.json",
     "quality": "node quality/run.ts"
   },
   "devDependencies": {
@@ -29,7 +36,6 @@
     "fast-check": "4.10.2",
     "jscpd": "5.4.3",
     "knip": "6.45.1",
-    "testcontainers": "12.2.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.2",
     "vitest": "5.1.0"

@@ -2,7 +2,7 @@ import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 
 export type Severity = 'blocking' | 'advisory';
-export type CheckStatus = 'passed' | 'failed' | 'skipped';
+type CheckStatus = 'passed' | 'failed' | 'skipped';
 export type Profile = 'push' | 'full';
 
 export interface Issue {

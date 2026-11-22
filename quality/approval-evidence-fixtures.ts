@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { ApprovalEvidence } from './approval-evidence.ts';
 
 export const SHA = 'a'.repeat(40);
-export const OTHER_SHA = 'b'.repeat(40);
+const OTHER_SHA = 'b'.repeat(40);
 export const IDS = { repository: 'o/r', pr: 300, headSha: SHA };
 
 // --- Fixtures à la forme réelle de l'API GitHub -----------------------------
@@ -15,7 +15,7 @@ export const PULL = {
   labels: [{ name: 'deps-approved' }, { name: 'bug' }],
 };
 
-export const EVENT_PAGES = [
+const EVENT_PAGES = [
   [
     {
       id: 11,
@@ -39,7 +39,7 @@ export const EVENT_PAGES = [
   ],
 ];
 
-export const RUN_PAGES = [
+const RUN_PAGES = [
   {
     total_count: 2,
     workflow_runs: [

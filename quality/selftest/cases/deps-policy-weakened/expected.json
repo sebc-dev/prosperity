@@ -1,0 +1,5 @@
+{
+  "check": "integrity",
+  "rule": "supply-chain-policy-weakened",
+  "install": "frozen"
+}

@@ -1,0 +1,11 @@
+diff --git a/src/shared/money/selftest-branch.ts b/src/shared/money/selftest-branch.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/money/selftest-branch.ts
+@@ -0,0 +1,6 @@
++export function signLabel(amountMinor: bigint): string {
++  if (amountMinor < 0n) {
++    return 'debit';
++  }
++  return 'credit';
++}

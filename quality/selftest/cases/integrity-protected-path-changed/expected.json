@@ -1,0 +1,5 @@
+{
+  "check": "integrity",
+  "rule": "protected-path-changed",
+  "install": "frozen"
+}

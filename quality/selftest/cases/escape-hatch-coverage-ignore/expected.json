@@ -1,0 +1,5 @@
+{
+  "check": "escape-hatches",
+  "rule": "v8 ignore",
+  "install": "frozen"
+}

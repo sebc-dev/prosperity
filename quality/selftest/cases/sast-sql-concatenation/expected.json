@@ -1,0 +1,5 @@
+{
+  "check": "sast",
+  "rule": "prosperity.sql-concatenation",
+  "install": "frozen"
+}

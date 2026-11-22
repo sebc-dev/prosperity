@@ -1,0 +1,5 @@
+{
+  "check": "mutation",
+  "rule": "mutation-score-below-break",
+  "install": "frozen"
+}

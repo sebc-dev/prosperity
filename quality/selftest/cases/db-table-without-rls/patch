@@ -1,0 +1,10 @@
+diff --git a/db/migrations/0002_selftest_owner_table.sql b/db/migrations/0002_selftest_owner_table.sql
+new file mode 100644
+--- /dev/null
++++ b/db/migrations/0002_selftest_owner_table.sql
+@@ -0,0 +1,5 @@
++-- Cas d'auto-test (plan 01-12) : table à owner_member_id sans RLS. Ne vit jamais dans le dépôt.
++CREATE TABLE prosperity.selftest_owned (
++  id uuid PRIMARY KEY DEFAULT uuidv7(),
++  owner_member_id uuid NOT NULL
++);

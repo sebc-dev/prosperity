@@ -1,0 +1,5 @@
+{
+  "check": "integration",
+  "rule": "meta:rls-owner-member-id",
+  "install": "frozen"
+}

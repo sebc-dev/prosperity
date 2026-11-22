@@ -1,0 +1,5 @@
+{
+  "check": "integrity",
+  "rule": "assertion-removed",
+  "install": "frozen"
+}

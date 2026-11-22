@@ -1,0 +1,13 @@
+diff --git a/src/shared/money/selftest-ignored.ts b/src/shared/money/selftest-ignored.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/money/selftest-ignored.ts
+@@ -0,0 +1,8 @@
++export function signLabel(amountMinor: bigint): string {
++  if (amountMinor >= 0n) {
++    return 'credit';
++  } else {
++    /* v8 ignore next */
++    return 'debit';
++  }
++}

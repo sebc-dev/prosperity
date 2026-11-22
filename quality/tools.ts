@@ -52,6 +52,28 @@ export async function readMisePins(root: string): Promise<Map<string, string>> {
   return pins;
 }
 
+// Variables que git exporte à ses hooks (`git rev-parse --local-env-vars`) et qui désignent le dépôt
+// courant. Héritées par un test qui crée un dépôt jetable, elles font écrire ses commits dans le dépôt
+// de l'appelant : `git push` depuis un worktree lié a ainsi ajouté des commits « fixture » à la
+// branche de l'appelant. `GIT_INDEX_FILE` reste : le pré-commit lit l'index du commit en cours.
+const REPO_LOCATING_GIT_VARIABLES = [
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_COMMON_DIR',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_NAMESPACE',
+  'GIT_PREFIX',
+  'GIT_QUARANTINE_PATH',
+];
+
+/** Retire de `env` les variables git qui désignent le dépôt de l'appelant (hook pré-push, worktree lié). */
+export function clearRepoGitVariables(env: NodeJS.ProcessEnv): void {
+  for (const name of REPO_LOCATING_GIT_VARIABLES) {
+    Reflect.deleteProperty(env, name);
+  }
+}
+
 /**
  * Lance un processus avec `spawn` sans shell : aucune interpolation possible,
  * stdout/stderr/code capturés, délai maximal appliqué (SIGKILL, code 124).

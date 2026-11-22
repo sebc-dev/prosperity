@@ -12,6 +12,7 @@ import {
   pollScript,
   prepareScript,
   preflightScript,
+  reportTaskScript,
   scannerScript,
   tarArgs,
   uploadCommand,
@@ -278,6 +279,16 @@ describe('dossier jetable distant : préparation, envoi, nettoyage', () => {
         () => false,
       ),
     ).toBe(false);
+  });
+
+  it('reportTaskScript relit report-task.txt dans le dossier jetable', async () => {
+    const dir = (await runScript(prepareScript(), { TMPDIR: scratch })).stdout.trim();
+    await mkdir(join(dir, 'reports', 'sonar', 'scannerwork'), { recursive: true });
+    await writeFile(
+      join(dir, 'reports', 'sonar', 'scannerwork', 'report-task.txt'),
+      'ceTaskId=AZ-12\n',
+    );
+    expect((await runScript(reportTaskScript(dir))).stdout).toBe('ceTaskId=AZ-12\n');
   });
 
   it('cleanupScript refuse tout chemin qui n’est pas un dossier jetable', () => {

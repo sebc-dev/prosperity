@@ -58,6 +58,7 @@
     "test/db.ts",
     "test/meta.int.test.ts",
     "quality/**",
+    "sonar-project.properties",
     "semgrep/**",
     "Containerfile",
     "deploy/**",

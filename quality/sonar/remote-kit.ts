@@ -205,6 +205,11 @@ export function prepareScript(): string {
   return 'set -eu\nmktemp -d -t prosperity-sonar.XXXXXX\n';
 }
 
+/** `report-task.txt` écrit par le scanner dans le dossier jetable distant. */
+export function reportTaskScript(dir: string): string {
+  return `set -eu\ncat -- ${requireRemoteDir(dir)}/reports/sonar/scannerwork/report-task.txt\n`;
+}
+
 export function cleanupScript(dir: string): string {
   return `set -eu\nrm -rf -- ${requireRemoteDir(dir)}\n`;
 }

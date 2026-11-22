@@ -1,0 +1,5 @@
+{
+  "check": "duplication",
+  "rule": "new-clone",
+  "install": "frozen"
+}

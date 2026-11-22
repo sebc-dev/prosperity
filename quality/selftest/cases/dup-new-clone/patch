@@ -1,0 +1,32 @@
+diff --git a/src/shared/selftest-dup-a.ts b/src/shared/selftest-dup-a.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/selftest-dup-a.ts
+@@ -0,0 +1,11 @@
++export function summarizeSelftestA(values: readonly number[]): string {
++  const sorted = [...values].sort((left, right) => left - right);
++  const lowest = sorted[0] ?? 0;
++  const highest = sorted[sorted.length - 1] ?? 0;
++  const total = sorted.reduce((sum, value) => sum + value, 0);
++  const middle = Math.floor(sorted.length / 2);
++  const median = sorted[middle] ?? 0;
++  const spread = highest - lowest;
++  const label = sorted.length === 0 ? 'empty' : 'filled';
++  return label + ':' + String(lowest) + ':' + String(highest) + ':' + String(total) + ':' + String(median) + ':' + String(spread);
++}
+diff --git a/src/shared/selftest-dup-b.ts b/src/shared/selftest-dup-b.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/selftest-dup-b.ts
+@@ -0,0 +1,11 @@
++export function summarizeSelftestB(values: readonly number[]): string {
++  const sorted = [...values].sort((left, right) => left - right);
++  const lowest = sorted[0] ?? 0;
++  const highest = sorted[sorted.length - 1] ?? 0;
++  const total = sorted.reduce((sum, value) => sum + value, 0);
++  const middle = Math.floor(sorted.length / 2);
++  const median = sorted[middle] ?? 0;
++  const spread = highest - lowest;
++  const label = sorted.length === 0 ? 'empty' : 'filled';
++  return label + ':' + String(lowest) + ':' + String(highest) + ':' + String(total) + ':' + String(median) + ':' + String(spread);
++}

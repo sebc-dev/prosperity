@@ -1,0 +1,16 @@
+diff --git a/src/modules/selftest/adapters/db/repo.ts b/src/modules/selftest/adapters/db/repo.ts
+new file mode 100644
+--- /dev/null
++++ b/src/modules/selftest/adapters/db/repo.ts
+@@ -0,0 +1,3 @@
++export function loadSelftestRows(): readonly string[] {
++  return [];
++}
+diff --git a/src/mcp/tools/selftest-tool.ts b/src/mcp/tools/selftest-tool.ts
+new file mode 100644
+--- /dev/null
++++ b/src/mcp/tools/selftest-tool.ts
+@@ -0,0 +1,3 @@
++import { loadSelftestRows } from '../../modules/selftest/adapters/db/repo.ts';
++
++export const selftestRows = loadSelftestRows();

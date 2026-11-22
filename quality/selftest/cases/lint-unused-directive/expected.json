@@ -1,0 +1,5 @@
+{
+  "check": "lint",
+  "rule": "unused-disable-directive",
+  "install": "frozen"
+}

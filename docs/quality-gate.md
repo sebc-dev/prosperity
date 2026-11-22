@@ -238,6 +238,114 @@ Le workflow `nightly` (planifié chaque jour à 03:23 UTC et déclenchable à la
 `trufflehog.json`). Un workflow planifié tourne sur la branche par défaut : il ne s'exécute
 qu'après la fusion de la PR de bootstrap.
 
+## Analyse SonarQube (advisory, D-16)
+
+### Rôle
+
+SonarQube Community, hébergé sur le homelab, donne à l'humain un tableau de bord et un historique
+(dette, points chauds de sécurité à revoir, duplication, couverture). Il est **advisory** : aucun check
+de `pnpm quality` ne le lit, le verdict ne change pas, aucune PR n'est bloquée, rien ne tourne dans la
+CI GitHub, et il n'y a ni runner auto-hébergé ni job GitHub qui joindrait le homelab (D-13).
+`pnpm sonar` refuse de tourner quand `CI` ou `GITHUB_ACTIONS` est défini.
+
+### Déclenchement
+
+| Besoin | Commande |
+|---|---|
+| Analyse à la demande, depuis le poste | `mise exec -- pnpm sonar` |
+| Rapports et invocation masquée, sans réseau | `mise exec -- pnpm sonar --dry-run` |
+| Analyse nightly de `main` | timer systemd utilisateur du poste (`deploy/sonar/`) |
+
+Codes de sortie : **0** analyse traitée par le serveur (tâche du moteur de calcul `SUCCESS`) ou, en
+`--dry-run`, rapports produits ; **1** rapport manquant, scanner en échec, tâche `FAILED`,
+`CANCELED` ou expirée (10 min) ; **2** configuration refusée (CI, variable manquante, URL non
+HTTPS, fichier d'environnement dans le dépôt ou lisible par d'autres, image non épinglée, propriété
+interdite).
+
+Le script produit d'abord les rapports sous `reports/sonar/` (ignoré par git) : ESLint en JSON avec la
+configuration bloquante puis avec `eslint.security.config.mjs`, et la couverture LCOV de Vitest
+(projets `unit` et `integration`, ou `unit` seul avec `SONAR_COVERAGE=unit`). Un LCOV absent arrête
+tout : une couverture à 0 % trompeuse n'est jamais publiée. Les chemins absolus des rapports sont
+réécrits en chemins relatifs à la racine. Le scanner tourne ensuite dans un conteneur du poste et joint
+le serveur du homelab par son adresse HTTPS du tailnet ; le script attend que le serveur ait traité
+l'analyse.
+
+### Configuration hors dépôt
+
+`~/.config/prosperity-sonar/env` (mode 0600, refusé s'il est lisible par d'autres ou placé dans le
+dépôt) contient `SONAR_HOST_URL=https://…` (adresse HTTPS du tailnet, sans barre oblique finale) et
+`SONAR_TOKEN=…` (jeton d'analyse **de projet**, un par machine pour les révoquer séparément, sans
+guillemet). L'environnement du processus prime sur le fichier.
+
+| Variable | Rôle |
+|---|---|
+| `SONAR_HOST_URL`, `SONAR_TOKEN` | adresse et jeton (environnement, sinon fichier) |
+| `SONAR_ENV_FILE` | autre fichier d'environnement (défaut `~/.config/prosperity-sonar/env`) |
+| `SONAR_COVERAGE` | `full` (défaut, projets `unit` et `integration`) ou `unit` |
+| `SONAR_CONTAINER_ENGINE` | `podman` ou `docker` (sinon le premier trouvé, Podman d'abord) |
+| `SONAR_ALLOW_INSECURE_HTTP=1` | autorise `http://` hors boucle locale (`http://localhost` passe sans) |
+
+Le jeton ne passe que par l'environnement du processus du moteur de conteneur (`-e SONAR_TOKEN` sans
+valeur) et par l'en-tête de la lecture de la tâche : jamais en argument, jamais imprimé, jamais transmis
+aux processus de lint et de tests. L'adresse du serveur n'entre jamais dans un fichier suivi.
+
+### Installation du nightly sur le poste
+
+Prérequis : `git`, `mise` dans `~/.local/bin`, Docker (ou Podman) utilisable par l'utilisateur, le fichier
+d'environnement ci-dessus. L'analyse tourne dans un **worktree git détaché du dépôt principal**, sans
+second clone : `git -C <dépôt principal> worktree add --detach ~/prosperity-sonar origin/main`. Le service
+n'y fait que `git fetch origin main`, `git checkout --detach --force origin/main` et `git clean -fd`
+(sans effet sur les fichiers ignorés) : il ne commit ni ne pousse jamais, donc les hooks lefthook,
+partagés avec le dépôt principal, ne se déclenchent pas. Copier `deploy/sonar/prosperity-sonar.service`
+et `.timer` dans `~/.config/systemd/user/`, adapter le chemin de `mise`, puis
+`systemctl --user daemon-reload` et `systemd-analyze --user verify` sur les deux unités.
+**Après la fusion de la PR de bootstrap seulement** (avant, `main` n'a pas `pnpm sonar`) : `mise trust`
+dans le worktree, `systemctl --user enable --now prosperity-sonar.timer`, premier passage par
+`systemctl --user start prosperity-sonar.service`, journal par `journalctl --user -u prosperity-sonar`.
+Le poste doit être allumé : `Persistent=true` rejoue l'analyse manquée au prochain démarrage.
+
+### Image du scanner et choix
+
+L'image officielle `sonarsource/sonar-scanner-cli` est épinglée **par digest** dans
+`quality/sonar/scanner.json` (étiquette complète, date de publication ; au moins 7 jours, comme
+`minimumReleaseAge`). `pnpm sonar` refuse une image sans digest, `latest` ou d'un autre dépôt. La mise
+à jour est une PR approuvée par le label `gate-change-approved` (`quality/**` est protégé). Choix du
+scanner : un conteneur plutôt que le paquet npm du scanner (nouvelle dépendance soumise à QUAL-09, moteur et
+JRE téléchargés hors lockfile) ou un binaire épinglé par `mise` (installé aussi en CI par `mise-action`,
+contraire à D-16). Coût : un moteur de conteneur sur le poste.
+
+### Recouvrement avec la gate
+
+Les règles JS/TS de Sonar sont celles d'`eslint-plugin-sonarjs`, déjà **bloquant** ; la duplication
+recoupe `jscpd` (**bloquant** sur les nouveaux clones) ; la couverture affichée recoupe les seuils Vitest
+(**bloquants**). Sonar ajoute le tableau de bord, l'historique, la revue des points chauds de sécurité et
+l'import des avertissements advisory d'`eslint-plugin-security` (issues externes). Référence :
+`origin/main:docs/recherches/2026-09-12-quality-gate-sonar-sans-serveur.md`.
+
+### `sonar-project.properties` : chemin protégé
+
+Ce fichier ne peut pas affaiblir la gate bloquante, mais il décide de ce que montre le tableau de bord
+que l'humain relit et, sans garde, pourrait orienter le jeton (hôte, proxy). Il est protégé (deny agent,
+CODEOWNERS, intégrité, dérivés de `quality/protected-paths.json`), comme `quality/sonar/**` et
+`deploy/sonar/**`. `pnpm sonar` refuse en plus un fichier qui définit `sonar.host.url`, `sonar.token`,
+`sonar.login`, `sonar.password` ou une propriété `sonar.scanner.proxy*`, `http.proxy*`, `https.proxy*`.
+
+### Limites de l'analyse Sonar
+
+- **Le nightly exécute le code et les tests de `main` sur le poste** : même confiance que le déploiement
+  de la phase 2 (code fusionné par l'humain après la gate). Rien d'une PR, d'un fork ni d'une branche de
+  travail n'y est exécuté par le timer. Il ne tourne que si le poste est allumé.
+- **Le jeton n'est pas une barrière contre l'agent du poste** : il est lisible par l'utilisateur du poste.
+  Jeton d'analyse d'un seul projet, révocable dans Sonar.
+- **Le conteneur du scanner partage le réseau de l'hôte** (`--network host`), et Docker donne à
+  l'utilisateur du groupe `docker` des droits équivalents à ceux de root sur le poste.
+- **Vitest peut rendre 1** (test ou seuil de couverture) : le LCOV est publié quand même, avec un
+  avertissement, l'analyse étant advisory.
+- **gitleaks** : la règle par défaut `sonar-api-token` arrête `SONAR_TOKEN=sqp_…` mais pas un jeton nu
+  sans mot-clé.
+- La Community Build n'analyse qu'une branche (ici `main`) et n'a pas d'analyse de propagation (taint).
+- Le serveur Sonar n'est joignable que depuis le tailnet : hors tailnet, `pnpm sonar` échoue (sortie 1).
+
 ## Limites connues
 
 La gate réduit le risque, elle ne l'élimine pas. Chaque limite est suivie du contrôle qui la

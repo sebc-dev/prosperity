@@ -1,0 +1,13 @@
+# Déclenchement nightly de l'analyse SonarQube advisory de main (D-16) sur le poste kfzcore. Ne pas
+# activer avant la fusion de la PR de bootstrap : avant, `main` ne contient pas `pnpm sonar`.
+# Le poste doit être allumé : `Persistent=true` rejoue l'analyse manquée au prochain démarrage.
+[Unit]
+Description=Analyse SonarQube advisory nocturne de main (Prosperity, D-16)
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+RandomizedDelaySec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

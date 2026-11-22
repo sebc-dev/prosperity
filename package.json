@@ -15,7 +15,8 @@
     "arch": "depcruise src --config .dependency-cruiser.cjs",
     "deadcode": "knip",
     "duplication": "jscpd --config .jscpd.json",
-    "quality": "node quality/run.ts"
+    "quality": "node quality/run.ts",
+    "sonar": "node quality/sonar/run.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.7",

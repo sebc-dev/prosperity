@@ -35,7 +35,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Sur un module canari, un test faible fait échouer la gate par le score de mutation Stryker et par la couverture du domaine pur sous 100 %. Un test d'intégration tourne contre un PostgreSQL 18 réel démarré par Testcontainers, en ordre aléatoire, avec la seed loguée.
   4. Sans approbation humaine explicite (label posé par `sebc-dev` après le dernier push et vérifié par la CI, D-15), la CI bloque une PR qui baisse un seuil, retire une assertion, ajoute une échappatoire (`@ts-ignore`, `.skip`, `vi.mock(`…) ou modifie un chemin protégé (`.github/**`, configuration de la gate, `deploy/**`). Les permissions de l'agent refusent l'édition de ces chemins.
   5. Une dépendance ajoutée sans approbation `deps-approved` (label vérifié, D-15), ou plus récente que l'âge minimal de publication, fait échouer l'installation ou la CI.
-**Plans**: 13/15 plans executed
+**Plans**: 14/15 plans executed
 
 Plans:
 **Wave 1**
@@ -70,7 +70,7 @@ Plans:
 - [x] 01-13-PLAN.md — Nightly, pré-commit, messages du garde de l'agent alignés sur D-15, documentation et limites (risque accepté de D-15), outil D-07b par labels, preuve CI complète (27 cas) et budgets (vague 9)
 
 **Wave 10** *(blocked on Wave 9 completion)*
-- [ ] 01-15-PLAN.md — SonarQube Community en advisory (D-16) : `pnpm sonar` (scanner conteneur épinglé par digest, rapports ESLint et LCOV importés), unités systemd nightly de `main` pour kfzserver, configuration protégée, jeton et adresse hors dépôt (vague 10)
+- [x] 01-15-PLAN.md — SonarQube Community en advisory (D-16) : `pnpm sonar` (scanner conteneur épinglé par digest, rapports ESLint et LCOV importés), unités systemd nightly de `main` pour kfzserver, configuration protégée, jeton et adresse hors dépôt (vague 10)
 
 **Wave 11** *(blocked on Wave 10 completion)*
 - [ ] 01-14-PLAN.md — Verrou : relecture D-01, deny et garde de l'agent (édition, écriture, labels, fusion), labels créés par l'humain, étapes de confiance, juge hors PR et ruleset `quality`, timer Sonar activé, PR réelles D-07b par labels (vague 11)
@@ -202,7 +202,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Socle et quality gate | 13/15 | In Progress | - |
+| 1. Socle et quality gate | 14/15 | In Progress | - |
 | 2. Connecteur Claude et identité du foyer | 0/TBD | Not started | - |
 | 3. Comptes cloisonnés et catégories | 0/TBD | Not started | - |
 | 4. Saisie conversationnelle et soldes | 0/TBD | Not started | - |

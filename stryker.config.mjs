@@ -8,7 +8,7 @@ import thresholds from './quality/thresholds.json' with { type: 'json' };
 // forkés héritent de cette variable.
 process.env['GATE_INTEGRATION'] = 'off';
 
-/** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
+// Pas d'annotation de type importée d'`@stryker-mutator/api` : paquet transitif, non listé (knip).
 export default {
   // Sous pnpm, les plugins ne se découvrent pas seuls (`Cannot find Checker plugin "typescript"`).
   plugins: ['@stryker-mutator/vitest-runner', '@stryker-mutator/typescript-checker'],

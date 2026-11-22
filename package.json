@@ -7,6 +7,14 @@
     "node": "26.13.0"
   },
   "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint .",
+    "format": "biome format .",
+    "test": "vitest run",
+    "mutation": "stryker run",
+    "arch": "depcruise src --config .dependency-cruiser.cjs",
+    "deadcode": "knip",
+    "duplication": "jscpd --config .jscpd.json",
     "quality": "node quality/run.ts"
   },
   "devDependencies": {
@@ -21,11 +29,13 @@
     "@types/pg": "8.23.1",
     "@vitest/coverage-v8": "5.1.0",
     "@vitest/eslint-plugin": "1.6.28",
+    "dependency-cruiser": "18.7.2",
     "eslint": "10.15.0",
     "eslint-plugin-security": "4.2.1",
     "eslint-plugin-sonarjs": "4.2.2",
     "fast-check": "4.10.2",
-    "testcontainers": "12.2.1",
+    "jscpd": "5.4.3",
+    "knip": "6.45.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.72.2",
     "vitest": "5.1.0"

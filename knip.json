@@ -1,0 +1,16 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "quality/run.ts",
+    "quality/checks/*.ts",
+    "quality/integrity.ts",
+    "quality/approvals.ts",
+    "quality/deps-guard.ts",
+    "quality/verdict.ts",
+    "quality/agent-guard/*.ts",
+    "test/global-setup.ts",
+    "test/setup/fast-check.ts"
+  ],
+  "project": ["src/**/*.ts", "quality/**/*.ts", "test/**/*.ts"],
+  "eslint": { "config": ["eslint.config.mjs", "eslint.security.config.mjs"] }
+}

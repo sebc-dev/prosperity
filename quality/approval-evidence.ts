@@ -19,7 +19,7 @@ export interface RunInfo {
   headBranch: string;
   headRepository: string;
 }
-export interface PullInfo {
+interface PullInfo {
   number: number;
   headSha: string;
   headRef: string;

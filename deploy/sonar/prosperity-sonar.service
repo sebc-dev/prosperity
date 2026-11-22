@@ -1,10 +1,13 @@
 # Analyse SonarQube advisory de `main` (D-16), unité utilisateur du poste kfzcore.
 #
-# Seul `main` est analysé : le clone ~/prosperity-sonar est en lecture seule sur le dépôt public
-# (aucun jeton GitHub) et ne récupère que `origin main`. Jamais une PR, un fork ni une branche de
-# travail (D-13). Le jeton Sonar et l'adresse du serveur viennent du fichier d'environnement hors
-# dépôt (0600). Le scanner tourne dans un conteneur Docker du poste et joint le serveur du homelab par
-# son adresse HTTPS du tailnet. Le chemin de `mise` est celui de son installeur officiel : à adapter.
+# Seul `main` est analysé : ~/prosperity-sonar est un worktree git détaché du dépôt principal, créé par
+# `git -C <dépôt principal> worktree add --detach ~/prosperity-sonar origin/main`. Le service ne
+# récupère que `origin main` (aucun jeton GitHub), ne commit ni ne pousse jamais : les hooks lefthook,
+# partagés avec le dépôt, ne se déclenchent donc pas. Jamais une PR, un fork ni une branche de travail
+# (D-13). `git clean -fd` ne touche pas les fichiers ignorés (`node_modules`, `reports/`). Le jeton
+# Sonar et l'adresse du serveur viennent du fichier d'environnement hors dépôt (0600). Le scanner
+# tourne dans un conteneur Docker du poste et joint le serveur du homelab par son adresse HTTPS du
+# tailnet. Le chemin de `mise` est celui de son installeur officiel : à adapter.
 [Unit]
 Description=Analyse SonarQube advisory de main (Prosperity, D-16)
 

@@ -292,12 +292,15 @@ aux processus de lint et de tests. L'adresse du serveur n'entre jamais dans un f
 ### Installation du nightly sur le poste
 
 Prérequis : `git`, `mise` dans `~/.local/bin`, Docker (ou Podman) utilisable par l'utilisateur, le fichier
-d'environnement ci-dessus. Clone dédié, en lecture seule sur le dépôt public :
-`git clone https://github.com/sebc-dev/prosperity.git ~/prosperity-sonar`. Copier
-`deploy/sonar/prosperity-sonar.service` et `.timer` dans `~/.config/systemd/user/`, adapter le chemin de
-`mise`, puis `systemctl --user daemon-reload` et `systemd-analyze --user verify` sur les deux unités.
+d'environnement ci-dessus. L'analyse tourne dans un **worktree git détaché du dépôt principal**, sans
+second clone : `git -C <dépôt principal> worktree add --detach ~/prosperity-sonar origin/main`. Le service
+n'y fait que `git fetch origin main`, `git checkout --detach --force origin/main` et `git clean -fd`
+(sans effet sur les fichiers ignorés) : il ne commit ni ne pousse jamais, donc les hooks lefthook,
+partagés avec le dépôt principal, ne se déclenchent pas. Copier `deploy/sonar/prosperity-sonar.service`
+et `.timer` dans `~/.config/systemd/user/`, adapter le chemin de `mise`, puis
+`systemctl --user daemon-reload` et `systemd-analyze --user verify` sur les deux unités.
 **Après la fusion de la PR de bootstrap seulement** (avant, `main` n'a pas `pnpm sonar`) : `mise trust`
-dans le clone, `systemctl --user enable --now prosperity-sonar.timer`, premier passage par
+dans le worktree, `systemctl --user enable --now prosperity-sonar.timer`, premier passage par
 `systemctl --user start prosperity-sonar.service`, journal par `journalctl --user -u prosperity-sonar`.
 Le poste doit être allumé : `Persistent=true` rejoue l'analyse manquée au prochain démarrage.
 

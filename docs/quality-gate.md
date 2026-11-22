@@ -290,3 +290,12 @@ rattrape ; aucune ne doit être lue comme « sans danger ».
     peut pas servir, CODEOWNERS reste une documentation et un filet si un collaborateur arrive.
 13. **La mutation ne juge que le périmètre pur** (`layout.mutate`) ; le reste de `src/` est jugé
     par les tests, la couverture (plancher 85/80) et la relecture humaine.
+14. **Vitest lancé hors de `pnpm quality` dans un hook git.** `pnpm quality` retire de son
+    environnement les variables qui désignent le dépôt de l'appelant (`GIT_DIR`, `GIT_WORK_TREE`…)
+    avant de jouer les checks : sans cela, les tests qui créent un dépôt jetable commitaient dans la
+    branche de l'appelant lors d'un `git push` depuis un worktree lié. Une commande `vitest` appelée
+    directement depuis un hook n'a pas cette protection. *Contrôle :* les hooks du dépôt n'appellent
+    que `pnpm quality` ou `node quality/run.ts`.
+15. **Les labels d'approbation doivent exister dans le dépôt.** Tant que `gate-change-approved` et
+    `deps-approved` n'ont pas été créés par l'humain, le job `reset-approval` échoue (« not found »)
+    sans conséquence (`continue-on-error`) et aucun label ne peut être posé.

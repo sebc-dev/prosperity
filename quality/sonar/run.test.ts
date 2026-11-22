@@ -38,36 +38,24 @@ describe('pnpm sonar : refus de configuration (sortie 2, avant toute action)', (
     },
   );
 
-  it('refuse un mode inconnu', async () => {
-    const ran = await sonar({ SONAR_MODE: 'nuage' });
-    expect(ran.code).toBe(2);
-    expect(ran.stderr).toContain('SONAR_MODE');
-  });
-
-  it('refuse une cible SSH qui ressemble à une option', async () => {
-    const ran = await sonar({ SONAR_SSH_HOST: '-oProxyCommand=touch /data/x' });
-    expect(ran.code).toBe(2);
-    expect(ran.stderr).toContain('SONAR_SSH_HOST');
-  });
-
-  it('en mode local, refuse l’absence d’hôte, de jeton et de fichier d’environnement', async () => {
-    const ran = await sonar({ SONAR_MODE: 'local', SONAR_ENV_FILE: join(scratch, 'absent') });
+  it('refuse l’absence d’hôte, de jeton et de fichier d’environnement', async () => {
+    const ran = await sonar({ SONAR_ENV_FILE: join(scratch, 'absent') });
     expect(ran.code).toBe(2);
     expect(ran.stderr).toContain('SONAR_HOST_URL');
   });
 
-  it('en mode local, refuse un fichier d’environnement lisible par d’autres', async () => {
+  it('refuse un fichier d’environnement lisible par d’autres', async () => {
     const file = join(scratch, 'env');
     await writeFile(file, `SONAR_HOST_URL=https://sonar.example\nSONAR_TOKEN=${JETON}\n`, {
       mode: 0o644,
     });
-    const ran = await sonar({ SONAR_MODE: 'local', SONAR_ENV_FILE: file });
+    const ran = await sonar({ SONAR_ENV_FILE: file });
     expect(ran.code).toBe(2);
     expect(ran.stderr).toContain('0600');
     expect(ran.stderr + ran.stdout).not.toContain(JETON);
   });
 
-  it('en mode local, refuse un fichier d’environnement placé dans le dépôt', async () => {
+  it('refuse un fichier d’environnement placé dans le dépôt', async () => {
     const dir = join(ROOT, 'reports', `sonar-run-test-${String(process.pid)}`);
     await mkdir(dir, { recursive: true });
     try {
@@ -75,7 +63,7 @@ describe('pnpm sonar : refus de configuration (sortie 2, avant toute action)', (
       await writeFile(file, `SONAR_HOST_URL=https://sonar.example\nSONAR_TOKEN=${JETON}\n`, {
         mode: 0o600,
       });
-      const ran = await sonar({ SONAR_MODE: 'local', SONAR_ENV_FILE: file });
+      const ran = await sonar({ SONAR_ENV_FILE: file });
       expect(ran.code).toBe(2);
       expect(ran.stderr).toContain('dépôt');
       expect(ran.stderr + ran.stdout).not.toContain(JETON);

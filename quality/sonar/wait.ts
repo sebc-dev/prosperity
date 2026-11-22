@@ -17,7 +17,7 @@ const MAX_CONSECUTIVE_READ_ERRORS = 3;
 
 /**
  * Interroge la tâche du serveur jusqu'à un état final ou au délai. Une erreur de lecture isolée
- * (réseau, SSH) est tolérée ; trois de suite donnent `injoignable`.
+ * (réseau) est tolérée ; trois de suite donnent `injoignable`.
  */
 export async function waitForTask(options: WaitOptions): Promise<WaitOutcome> {
   const start = options.now();

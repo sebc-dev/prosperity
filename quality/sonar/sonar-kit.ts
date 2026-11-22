@@ -3,7 +3,7 @@ import { isRecord } from '../tools.ts';
 // Fonctions pures de `pnpm sonar` (D-16) : aucune E/S, aucune lecture de l'environnement du processus.
 // Aucun message d'erreur ne cite l'adresse du serveur ni le jeton.
 
-export type Engine = 'docker' | 'podman';
+type Engine = 'docker' | 'podman';
 export type Coverage = 'full' | 'unit';
 
 export interface SonarConfig {
@@ -36,19 +36,8 @@ export interface TaskDecision {
   status: string;
 }
 
-export interface RunArgsOptions {
-  engine: Engine;
-  image: string;
-  root: string;
-  uid: number;
-  gid: number;
-  /** Façon de transmettre l'hôte et le jeton au conteneur : `-e NOM` (sans valeur) ou `--env-file`. */
-  auth: readonly string[];
-  properties: readonly string[];
-}
-
-export const COVERAGE_ERROR = 'SONAR_COVERAGE doit valoir full ou unit';
-export const ENGINE_ERROR =
+const COVERAGE_ERROR = 'SONAR_COVERAGE doit valoir full ou unit';
+const ENGINE_ERROR =
   'SONAR_CONTAINER_ENGINE doit désigner un moteur de conteneur : docker ou podman';
 
 const FORBIDDEN_KEYS = new Set(['sonar.host.url', 'sonar.token', 'sonar.login', 'sonar.password']);
@@ -64,7 +53,7 @@ export function isFailure(value: unknown): value is Failure {
   return isRecord(value) && typeof value['error'] === 'string';
 }
 
-export function isEngine(value: string): value is Engine {
+function isEngine(value: string): value is Engine {
   return value === 'docker' || value === 'podman';
 }
 
@@ -119,7 +108,7 @@ function checkHostUrl(
 }
 
 /** `undefined` quand la valeur n'est ni `full` ni `unit` ; une valeur absente donne `full`. */
-export function parseCoverage(value: string | undefined): Coverage | undefined {
+function parseCoverage(value: string | undefined): Coverage | undefined {
   if (value === undefined || value === 'full') {
     return 'full';
   }
@@ -230,41 +219,31 @@ export function childEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   );
 }
 
-/** Arguments de `<moteur> run` communs au mode local et au mode SSH. */
-export function scannerRunArgs(o: RunArgsOptions): string[] {
+/** L'hôte et le jeton passent par l'environnement du processus (`-e NOM`, sans valeur) ; jamais en argument. */
+export function scannerInvocation(cfg: SonarConfig, opts: ScannerOptions): Invocation {
   const user =
-    o.engine === 'podman' ? ['--userns=keep-id'] : ['--user', `${String(o.uid)}:${String(o.gid)}`];
-  return [
+    cfg.engine === 'podman'
+      ? ['--userns=keep-id']
+      : ['--user', `${String(opts.uid)}:${String(opts.gid)}`];
+  const args = [
     'run',
     '--rm',
     '--network',
     'host',
     ...user,
-    ...o.auth,
+    '-e',
+    'SONAR_HOST_URL',
+    '-e',
+    'SONAR_TOKEN',
     '-e',
     'SONAR_USER_HOME=/usr/src/reports/sonar/cache',
     '-v',
-    `${o.root}:/usr/src`,
-    o.image,
-    ...o.properties,
+    `${opts.root}:/usr/src`,
+    opts.image,
+    `-Dsonar.host.url=${cfg.hostUrl}`,
+    `-Dsonar.analysis.coverage=${cfg.coverage}`,
+    ...(opts.scmDisabled ? ['-Dsonar.scm.disabled=true'] : []),
   ];
-}
-
-/** Mode local : l'hôte et le jeton passent par l'environnement du processus (`-e NOM`, sans valeur). */
-export function scannerInvocation(cfg: SonarConfig, opts: ScannerOptions): Invocation {
-  const args = scannerRunArgs({
-    engine: cfg.engine,
-    image: opts.image,
-    root: opts.root,
-    uid: opts.uid,
-    gid: opts.gid,
-    auth: ['-e', 'SONAR_HOST_URL', '-e', 'SONAR_TOKEN'],
-    properties: [
-      `-Dsonar.host.url=${cfg.hostUrl}`,
-      `-Dsonar.analysis.coverage=${cfg.coverage}`,
-      ...(opts.scmDisabled ? ['-Dsonar.scm.disabled=true'] : []),
-    ],
-  });
   return {
     command: cfg.engine,
     args,

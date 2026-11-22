@@ -1,9 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Backend } from './backend.ts';
-import { loadMode } from './config.ts';
-import { localBackend } from './local.ts';
-import { remoteBackend } from './remote.ts';
+import { loadConfig } from './config.ts';
+import { localAnalysis } from './local.ts';
+import type { Analysis } from './local.ts';
 import { produceReports } from './reports.ts';
 import { forbiddenProperties, isFailure, parseReportTask, readScannerImage } from './sonar-kit.ts';
 import type { Coverage } from './sonar-kit.ts';
@@ -41,16 +40,16 @@ async function checkProject(): Promise<{ image: string } | { error: string }> {
 }
 
 /** Attend la tâche du serveur ; 0 seulement quand elle est SUCCESS. */
-async function awaitServer(backend: Backend): Promise<number> {
-  const version = await backend.serverVersion();
+async function awaitServer(analysis: Analysis): Promise<number> {
+  const version = await analysis.serverVersion();
   say(`serveur Sonar : version ${version ?? 'inconnue'}`);
-  const task = parseReportTask((await backend.readReportTask()) ?? '');
+  const task = parseReportTask((await analysis.readReportTask()) ?? '');
   if (task === undefined) {
     complain('report-task.txt introuvable ou sans ceTaskId : analyse non confirmée');
     return 1;
   }
   const outcome = await waitForTask({
-    fetchTask: () => backend.fetchTask(task.ceTaskId),
+    fetchTask: () => analysis.fetchTask(task.ceTaskId),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     now: () => Date.now(),
     intervalMs: POLL_INTERVAL_MS,
@@ -60,41 +59,36 @@ async function awaitServer(backend: Backend): Promise<number> {
     complain(`analyse non traitée : ${outcome.state} (${outcome.status})`);
     return 1;
   }
-  say(`analyse traitée (SUCCESS) : ${backend.dashboard()}`);
+  say(`analyse traitée (SUCCESS) : ${analysis.dashboard()}`);
   return 0;
 }
 
-async function analyze(backend: Backend, coverage: Coverage, dryRun: boolean): Promise<number> {
-  const preflight = dryRun ? undefined : await backend.preflight();
-  if (preflight !== undefined) {
-    complain(preflight.error);
-    return 1;
-  }
+async function analyze(analysis: Analysis, coverage: Coverage, dryRun: boolean): Promise<number> {
   const reports = await produceReports(ROOT, coverage);
   if (reports !== undefined) {
     complain(reports.error);
     return 1;
   }
   if (dryRun) {
-    backend.describe().forEach(say);
+    analysis.describe().forEach(say);
     return 0;
   }
-  const scan = await backend.scan();
+  const scan = await analysis.scan();
   if (scan !== undefined) {
     complain(scan.error);
     return 1;
   }
-  return awaitServer(backend);
+  return awaitServer(analysis);
 }
 
-export async function runSonar(argv: readonly string[], env: NodeJS.ProcessEnv): Promise<number> {
+async function runSonar(argv: readonly string[], env: NodeJS.ProcessEnv): Promise<number> {
   if ((env['CI'] ?? '') !== '' || (env['GITHUB_ACTIONS'] ?? '') !== '') {
     complain('pnpm sonar ne tourne jamais en CI : analyse advisory du homelab (D-16, D-13)');
     return 2;
   }
-  const mode = await loadMode(ROOT, env);
-  if (isFailure(mode)) {
-    complain(mode.error);
+  const cfg = await loadConfig(ROOT, env);
+  if (isFailure(cfg)) {
+    complain(cfg.error);
     return 2;
   }
   const project = await checkProject();
@@ -102,16 +96,7 @@ export async function runSonar(argv: readonly string[], env: NodeJS.ProcessEnv):
     complain(project.error);
     return 2;
   }
-  const image = project.image;
-  const backend =
-    mode.kind === 'ssh'
-      ? remoteBackend(mode.cfg, image, ROOT)
-      : localBackend(mode.cfg, image, ROOT);
-  try {
-    return await analyze(backend, mode.cfg.coverage, argv.includes('--dry-run'));
-  } finally {
-    await backend.cleanup();
-  }
+  return analyze(localAnalysis(cfg, project.image, ROOT), cfg.coverage, argv.includes('--dry-run'));
 }
 
 if (import.meta.main) {

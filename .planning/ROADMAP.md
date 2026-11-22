@@ -33,9 +33,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. `pnpm quality` rend le même verdict en pré-push et en CI et écrit `reports/gate.json` ; la protection de branche n'exige qu'un seul check, `quality`.
   2. Des PR de démonstration, une violation chacune, sont toutes rejetées par la CI : assertion `as`, `any`, fonction trop complexe, outil MCP qui importe `adapters/db`, cycle de modules, export mort, bloc dupliqué, secret en clair, SQL concaténé, handler sans `Principal`, action CI non épinglée.
   3. Sur un module canari, un test faible fait échouer la gate par le score de mutation Stryker et par la couverture du domaine pur sous 100 %. Un test d'intégration tourne contre un PostgreSQL 18 réel démarré par Testcontainers, en ordre aléatoire, avec la seed loguée.
-  4. Sans approbation humaine explicite (commit d'approbation signé par une clé matérielle, D-14), la CI bloque une PR qui baisse un seuil, retire une assertion, ajoute une échappatoire (`@ts-ignore`, `.skip`, `vi.mock(`…) ou modifie un chemin protégé (`.github/**`, configuration de la gate, `deploy/**`). Les permissions de l'agent refusent l'édition de ces chemins.
-  5. Une dépendance ajoutée sans approbation signée `deps-approved`, ou plus récente que l'âge minimal de publication, fait échouer l'installation ou la CI.
-**Plans**: 7/14 plans executed
+  4. Sans approbation humaine explicite (label posé par `sebc-dev` après le dernier push et vérifié par la CI, D-15), la CI bloque une PR qui baisse un seuil, retire une assertion, ajoute une échappatoire (`@ts-ignore`, `.skip`, `vi.mock(`…) ou modifie un chemin protégé (`.github/**`, configuration de la gate, `deploy/**`). Les permissions de l'agent refusent l'édition de ces chemins.
+  5. Une dépendance ajoutée sans approbation `deps-approved` (label vérifié, D-15), ou plus récente que l'âge minimal de publication, fait échouer l'installation ou la CI.
+**Plans**: 7/15 plans executed
 
 Plans:
 **Wave 1**
@@ -51,24 +51,29 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 - [x] 01-05-PLAN.md — PostgreSQL 18 réel : rôles séparés migrations / app, migration forward-only, Testcontainers, méta-tests RLS (vague 4)
 - [x] 01-06-PLAN.md — Compteur d'échappatoires à cliquet, juge d'intégrité, chemins protégés, scripts de garde de l'agent (vague 4)
-- [ ] 01-07-PLAN.md — Décision du type de clé matérielle, juge d'approbation par commit signé (D-14, `allowed_signers` lu dans la base, présence vérifiée), check `approvals` (vague 4)
-- [x] 01-08-PLAN.md — Garde des dépendances (`deps-approved` signé, existence et âge npm), juge hors PR `quality-verdict` qui publie le statut requis `quality` (vague 4)
+- [x] 01-08-PLAN.md — Garde des dépendances (`deps-approved`, existence et âge npm), juge hors PR `quality-verdict` qui publie le statut requis `quality` (vague 4)
 
 **Wave 5** *(blocked on Wave 4 completion)*
-- [ ] 01-09-PLAN.md — Frontières d'architecture, code mort, duplication (vague 5)
+- [ ] 01-07-PLAN.md — Juge d'approbation par label (D-15) : preuves lues par l'API en lecture seule, ancre serveur du dernier push, allowlist `quality/approvers.json` de la base, collecte par le verdict hors PR, gate rejouée sur pose ou retrait de label, labels retirés au push, check `approvals` (vague 5)
 
 **Wave 6** *(blocked on Wave 5 completion)*
-- [ ] 01-10-PLAN.md — Auto-test de la gate : runner, check `selftest`, trois cas témoins (vague 6)
+- [ ] 01-09-PLAN.md — Frontières d'architecture, code mort, duplication (vague 6)
 
 **Wave 7** *(blocked on Wave 6 completion)*
-- [ ] 01-11-PLAN.md — Auto-test : cas du typage, du lint et de l'architecture (QUAL-02, QUAL-03) (vague 7)
-- [ ] 01-12-PLAN.md — Auto-test : cas de sécurité, test faible, intégrité, base et dépendances (QUAL-04 à QUAL-09) (vague 7)
+- [ ] 01-10-PLAN.md — Auto-test de la gate : runner, check `selftest`, trois cas témoins (vague 7)
 
 **Wave 8** *(blocked on Wave 7 completion)*
-- [ ] 01-13-PLAN.md — Nightly, pré-commit, documentation et limites, outil D-07b, preuve CI complète (26 cas) et budgets (vague 8)
+- [ ] 01-11-PLAN.md — Auto-test : cas du typage, du lint et de l'architecture (QUAL-02, QUAL-03) (vague 8)
+- [ ] 01-12-PLAN.md — Auto-test : cas de sécurité, test faible, intégrité, base et dépendances (QUAL-04 à QUAL-09) (vague 8)
 
 **Wave 9** *(blocked on Wave 8 completion)*
-- [ ] 01-14-PLAN.md — Verrou : relecture D-01, deny et garde de l'agent (édition, écriture, signature et clés, fusion), enrôlement de la clé et `allowed_signers` par l'humain, étapes de confiance, juge hors PR et ruleset `quality`, PR réelles D-07b signées (vague 9)
+- [ ] 01-13-PLAN.md — Nightly, pré-commit, documentation et limites (risque accepté de D-15), outil D-07b par labels, preuve CI complète (27 cas) et budgets (vague 9)
+
+**Wave 10** *(blocked on Wave 9 completion)*
+- [ ] 01-15-PLAN.md — SonarQube Community en advisory (D-16) : `pnpm sonar` (scanner conteneur épinglé par digest, rapports ESLint et LCOV importés), unités systemd nightly de `main` pour kfzserver, configuration protégée, jeton et adresse hors dépôt (vague 10)
+
+**Wave 11** *(blocked on Wave 10 completion)*
+- [ ] 01-14-PLAN.md — Verrou : relecture D-01, deny et garde de l'agent (édition, écriture, labels, fusion), labels créés par l'humain, étapes de confiance, juge hors PR et ruleset `quality`, timer Sonar activé, PR réelles D-07b par labels (vague 11)
 
 ### Phase 2: Connecteur Claude et identité du foyer
 **Goal:** As a membre du foyer, I want to ajouter Prosperity comme connecteur personnalisé dans mon propre compte claude.ai et m'y authentifier par passkey, so that Claude agisse sous mon identité, sur une instance joignable et conforme, avant qu'existe la moindre donnée financière.
@@ -197,7 +202,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Socle et quality gate | 7/14 | In Progress | - |
+| 1. Socle et quality gate | 7/15 | In Progress | - |
 | 2. Connecteur Claude et identité du foyer | 0/TBD | Not started | - |
 | 3. Comptes cloisonnés et catégories | 0/TBD | Not started | - |
 | 4. Saisie conversationnelle et soldes | 0/TBD | Not started | - |

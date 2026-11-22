@@ -1,6 +1,7 @@
 # Phase 1: Socle et quality gate - Research
 
 **Researched:** 2026-11-21
+**Révision du 2026-11-22 :** D-15 remplace D-14 (voir `01-CONTEXT.md`). L'approbation humaine redevient un label vérifié par la CI : le Pattern 4 (version D-02) fait foi. Les passages marqués « D-14 » ou « révision D-14 » (commit signé, `allowed_signers`, `ssh-keygen`, retrait de l'événement de label du workflow `quality`, hypothèse A11, Q7, lignes de menace sur la signature) sont caducs. La recherche ne couvre pas SonarQube (D-16) : le planificateur vérifie ces points dans la documentation officielle.
 **Domain:** quality gate déterministe (`pnpm quality`) pour un dépôt TypeScript écrit par des agents IA : outillage statique, tests, sécurité, anti-contournement, CI GitHub Actions, verrou des chemins protégés
 **Confidence:** MEDIUM-HIGH (outillage et comportements clés **exécutés** dans un bac à sable ; points GitHub/Claude Code vérifiés en API ou en docs officielles ; les prototypes de workflow et de hook restent à écrire)
 
@@ -296,7 +297,7 @@ test/                      # intégration PG (`*.int.test.ts`), méta-tests
 | mutation | `reports/mutation/mutation.json` | `files[<f>].mutants[].{status,mutatorName,location}` ; exit 1 sous `thresholds.break` | exécuté |
 | couverture | stderr Vitest + `json-summary` | `ERROR: Coverage for lines (50%) does not meet "src/shared/**" threshold (100%)` | exécuté |
 
-### Pattern 4 : approbation par label liée au dernier push (D-02) — remplacé par D-14, voir la révision ci-dessous
+### Pattern 4 : approbation par label liée au dernier push (D-02) — rétabli par D-15 (2026-11-21) ; le paragraphe « Révision (2026-11-21, D-14) » ci-dessous est caduc
 
 **What:** `approvals.ts` (exécuté depuis la base) appelle l'API pour la PR courante : (1) `GET /repos/{o}/{r}/issues/{n}/events` → événements `labeled` avec `actor.login`, `label.name`, `created_at` ; (2) **ancre « dernier push » côté serveur** : `GET /repos/{o}/{r}/actions/runs?head_sha=<sha>&event=pull_request` → plus petit `created_at` = moment où GitHub a vu ce SHA (les commits forgent leur date, pas les runs). Approuvé si le dernier `labeled` d'un label requis a `actor.login` dans l'allowlist versionnée **et** `created_at` > ancre, **et** le label est encore présent. Les `unlabeled` annulent. [VERIFIED: appels `gh api` sur une PR publique — champs `actor.login`, `label.name`, `created_at` des `labeled` ; runs filtrés par `head_sha` avec `created_at` serveur ≈ 5 s après la date du commit]
 **Pourquoi pas les dates de commit :** `committer.date` est contrôlable par l'auteur ; `head_ref_force_pushed` n'existe que pour les force-push. **Retrait du label :** job séparé `reset-approval` (`synchronize`, `pull-requests: write`, `continue-on-error: true`) ; l'autorité reste la comparaison d'horodatage, le retrait n'est que de l'hygiène. Pour une PR de fork, `GITHUB_TOKEN` est en lecture seule [CITED: docs.github.com — « The `GITHUB_TOKEN` has read-only permissions in pull requests from forked repositories »] : le retrait échoue sans conséquence, la lecture des événements fonctionne. Permissions du job `quality` : `contents: read`, `pull-requests: read`, `actions: read`.

@@ -132,7 +132,7 @@ Limite : `LEFTHOOK=0` désarme le pré-commit (Pitfall 7) ; le hook agent doit r
 name: quality
 on:
   pull_request:
-    types: [opened, synchronize, reopened]   # révision D-14
+    types: [opened, synchronize, reopened, labeled, unlabeled]   # D-15 : la gate se rejoue sur pose ou retrait de label
 permissions: {}
 jobs:
   quality:
@@ -153,7 +153,7 @@ jobs:
         with: { name: gate, path: reports/gate.json }
 ```
 
-Contraintes : aucun filtre `paths`, un seul job nommé `quality`, jobs optionnels = steps conditionnels (Pitfall 10) ; jamais `pull_request_target` ; jamais `${{ github.event.* }}` dans `run:`. (Révision D-14 : plus de job de retrait de label, le workflow garde un seul job sans permission en écriture.) `nightly.yml` : copier ce squelette (mêmes SHA, mêmes permissions) avec `schedule:` et le profil complet + auto-test + trufflehog.
+Contraintes : aucun filtre `paths`, un seul job nommé `quality`, jobs optionnels = steps conditionnels (Pitfall 10) ; jamais `pull_request_target` ; jamais `${{ github.event.* }}` dans `run:`. Un job `reset-approval` séparé (`synchronize`, `pull-requests: write` au seul niveau du job, `continue-on-error: true`, aucune action) est autorisé car non requis (D-15, plan 01-07) ; aucune condition n'allège le job de la gate sur un événement de label. `nightly.yml` : copier ce squelette (mêmes SHA, mêmes permissions) avec `schedule:` et le profil complet + auto-test + trufflehog.
 
 ### `semgrep/*.yml` (config, SAST)
 
@@ -214,7 +214,7 @@ Les scripts de gate s'exécutent avec `node` natif, sans `tsx`. Imports relatifs
 
 **Pas d'analogue.** Modèle : RESEARCH Patterns 2 et 4. Règles :
 - exécutés depuis la copie de la ref de base (`git worktree add ../base origin/<base_ref>`), jamais depuis la PR ; baseline absente côté base = mode « amorçage » (Pitfall 13) ;
-- `approvals.ts` (révisé par D-14, le label n'approuve plus) : lit le commit de tête dans git, exige un commit vide `gate-approval: <sortes>` + `Approved-Parent: <SHA>` signé au format SSH, vérifie la signature par `ssh-keygen -Y find-principals` puis `-Y verify -n git` contre `quality/allowed_signers` de la base, puis contrôle lui-même le type de clé et les drapeaux FIDO de présence (0x01) et de vérification (0x04) via `quality/sshsig.ts` ; aucune API GitHub (plan 01-07 tâche 2) ;
+- `approvals.ts` (D-15, forme D-02 de Pattern 4) : juge pur, sans jeton, d'un fichier de preuves collecté en lecture seule par `quality/approval-evidence.ts` (`GET /repos/{o}/{r}/pulls/{n}`, `GET /repos/{o}/{r}/issues/{n}/events` : `labeled`, `unlabeled`, `head_ref_force_pushed`, `actor.login`, `label.name`, `created_at` ; `GET /actions/runs?head_sha=<sha>&event=pull_request`) ; ancre « dernier push » = plus ancien run du SHA sur la branche de tête de la PR, relevé au dernier push forcé ; allowlist versionnée `quality/approvers.json` (`sebc-dev`) lue dans la base ; les `unlabeled` annulent (plan 01-07) ;
 - `deps-guard.ts` : diff de `package.json`/lockfile, âge npm et existence ; exige `deps-approved` ;
 - `integrity.ts` : refuse toute baisse de `minimumReleaseAge`, tout ajout à `minimumReleaseAgeExclude`, baisse de `coverage.thresholds`, de `stryker.thresholds.break`, de `--max-warnings`.
 

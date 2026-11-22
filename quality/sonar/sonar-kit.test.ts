@@ -225,6 +225,7 @@ describe('scannerInvocation et redactInvocation', () => {
       IMAGE,
       '-Dsonar.host.url=https://sonar.example',
       '-Dsonar.analysis.coverage=unit',
+      '-Dsonar.working.directory=/usr/src/reports/sonar/scannerwork',
     ]);
     expect(inv.env).toStrictEqual({ SONAR_HOST_URL: 'https://sonar.example', SONAR_TOKEN: JETON });
   });

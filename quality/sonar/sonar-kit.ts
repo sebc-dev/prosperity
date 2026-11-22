@@ -242,6 +242,8 @@ export function scannerInvocation(cfg: SonarConfig, opts: ScannerOptions): Invoc
     opts.image,
     `-Dsonar.host.url=${cfg.hostUrl}`,
     `-Dsonar.analysis.coverage=${cfg.coverage}`,
+    // L'image impose /tmp/.scannerwork : sans cela report-task.txt disparaît avec le conteneur.
+    '-Dsonar.working.directory=/usr/src/reports/sonar/scannerwork',
     ...(opts.scmDisabled ? ['-Dsonar.scm.disabled=true'] : []),
   ];
   return {

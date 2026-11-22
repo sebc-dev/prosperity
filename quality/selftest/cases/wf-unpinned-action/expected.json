@@ -1,0 +1,5 @@
+{
+  "check": "workflow-audit",
+  "rule": "unpinned-uses",
+  "install": "frozen"
+}

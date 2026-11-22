@@ -16,9 +16,9 @@ const PACKAGE_MUTATIONS = new Set([
 ]);
 const INSTALL_VERBS = new Set(['install', 'i']);
 
-/** `ssh-keygen`, `ssh-add` : jamais de demande de signature ni de clé pour l'agent (D-14). */
+/** `ssh-keygen`, `ssh-add` : ni signature ni clé pour l'agent (hygiène : l'approbation est le label de D-15). */
 export function sshDenial(name: string): Denial {
-  return `${name} refusé : l'agent ne touche ni aux clés ni à la signature (D-14)`;
+  return `${name} refusé : l'agent ne touche ni aux clés ni à la signature (hygiène : l'approbation est le label de D-15)`;
 }
 
 export function lefthookDenial(args: readonly string[]): Denial {
@@ -32,7 +32,7 @@ export function downloadDenial(args: readonly string[]): Denial {
     : undefined;
 }
 
-/** Ajouts et retraits de dépendances : validés par un humain (`deps-approved`, D-14). */
+/** Ajouts et retraits de dépendances : validés par un humain (label `deps-approved`, D-15). */
 export function packageDenial(name: string, args: readonly string[]): Denial {
   const [verb, ...rest] = nonOptions(args);
   if (verb === undefined) {

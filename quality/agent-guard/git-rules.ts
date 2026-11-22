@@ -7,7 +7,8 @@ interface GitCall {
   configs: string[];
 }
 
-// Configuration git qui désarme les hooks ou déclenche une signature (D-04, D-14).
+// Configuration git qui désarme les hooks (D-04) ou déclenche une signature (hygiène :
+// l'approbation est le label de D-15).
 const FORBIDDEN_CONFIG =
   /^(?:core\.hookspath|commit\.gpgsign|tag\.gpgsign|user\.signingkey|gpg\.)/i;
 const APPROVAL_SUBJECT = /^(?:-m|--message=)?\s*gate-approval:/i;
@@ -49,7 +50,7 @@ function signingDenial(call: GitCall): Denial {
   const gpgSign = (arg: string): boolean =>
     arg === '--gpg-sign' || arg.startsWith('--gpg-sign=') || hasShortFlag(arg, 'S', 'mFCct');
   if (SIGNING_SUBS.has(sub) && args.some(gpgSign)) {
-    return `signature de commit refusée (git ${sub} -S / --gpg-sign) : D-14`;
+    return `signature de commit refusée (git ${sub} -S / --gpg-sign) : hygiène, l'approbation est le label de D-15`;
   }
   const tagSigns = (arg: string): boolean =>
     arg === '--sign' ||
@@ -57,7 +58,7 @@ function signingDenial(call: GitCall): Denial {
     hasShortFlag(arg, 's', 'mFu') ||
     hasShortFlag(arg, 'u', 'mF');
   if (sub === 'tag' && args.some(tagSigns)) {
-    return 'signature de tag refusée (D-14)';
+    return "signature de tag refusée : hygiène, l'approbation est le label de D-15";
   }
   return undefined;
 }
@@ -71,7 +72,7 @@ function commitDenial(call: GitCall): Denial {
     return 'git commit --no-verify / -n contourne les hooks';
   }
   if (args.some((arg) => APPROVAL_SUBJECT.test(arg))) {
-    return "commit d'approbation « gate-approval: » réservé à l'humain (D-14)";
+    return "sujet « gate-approval: » refusé : hygiène, l'approbation est le label de D-15, posé par l'humain";
   }
   return undefined;
 }

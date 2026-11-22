@@ -1,0 +1,53 @@
+name: nightly
+
+# Nightly (D-08, CLAUDE.md §10.4) : la gate complète avec l'auto-test forcé, la mutation complète,
+# fast-check à 1000 exécutions et le jeu complet de packs Semgrep ; trufflehog en advisory.
+# Un workflow planifié tourne sur la branche par défaut : il ne s'exécute qu'après la fusion de la
+# PR de bootstrap. Hors `pull_request`, les checks `integrity`, `approvals` et `deps` rendent `passed`
+# avec la note « hors pull_request ».
+on:
+  schedule:
+    - cron: "23 3 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  nightly:
+    name: nightly
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+        with:
+          version: 2026.11.12
+          install_args: "--locked"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm quality
+        env:
+          GATE_FORCE_SELFTEST: "1"
+          GATE_MUTATION_SCOPE: all
+          FAST_CHECK_NUM_RUNS: "1000"
+          GATE_SEMGREP_PACKS: full
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Advisory : second avis avec vérification de la validité des secrets ; n'influe pas sur le verdict.
+      - name: trufflehog (advisory)
+        if: always()
+        continue-on-error: true
+        run: mkdir -p reports && mise exec -- trufflehog git file://. --json --no-update > reports/trufflehog.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: gate-nightly
+          path: |
+            reports/gate.json
+            reports/selftest.json
+            reports/trufflehog.json

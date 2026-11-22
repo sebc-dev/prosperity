@@ -1,6 +1,7 @@
 import type { Denial } from './write-rules.ts';
 
-// Groupes `gh` réservés à l'humain : labels (hygiène D-03), secrets, variables, clés du compte (D-14).
+// Groupes `gh` réservés à l'humain : labels (barrière de l'approbation par label, D-03 et D-15),
+// secrets, variables, clés du compte (hygiène).
 const DENIED_GROUPS = new Set(['label', 'secret', 'variable', 'ssh-key', 'gpg-key']);
 const REPO_WRITE_VERBS = new Set([
   'edit',
@@ -61,7 +62,7 @@ function apiDenial(args: readonly string[]): Denial {
     return 'gh api graphql refusé (mutations possibles)';
   }
   return args.some((arg) => arg.includes('keys'))
-    ? 'gh api sur les clés du compte refusé (D-14)'
+    ? "gh api sur les clés du compte refusé : hygiène, réservé à l'humain (l'approbation est le label de D-15)"
     : undefined;
 }
 
@@ -69,7 +70,7 @@ function labelDenial(call: GhCall): Denial {
   const { group, verb, args } = call;
   const edits = (group === 'pr' || group === 'issue') && (verb === 'create' || verb === 'edit');
   if (edits && args.some((arg) => LABEL_FLAG.test(arg) || arg === '-l')) {
-    return 'pose ou retrait de label refusé (hygiène D-03)';
+    return "pose ou retrait de label refusé : l'approbation par label appartient à l'humain (D-03, D-15)";
   }
   return undefined;
 }

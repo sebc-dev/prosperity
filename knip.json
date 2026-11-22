@@ -9,6 +9,7 @@
     "quality/verdict.ts",
     "quality/agent-guard/*.ts",
     "quality/selftest/run.ts",
+    "quality/selftest/demo-prs.ts",
     "quality/selftest/cases/*/apply.ts",
     "test/global-setup.ts",
     "test/setup/fast-check.ts"

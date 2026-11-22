@@ -1,9 +1,23 @@
 min_version: 2.2.2
 output: [failure, summary]
+# Pré-commit de confort (budget ≤ 10 s, CLAUDE.md §10.4). Le refus des chemins protégés s'y
+# ajoute au verrou de la phase (D-01).
 pre-commit:
   jobs:
     - name: gitleaks-staged
       run: mise exec -- gitleaks git --staged --redact --no-banner
+    - name: format
+      glob: "*.{ts,mjs,cjs,json}"
+      run: mise exec -- pnpm exec biome format --write {staged_files}
+      stage_fixed: true
+    - name: lint-staged
+      glob: "*.ts"
+      run: mise exec -- pnpm exec eslint --cache --cache-location reports/.eslintcache --max-warnings 0 --no-warn-ignored {staged_files}
+    - name: workflow-lint-staged
+      glob: ".github/workflows/*.yml"
+      run: mise exec -- actionlint {staged_files}
+    - name: escape-hatches
+      run: mise exec -- node quality/run.ts --only escape-hatches --profile push --report reports/precommit-gate.json
 pre-push:
   jobs:
     - name: quality-push

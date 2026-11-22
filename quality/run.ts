@@ -11,7 +11,7 @@ import type {
   Profile,
 } from './gate-report.ts';
 import { computeVerdict, writeGateReport } from './gate-report.ts';
-import { runTool } from './tools.ts';
+import { clearRepoGitVariables, runTool } from './tools.ts';
 
 const EXIT_PASS = 0;
 const EXIT_FAIL = 1;
@@ -186,6 +186,7 @@ function printTable(results: readonly CheckResult[], verdict: string): void {
 }
 
 async function main(): Promise<number> {
+  clearRepoGitVariables(process.env);
   const root = resolve(import.meta.dirname, '..');
   const options = parseOptions(process.argv.slice(2), process.env);
   const checks = selectChecks(await discoverChecks(root), options.only);

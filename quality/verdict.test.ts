@@ -7,10 +7,7 @@ import {
   runVerdict,
   statusPayload,
 } from './verdict.ts';
-import type { ApprovalsReport, VerdictTarget } from './verdict.ts';
-
-const SHA = 'a'.repeat(40);
-const GATE_PATH = '.github/workflows/quality.yml';
+import { approvals, check, GATE_PATH, harness, SHA, target } from './verdict-fixtures.ts';
 
 function payload(run: Record<string, unknown> = {}): unknown {
   return {
@@ -24,43 +21,6 @@ function payload(run: Record<string, unknown> = {}): unknown {
       html_url: 'https://github.com/o/r/actions/runs/1',
       ...run,
     },
-  };
-}
-
-function target(over: Partial<VerdictTarget> = {}): VerdictTarget {
-  return {
-    headSha: SHA,
-    pr: 12,
-    gateConclusion: 'success',
-    gateEvent: 'pull_request',
-    gatePath: GATE_PATH,
-    runUrl: 'https://github.com/o/r/actions/runs/1',
-    ...over,
-  };
-}
-
-function check(id: string, over: Partial<CheckResult> = {}): CheckResult {
-  return {
-    check: id,
-    tool: id,
-    version: 'v26',
-    severity: 'blocking',
-    passed: true,
-    status: 'passed',
-    issues: [],
-    duration_ms: 1,
-    ...over,
-  };
-}
-
-function approvals(over: Partial<ApprovalsReport> = {}): ApprovalsReport {
-  return {
-    approved: [],
-    rejected: [],
-    bootstrap: false,
-    verifier: 'approvals@1',
-    approval: null,
-    ...over,
   };
 }
 
@@ -180,7 +140,7 @@ describe('readApprovalsReport', () => {
 
   it('lit un rapport conforme au schéma', () => {
     expect(readApprovalsReport(valid)).toEqual(valid);
-    const signed = { commit: 'c', principal: 'p', keyType: 'sk-ssh-ed25519@openssh.com', flags: 5 };
+    const signed = { commit: 'c', principal: 'sebc-dev', keyType: 'github-label', flags: null };
     expect(readApprovalsReport({ ...valid, approval: signed })).toMatchObject({ approval: signed });
   });
 
@@ -217,37 +177,6 @@ describe('statusPayload', () => {
   });
 });
 
-function harness(
-  over: { judge?: (name: string) => unknown; extract?: () => Promise<string> } = {},
-) {
-  const calls: { name: string; args: readonly string[] }[] = [];
-  const published: { sha: string; state: string }[] = [];
-  const reports: Record<string, unknown> = {
-    approvals: approvals(),
-    integrity: check('integrity'),
-    deps: check('deps'),
-  };
-  return {
-    calls,
-    published,
-    deps: {
-      target: target(),
-      baseDir: '/base',
-      workDir: '/work',
-      extractHead: over.extract ?? (() => Promise.resolve('/work/head')),
-      judge: (name: 'approvals' | 'integrity' | 'deps', args: readonly string[]) => {
-        calls.push({ name, args });
-        const result = over.judge?.(name) ?? reports[name];
-        return result instanceof Error ? Promise.reject(result) : Promise.resolve(result);
-      },
-      publish: (sha: string, body: { state: string }) => {
-        published.push({ sha, state: body.state });
-        return Promise.resolve();
-      },
-    },
-  };
-}
-
 describe('runVerdict', () => {
   it('lance chaque juge depuis la base et publie une seule fois sur le SHA de tête', async () => {
     const { calls, published, deps } = harness();
@@ -255,7 +184,8 @@ describe('runVerdict', () => {
     expect(published).toEqual([{ sha: SHA, state: 'success' }]);
     const byName = Object.fromEntries(calls.map((call) => [call.name, call.args]));
     expect(byName['approvals']).toEqual([
-      ...['--base-dir', '/base', '--head-sha', SHA, '--out', '/work/approvals.json'],
+      ...['--base-dir', '/base', '--head-sha', SHA, '--pr', '12'],
+      ...['--evidence', '/work/approval-evidence.json', '--out', '/work/approvals.json'],
     ]);
     expect(byName['integrity']).toEqual([
       ...['--base-dir', '/base', '--head-dir', '/work/head'],
@@ -286,5 +216,50 @@ describe('runVerdict', () => {
       judge: (name) => (name === 'approvals' ? { approved: 3 } : undefined),
     });
     expect((await runVerdict(deps)).reasons).toContain('missing-trusted-report:approvals');
+  });
+});
+
+describe('runVerdict : approbation par label', () => {
+  it('collecte les preuves une seule fois, dans le dossier de travail, avant le juge d approbation', async () => {
+    const { calls, collected, deps } = harness();
+    await runVerdict(deps);
+    expect(collected).toEqual([{ target: target(), out: '/work/approval-evidence.json' }]);
+    expect(calls.filter((call) => call.name === 'approvals')).toHaveLength(1);
+  });
+
+  it('publie failure avec judge-error:approval-evidence quand la collecte lève, sans lancer le juge', async () => {
+    const { calls, published, deps } = harness({ collect: () => Promise.reject(new Error('gh')) });
+    const verdict = await runVerdict(deps);
+    expect(verdict.conclusion).toBe('failure');
+    expect(verdict.reasons).toEqual([
+      'judge-error:approval-evidence',
+      'missing-trusted-report:approvals',
+    ]);
+    expect(calls.map((call) => call.name)).toEqual(['integrity', 'deps']);
+    expect(published).toEqual([{ sha: SHA, state: 'failure' }]);
+  });
+
+  it('ne collecte ni ne juge l approbation quand la PR est introuvable', async () => {
+    const { calls, collected, deps } = harness({ target: target({ pr: undefined }) });
+    const verdict = await runVerdict(deps);
+    expect(collected).toEqual([]);
+    expect(calls.map((call) => call.name)).not.toContain('approvals');
+    expect(verdict.reasons).toEqual(['pr-not-found', 'missing-trusted-report:approvals']);
+  });
+
+  it('reprend les refus d approbation par label comme issues informatives', async () => {
+    const rejected = [
+      { kind: 'deps-approved', reason: 'approval-stale' },
+      { kind: 'gate-change-approved', reason: 'approval-actor-not-allowed' },
+    ];
+    const { deps } = harness({
+      judge: (name) => (name === 'approvals' ? approvals({ rejected }) : undefined),
+    });
+    const verdict = await runVerdict(deps);
+    expect(verdict.conclusion).toBe('success');
+    expect(verdict.issues.map((issue) => issue.rule)).toEqual([
+      'approval-stale',
+      'approval-actor-not-allowed',
+    ]);
   });
 });

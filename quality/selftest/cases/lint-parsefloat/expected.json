@@ -1,0 +1,5 @@
+{
+  "check": "lint",
+  "rule": "no-restricted-syntax",
+  "install": "frozen"
+}

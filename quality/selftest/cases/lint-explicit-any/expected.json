@@ -1,0 +1,5 @@
+{
+  "check": "lint",
+  "rule": "@typescript-eslint/no-explicit-any",
+  "install": "frozen"
+}

@@ -238,6 +238,128 @@ Le workflow `nightly` (planifié chaque jour à 03:23 UTC et déclenchable à la
 `trufflehog.json`). Un workflow planifié tourne sur la branche par défaut : il ne s'exécute
 qu'après la fusion de la PR de bootstrap.
 
+## Analyse SonarQube (advisory, D-16)
+
+### Rôle
+
+SonarQube Community, hébergé sur le homelab (kfzserver), donne à l'humain un tableau de bord et un
+historique (dette, points chauds de sécurité à revoir, duplication, couverture). Il est
+**advisory** : aucun check de `pnpm quality` ne le lit, le verdict ne change pas, aucune PR n'est
+bloquée, rien ne tourne dans la CI GitHub, et il n'y a ni runner auto-hébergé ni job GitHub qui
+joindrait le homelab (D-13). `pnpm sonar` refuse de tourner quand `CI` ou `GITHUB_ACTIONS` est défini.
+
+### Déclenchement
+
+| Besoin | Commande |
+|---|---|
+| Analyse à la demande, depuis le poste (mode SSH, défaut) | `mise exec -- pnpm sonar` |
+| Rapports et invocation masquée, sans réseau | `mise exec -- pnpm sonar --dry-run` |
+| Analyse locale sur la machine Sonar (nightly, ou à la main sur kfzserver) | `SONAR_MODE=local mise exec -- pnpm sonar` |
+| Analyse nightly de `main` | timer systemd utilisateur de kfzserver (`deploy/sonar/`) |
+
+Codes de sortie : **0** analyse traitée par le serveur (tâche du moteur de calcul `SUCCESS`) ou, en
+`--dry-run`, rapports produits ; **1** rapport manquant, scanner en échec, tâche `FAILED`,
+`CANCELED` ou expirée (10 min) ; **2** configuration refusée (CI, mode inconnu, cible SSH ou
+fichier d'environnement non conforme, image non épinglée, propriété interdite).
+
+Le script produit d'abord les rapports sous `reports/sonar/` (ignoré par git) : ESLint en JSON avec la
+configuration bloquante puis avec `eslint.security.config.mjs`, et la couverture LCOV de Vitest
+(projets `unit` et `integration`, ou `unit` seul avec `SONAR_COVERAGE=unit`). Un LCOV absent arrête
+tout : une couverture à 0 % trompeuse n'est jamais publiée. Les chemins absolus des rapports sont
+réécrits en chemins relatifs à la racine.
+
+### Deux modes d'exécution
+
+- **Mode SSH (défaut)** : décision du 2026-11-22. Le serveur Sonar n'écoute que sur la boucle locale
+  de kfzserver. Depuis le poste, `pnpm sonar` produit les rapports, envoie par `tar` sur SSH les seules
+  entrées utiles (`src`, `quality`, `test`, `tsconfig.json`, `package.json`,
+  `sonar-project.properties`, `reports/sonar`) dans un dossier jetable de kfzserver, y lance le conteneur
+  du scanner, attend la tâche du serveur par SSH puis supprime le dossier. Le **jeton ne vit que sur
+  kfzserver** : le conteneur le reçoit par `--env-file`, la lecture de la tâche par `curl -K -` (jamais en
+  argument de commande). Les scripts distants arrivent sur l'entrée standard de `ssh <hôte> sh -s` et ne
+  sont construits que de valeurs validées. Une vérification préalable, avant les rapports, contrôle le
+  fichier d'environnement distant (mode 0600, clés présentes, sans guillemet ni espace, adresse en
+  `https://` ou en `http://` sur la boucle locale) et l'accès de l'utilisateur au moteur de conteneur.
+- **Mode local** (`SONAR_MODE=local`) : le scanner tourne sur la machine qui lance la commande ; hôte
+  et jeton viennent de l'environnement ou de `SONAR_ENV_FILE` (défaut `~/.config/prosperity-sonar/env`),
+  refusé s'il est dans le dépôt ou lisible par le groupe ou les autres. `http://` n'est accepté que sur la
+  boucle locale (ou avec `SONAR_ALLOW_INSECURE_HTTP=1`). C'est le mode du timer nightly.
+
+### Configuration hors dépôt
+
+| Variable | Rôle |
+|---|---|
+| `SONAR_MODE` | `ssh` (défaut) ou `local` |
+| `SONAR_SSH_HOST` | cible SSH (défaut `kfzserver`, ou `user@hôte`) ; jamais une option `ssh` |
+| `SONAR_REMOTE_ENV_FILE` | fichier d'environnement distant (défaut `~/.config/prosperity-sonar/env`) |
+| `SONAR_CONTAINER_ENGINE` | `docker` (défaut en mode SSH) ou `podman` (premier trouvé en mode local, Podman d'abord) |
+| `SONAR_COVERAGE` | `full` (défaut, `unit` et `integration`) ou `unit` |
+| `SONAR_HOST_URL`, `SONAR_TOKEN`, `SONAR_ENV_FILE`, `SONAR_ALLOW_INSECURE_HTTP` | mode local seulement |
+
+Sur kfzserver, `~/.config/prosperity-sonar/env` (mode 0600) contient `SONAR_HOST_URL=http://localhost:9000`
+et `SONAR_TOKEN=…` (jeton d'analyse **de projet**, un par machine pour les révoquer séparément ; valeurs
+sans guillemet). Pour `SONAR_COVERAGE=full` en mode local sous Podman : `DOCKER_HOST` vers le socket
+utilisateur de Podman et `TESTCONTAINERS_RYUK_DISABLED=true` dans le même fichier. L'adresse du serveur
+n'entre jamais dans un fichier suivi.
+
+### Installation sur kfzserver (nightly)
+
+Prérequis : `git`, `mise` dans `~/.local/bin`, un moteur de conteneur utilisable **sans privilèges** par
+l'utilisateur du timer (membre du groupe du moteur, ou Podman sans privilèges), `loginctl enable-linger`.
+Clone en lecture seule : `git clone https://github.com/sebc-dev/prosperity.git ~/prosperity-sonar`.
+Copier `deploy/sonar/prosperity-sonar.service` et `.timer` dans `~/.config/systemd/user/`, adapter le
+chemin de `mise`, puis `systemctl --user daemon-reload`. **Après la fusion de la PR de bootstrap seulement**
+(avant, `main` n'a pas `pnpm sonar`) : `mise trust` dans le clone, `systemctl --user enable --now
+prosperity-sonar.timer`, premier passage par `systemctl --user start prosperity-sonar.service`, journal par
+`journalctl --user -u prosperity-sonar`. L'unité fixe `SONAR_MODE=local` : sur kfzserver le scanner tourne
+localement.
+
+### Image du scanner et choix
+
+L'image officielle `sonarsource/sonar-scanner-cli` est épinglée **par digest** dans
+`quality/sonar/scanner.json` (étiquette complète, date de publication ; au moins 7 jours, comme
+`minimumReleaseAge`). `pnpm sonar` refuse une image sans digest, `latest` ou d'un autre dépôt. La mise
+à jour est une PR approuvée par le label `gate-change-approved` (`quality/**` est protégé). Choix du
+scanner : un conteneur plutôt que le paquet npm du scanner (nouvelle dépendance soumise à QUAL-09, moteur et
+JRE téléchargés hors lockfile) ou un binaire épinglé par `mise` (installé aussi en CI par `mise-action`,
+contraire à D-16). Coût : un moteur de conteneur sur la machine qui exécute le scanner.
+
+### Recouvrement avec la gate
+
+Les règles JS/TS de Sonar sont celles d'`eslint-plugin-sonarjs`, déjà **bloquant** ; la duplication
+recoupe `jscpd` (**bloquant** sur les nouveaux clones) ; la couverture affichée recoupe les seuils Vitest
+(**bloquants**). Sonar ajoute le tableau de bord, l'historique, la revue des points chauds de sécurité et
+l'import des avertissements advisory d'`eslint-plugin-security` (issues externes). Référence :
+`origin/main:docs/recherches/2026-09-12-quality-gate-sonar-sans-serveur.md`.
+
+### `sonar-project.properties` : chemin protégé
+
+Ce fichier ne peut pas affaiblir la gate bloquante, mais il décide de ce que montre le tableau de bord
+que l'humain relit et, sans garde, pourrait orienter le jeton (hôte, proxy). Il est protégé (deny agent,
+CODEOWNERS, intégrité, dérivés de `quality/protected-paths.json`), comme `quality/sonar/**` et
+`deploy/sonar/**`. `pnpm sonar` refuse en plus un fichier qui définit `sonar.host.url`, `sonar.token`,
+`sonar.login`, `sonar.password` ou une propriété `sonar.scanner.proxy*`, `http.proxy*`, `https.proxy*`.
+
+### Limites de l'analyse Sonar
+
+- **Le nightly exécute le code et les tests de `main` sur kfzserver** : même confiance que le déploiement
+  de la phase 2 (code fusionné par l'humain après la gate). Rien d'une PR, d'un fork ni d'une branche de
+  travail n'y est exécuté. En mode SSH, le poste n'y envoie que ses sources et rapports, sans exécuter de code.
+- **Le jeton n'est pas une barrière contre l'agent du poste.** En mode SSH il ne quitte pas kfzserver
+  (jamais copié sur le poste, ni dans un argument ou un journal), mais l'accès SSH que le poste a sur
+  kfzserver permettrait de lire le fichier. Jeton d'analyse d'un seul projet, révocable dans Sonar.
+- **Le scanner partage le réseau de l'hôte** (`--network host`) pour joindre un serveur qui n'écoute que
+  sur sa boucle locale.
+- **Analyse sans `node_modules`** en mode SSH (non envoyé) : l'analyse de types de Sonar est moins précise.
+- **Accès au moteur de conteneur** : sur kfzserver, l'utilisateur SSH doit pouvoir parler au démon
+  (groupe `docker`) ou disposer de Podman sans privilèges ; la vérification préalable le signale
+  (`accès refusé au moteur de conteneur distant`).
+- **Vitest peut rendre 1** (test ou seuil de couverture) : le LCOV est publié quand même, avec un
+  avertissement, l'analyse étant advisory.
+- **gitleaks** : la règle par défaut `sonar-api-token` arrête `SONAR_TOKEN=sqp_…` mais pas un jeton nu
+  sans mot-clé.
+- La Community Build n'analyse qu'une branche (ici `main`) et n'a pas d'analyse de propagation (taint).
+
 ## Limites connues
 
 La gate réduit le risque, elle ne l'élimine pas. Chaque limite est suivie du contrôle qui la

@@ -67,7 +67,7 @@ Plans:
 - [ ] 01-12-PLAN.md — Auto-test : cas de sécurité, test faible, intégrité, base et dépendances (QUAL-04 à QUAL-09) (vague 8)
 
 **Wave 9** *(blocked on Wave 8 completion)*
-- [ ] 01-13-PLAN.md — Nightly, pré-commit, documentation et limites (risque accepté de D-15), outil D-07b par labels, preuve CI complète (27 cas) et budgets (vague 9)
+- [ ] 01-13-PLAN.md — Nightly, pré-commit, messages du garde de l'agent alignés sur D-15, documentation et limites (risque accepté de D-15), outil D-07b par labels, preuve CI complète (27 cas) et budgets (vague 9)
 
 **Wave 10** *(blocked on Wave 9 completion)*
 - [ ] 01-15-PLAN.md — SonarQube Community en advisory (D-16) : `pnpm sonar` (scanner conteneur épinglé par digest, rapports ESLint et LCOV importés), unités systemd nightly de `main` pour kfzserver, configuration protégée, jeton et adresse hors dépôt (vague 10)

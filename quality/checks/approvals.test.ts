@@ -19,7 +19,15 @@ afterEach(async () => {
 });
 
 function context(over: Partial<CheckContext>): CheckContext {
-  return { root: scratch, profile: 'full', base: 'origin/main', inCi: false, env: {}, ...over };
+  return {
+    root: scratch,
+    profile: 'full',
+    base: 'origin/main',
+    inCi: false,
+    env: {},
+    selected: false,
+    ...over,
+  };
 }
 
 const pullRequest = { inCi: true, env: { GITHUB_EVENT_NAME: 'pull_request' } };

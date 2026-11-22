@@ -151,6 +151,7 @@ async function execute(check: CheckDefinition, ctx: CheckContext): Promise<Check
 async function runPool(
   checks: readonly CheckDefinition[],
   ctx: CheckContext,
+  only: readonly string[] | undefined,
 ): Promise<CheckResult[]> {
   const results: CheckResult[] = [];
   const queue = [...checks];
@@ -158,7 +159,7 @@ async function runPool(
     { length: Math.min(4, availableParallelism(), queue.length) },
     async () => {
       for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
-        results.push(await execute(next, ctx));
+        results.push(await execute(next, { ...ctx, selected: only?.includes(next.id) ?? false }));
       }
     },
   );
@@ -198,8 +199,9 @@ async function main(): Promise<number> {
     base: options.base,
     inCi,
     env: process.env,
+    selected: false,
   };
-  const results = await runPool(checks, ctx);
+  const results = await runPool(checks, ctx, options.only);
   const verdict = computeVerdict(options.profile, results, inCi);
   const report: GateReport = {
     profile: options.profile,

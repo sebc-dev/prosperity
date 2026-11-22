@@ -1,0 +1,4 @@
+{
+  "allowlist": ["sebc-dev"],
+  "labels": ["gate-change-approved", "deps-approved"]
+}

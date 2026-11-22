@@ -123,6 +123,7 @@ describe('vérification de version des outils', () => {
       base: 'origin/main',
       inCi: false,
       env: {},
+      selected: false,
     });
 
     expect(outcome.status).toBe('failed');
@@ -151,6 +152,7 @@ describe('check mutation', () => {
       base: 'HEAD',
       inCi: false,
       env: {},
+      selected: false,
     });
 
     expect(outcome.status).toBe('passed');
@@ -164,6 +166,7 @@ describe('check mutation', () => {
       base: '--output=zz-injection',
       inCi: false,
       env: {},
+      selected: false,
     });
 
     expect(outcome.status).toBe('failed');

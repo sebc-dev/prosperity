@@ -40,6 +40,8 @@ export interface CheckContext {
   base: string;
   inCi: boolean;
   env: NodeJS.ProcessEnv;
+  /** Vrai quand le check figure explicitement dans `--only`. */
+  selected: boolean;
 }
 
 export interface CheckDefinition {
@@ -86,10 +88,14 @@ export function computeVerdict(
  * Écriture atomique : fichier temporaire dans le même dossier puis `rename`,
  * pour qu'un lecteur ne voie jamais de rapport partiel.
  */
-export async function writeGateReport(path: string, report: GateReport): Promise<void> {
+export async function writeJsonAtomic(path: string, data: unknown): Promise<void> {
   const dir = dirname(path);
   await mkdir(dir, { recursive: true });
   const tmp = join(dir, `.${basename(path)}.${String(process.pid)}.tmp`);
-  await writeFile(tmp, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
+  await writeFile(tmp, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
   await rename(tmp, path);
+}
+
+export function writeGateReport(path: string, report: GateReport): Promise<void> {
+  return writeJsonAtomic(path, report);
 }

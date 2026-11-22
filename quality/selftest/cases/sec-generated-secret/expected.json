@@ -1,0 +1,5 @@
+{
+  "check": "secrets",
+  "rule": "github-pat",
+  "install": "frozen"
+}

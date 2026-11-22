@@ -25,6 +25,9 @@ export default {
   disableBail: true,
   thresholds: thresholds.mutation,
   tempDirName: '.stryker-tmp',
+  // Sorties des autres checks (`reports/coverage`, `reports/gate.json`…), réécrites en parallèle par le
+  // runner : les copier dans le bac à sable échoue en ENOENT quand un fichier disparaît pendant la copie.
+  ignorePatterns: ['reports', 'coverage'],
   // Jamais `--logLevel debug` avec ce runner (issue #6272).
   vitest: { configFile: 'vitest.config.ts' },
 };

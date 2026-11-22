@@ -1,0 +1,5 @@
+{
+  "check": "unit",
+  "rule": "coverage-threshold",
+  "install": "frozen"
+}

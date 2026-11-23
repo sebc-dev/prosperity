@@ -73,14 +73,14 @@ specifiers = ["1.186.0"]
 uv = { path = ".mise/locks/pipx-semgrep/1.186.0", digest = "sha256:6198305441df1f72d799bec35dc2c13afe124d06909acbf72b1b36ea7c0b0447" }
 
 [[tools.pnpm]]
-version = "12.21.0"
+version = "12.18.0"
 backend = "aqua:pnpm/pnpm"
-specifiers = ["12.21.0"]
+specifiers = ["12.18.0"]
 
 [tools.pnpm."platforms.linux-x64"]
-checksum = "sha256:84c4773bcf4a217f4083cd7b2a91e4cee6103cf42426c1282ef37d308f55a410"
-url = "https://github.com/pnpm/pnpm/releases/download/v12.21.0/pnpm-linux-x64.tar.gz"
-url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/744357264"
+checksum = "sha256:3726060e236c0db3e7124c0a5af123c840ba0cb76682149b63ea0baf290017c2"
+url = "https://github.com/pnpm/pnpm/releases/download/v12.18.0/pnpm-linux-x64.tar.gz"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/711505542"
 provenance = "github-attestations"
 
 [[tools.python]]

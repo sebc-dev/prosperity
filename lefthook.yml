@@ -4,6 +4,8 @@ output: [failure, summary]
 # ajoute au verrou de la phase (D-01).
 pre-commit:
   jobs:
+    - name: protected-paths
+      run: mise exec -- node quality/agent-guard/precommit-protected.ts
     - name: gitleaks-staged
       run: mise exec -- gitleaks git --staged --redact --no-banner
     - name: format

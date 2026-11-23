@@ -3,6 +3,11 @@ name: quality
 # Un label posé ou retiré rejoue la gate complète, sans allègement : le juge hors PR
 # (`quality-verdict`) reprend la conclusion de ce run et recalcule le statut `quality`, qui suit
 # ainsi la pose ou le retrait d'un label d'approbation (D-15).
+#
+# Le job de la PR s'appelle `gate`, pas `quality` : le nom `quality` appartient au statut requis,
+# publié par le juge hors PR (`quality-verdict`, source = l'application `prosperity-gate`). Ce job
+# informe la PR mais ne fait pas foi seul : le juge reprend sa conclusion et rejoue ses propres
+# juges depuis la branche par défaut.
 on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
@@ -10,14 +15,14 @@ on:
 permissions: {}
 
 jobs:
-  quality:
-    name: quality
+  gate:
+    name: gate
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
       pull-requests: read
-      actions: read
+      actions: read # la liste des runs fournit l'ancre serveur du dernier push (D-15)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -29,14 +34,65 @@ jobs:
           install_args: "--locked"
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - run: pnpm install --frozen-lockfile
+      # Copie de confiance : la branche de base, hors de l'espace de travail de la PR. Les étapes
+      # ci-dessous y lisent leurs scripts et l'allowlist d'approbation (`quality/approvers.json`).
+      - name: gate-base
+        run: git worktree add --detach "$RUNNER_TEMP/gate-base" "origin/$GITHUB_BASE_REF"
+      # Seule étape de confiance qui reçoit un jeton : celui du workflow, en lecture seule.
+      - name: approval-evidence
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -f "$RUNNER_TEMP/gate-base/quality/approval-evidence.ts" ]; then
+            node "$RUNNER_TEMP/gate-base/quality/approval-evidence.ts" --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" --head-sha "$PR_HEAD_SHA" --out reports/approval-evidence.json
+          else
+            node quality/approval-evidence.ts --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" --head-sha "$PR_HEAD_SHA" --out reports/approval-evidence.json
+          fi
+      # Aucun jeton ici : l'allowlist n'est lue que dans la copie de base. Première PR contre un
+      # ancien `main` sans `quality/` : script de la tête et `--bootstrap` (Pitfall 13).
+      - name: approvals
+        if: always()
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -f "$RUNNER_TEMP/gate-base/quality/approvals.ts" ]; then
+            node "$RUNNER_TEMP/gate-base/quality/approvals.ts" --base-dir "$RUNNER_TEMP/gate-base" --evidence reports/approval-evidence.json --head-sha "$PR_HEAD_SHA" --pr "$PR_NUMBER" --out reports/approvals.json
+          else
+            node quality/approvals.ts --bootstrap --base-dir "$RUNNER_TEMP/gate-base" --evidence reports/approval-evidence.json --head-sha "$PR_HEAD_SHA" --pr "$PR_NUMBER" --out reports/approvals.json
+          fi
+      - name: integrity
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/gate-base/quality/integrity.ts" ]; then
+            node "$RUNNER_TEMP/gate-base/quality/integrity.ts" --base-dir "$RUNNER_TEMP/gate-base" --head-dir "$GITHUB_WORKSPACE" --approvals-report reports/approvals.json --out reports/integrity.json
+          else
+            node quality/integrity.ts --bootstrap --base-dir "$RUNNER_TEMP/gate-base" --head-dir "$GITHUB_WORKSPACE" --approvals-report reports/approvals.json --out reports/integrity.json
+          fi
+      - name: deps
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/gate-base/quality/deps-guard.ts" ]; then
+            node "$RUNNER_TEMP/gate-base/quality/deps-guard.ts" --base-dir "$RUNNER_TEMP/gate-base" --head-dir "$GITHUB_WORKSPACE" --approvals-report reports/approvals.json --out reports/deps.json
+          else
+            node quality/deps-guard.ts --bootstrap --base-dir "$RUNNER_TEMP/gate-base" --head-dir "$GITHUB_WORKSPACE" --approvals-report reports/approvals.json --out reports/deps.json
+          fi
       - run: pnpm quality
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: gate
-          path: reports/gate.json
+          path: |
+            reports/gate.json
+            reports/approval-evidence.json
+            reports/approvals.json
+            reports/integrity.json
+            reports/deps.json
 
   # Hygiène (D-15) : chaque push retire les labels d'approbation. L'autorité reste la comparaison
   # d'horodatage faite par le juge hors PR ; ce job n'en dépend pas et son échec est sans effet.

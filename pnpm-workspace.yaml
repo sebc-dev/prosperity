@@ -8,3 +8,5 @@ allowBuilds:
   esbuild: false
   protobufjs: false
   ssh2: false
+overrides:
+  'minimatch@>=11': 10.2.6

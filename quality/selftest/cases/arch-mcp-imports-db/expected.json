@@ -1,0 +1,5 @@
+{
+  "check": "arch",
+  "rule": "mcp-tools-no-db",
+  "install": "frozen"
+}

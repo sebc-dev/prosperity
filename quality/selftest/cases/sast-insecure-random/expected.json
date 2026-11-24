@@ -1,0 +1,5 @@
+{
+  "check": "sast",
+  "rule": "prosperity.insecure-random-token",
+  "install": "frozen"
+}

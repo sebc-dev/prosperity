@@ -1,0 +1,5 @@
+{
+  "check": "typecheck",
+  "rule": "TS2322",
+  "install": "frozen"
+}

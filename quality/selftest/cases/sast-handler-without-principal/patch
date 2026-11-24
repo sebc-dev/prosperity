@@ -1,0 +1,14 @@
+diff --git a/src/mcp/tools/selftest-handler.ts b/src/mcp/tools/selftest-handler.ts
+new file mode 100644
+--- /dev/null
++++ b/src/mcp/tools/selftest-handler.ts
+@@ -0,0 +1,9 @@
++declare function defineTool(
++  name: string,
++  config: object,
++  handler: (input: unknown) => Promise<unknown>,
++): void;
++
++defineTool('selftest_handler', {}, async (input) => {
++  return input;
++});

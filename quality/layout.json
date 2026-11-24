@@ -1,0 +1,19 @@
+{
+  "pure": ["src/shared/**", "src/modules/*/domain/**"],
+  "application": ["src/modules/*/application/**"],
+  "mutate": [
+    "src/shared/**/*.ts",
+    "src/modules/*/domain/**/*.ts",
+    "src/modules/*/application/**/*.ts"
+  ],
+  "dto": ["src/mcp/contracts/**"],
+  "clock": ["src/shared/clock.ts"],
+  "config": ["src/config/**"],
+  "depcruise": {
+    "pure": "^src/(shared|modules/[^/]+/domain)/",
+    "mcp": "^src/mcp/",
+    "moduleAdapters": "^src/modules/[^/]+/adapters/",
+    "db": "^src/db/",
+    "dbAllowedFrom": "^src/(modules/[^/]+/adapters/db|composition|worker)/"
+  }
+}

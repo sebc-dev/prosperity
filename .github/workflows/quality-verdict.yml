@@ -1,0 +1,58 @@
+name: quality-verdict
+
+# Juge hors PR. GitHub lit toujours la définition d'un workflow `workflow_run` sur la branche par
+# défaut : une PR ne peut ni la modifier ni la désactiver pour elle-même. Ce workflow ne publie le
+# statut requis `quality` que s'il est présent sur `main` ; d'ici là il est inerte.
+#
+# Il n'exécute aucun fichier de la PR : le checkout est celui de la branche par défaut, la tête de
+# la PR est récupérée comme données (`git worktree`, sans installation) et lue par les scripts de
+# la branche par défaut (`approvals`, `integrity`, `deps-guard`).
+on:
+  workflow_run:
+    workflows: [quality]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: quality-verdict-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  verdict:
+    name: verdict
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: gate-verdict
+    permissions:
+      contents: read
+      pull-requests: read # PR, labels et événements lus en lecture seule (approbation par label, D-15)
+      actions: read # runs du SHA de tête : ancre serveur du dernier push (D-15)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
+        with:
+          version: 2026.11.12
+          install_args: node
+          cache: false
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.GATE_APP_ID }}
+          private-key: ${{ secrets.GATE_APP_PRIVATE_KEY }}
+          permission-statuses: write
+      - run: node quality/verdict.ts --base-dir "$GITHUB_WORKSPACE" --work-dir "$RUNNER_TEMP/verdict" --out "$RUNNER_TEMP/verdict/verdict.json"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GATE_STATUS_TOKEN: ${{ steps.app-token.outputs.token }}
+          GIT_LFS_SKIP_SMUDGE: "1"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: verdict
+          path: ${{ runner.temp }}/verdict/verdict.json

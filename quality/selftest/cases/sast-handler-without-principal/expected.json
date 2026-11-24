@@ -1,0 +1,5 @@
+{
+  "check": "sast",
+  "rule": "prosperity.tool-handler-without-principal",
+  "install": "frozen"
+}

@@ -1,0 +1,5 @@
+{
+  "check": "deps",
+  "rule": "dependency-added",
+  "install": "link"
+}

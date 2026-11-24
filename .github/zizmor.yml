@@ -1,0 +1,10 @@
+rules:
+  dangerous-triggers:
+    # Exception unique, limitée au juge hors PR. `workflow_run` s'exécute avec des droits sur le
+    # dépôt de base, d'où le signalement de zizmor ; il est ici la seule façon de publier le statut
+    # requis depuis une définition que la PR ne peut pas réécrire. Justification : aucun fichier de
+    # la PR n'y est exécuté ni chargé par un outil (la tête est lue comme données par les scripts
+    # de la branche par défaut, sans installation), et le seul secret est le jeton d'une
+    # application GitHub limitée à `statuses: write`. À relire au point de relecture D-01.
+    ignore:
+      - quality-verdict.yml

@@ -1,150 +1,53 @@
 name: nightly
 
-# Mirrors docs/Stratégie de tests §9.3: 30-45 min budget, daily cron.
-# Manually re-runnable via workflow_dispatch (used to satisfy the
-# acceptance criterion "vert au moins une fois" without waiting for cron).
-
+# Nightly (D-08, CLAUDE.md §10.4) : la gate complète avec l'auto-test forcé, la mutation complète,
+# fast-check à 1000 exécutions et le jeu complet de packs Semgrep ; trufflehog en advisory.
+# Un workflow planifié tourne sur la branche par défaut : il ne s'exécute qu'après la fusion de la
+# PR de bootstrap. Hors `pull_request`, les checks `integrity`, `approvals` et `deps` rendent `passed`
+# avec la note « hors pull_request ».
 on:
   schedule:
-    - cron: "0 3 * * *"  # 03:00 UTC daily
+    - cron: "23 3 * * *"
   workflow_dispatch:
 
-# Least-privilege default for GITHUB_TOKEN; jobs only check out and read.
-permissions:
-  contents: read
-
-concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: false
+permissions: {}
 
 jobs:
-  backend-property-tests:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      HYPOTHESIS_PROFILE: nightly
+  nightly:
+    name: nightly
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-      - run: uv sync --frozen
-      - run: uv run pytest tests/unit/
-
-  audit-deps:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@90f833d396d0cc3674b631d2d225e306476c303a # v5.2.10
         with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-      - run: uv sync --frozen
-      - run: uv run --with pip-audit pip-audit
-
-  coverage:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-      - run: uv sync --frozen
-      - run: uv run pytest --cov --cov-report=xml --cov-report=html --cov-report=term
-      - uses: actions/upload-artifact@v6
+          version: 2026.11.12
+          install_args: "--locked"
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm quality
+        env:
+          GATE_FORCE_SELFTEST: "1"
+          GATE_MUTATION_SCOPE: all
+          FAST_CHECK_NUM_RUNS: "1000"
+          GATE_SEMGREP_PACKS: full
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Advisory : second avis avec vérification de la validité des secrets ; n'influe pas sur le verdict.
+      - name: trufflehog (advisory)
+        if: always()
+        continue-on-error: true
+        run: mkdir -p reports && mise exec -- trufflehog git file://. --json --no-update > reports/trufflehog.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
-          name: coverage-report
+          name: gate-nightly
           path: |
-            coverage.xml
-            htmlcov/
-
-  # Placeholders surfaced in CI so the gap is visible; activated in V1
-  # (cf. docs/Stratégie de tests §6 and §4.7).
-  playwright-e2e:
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    steps:
-      - run: echo "placeholder — Playwright 5 parcours (V1, stratégie de tests §6)"
-
-  banking-contract-level-c:
-    runs-on: ubuntu-latest
-    timeout-minutes: 2
-    steps:
-      - run: echo "placeholder — Enable Banking niveau C live calls (V1, stratégie de tests §4.7)"
-
-  # Boots the dev compose stack end-to-end and asserts the three runtime
-  # acceptance criteria of S13.1 (boot without error, active replication slot,
-  # PowerSync "connected") — the riskiest part of E13. Re-runnable via
-  # workflow_dispatch. Local dev uses `podman compose`; CI uses `docker compose`
-  # on the SAME compose.dev.yml.
-  powersync-smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-      - run: uv sync --frozen
-      # Dev-only defaults (passwords match compose/initdb); fine for CI.
-      - name: Materialise .env
-        run: cp .env.example .env
-      - name: Start Postgres (source + storage DB + roles + empty publication)
-        run: docker compose -f compose.dev.yml up -d --wait postgres
-      - name: Apply migrations (creates the app tables)
-        env:
-          DATABASE_URL: postgresql+asyncpg://prosperity:prosperity@localhost:5432/prosperity
-        run: uv run alembic upgrade head
-      - name: Populate the powersync publication
-        run: |
-          docker compose -f compose.dev.yml exec -T postgres \
-            psql -U prosperity -d prosperity -v ON_ERROR_STOP=1 \
-            < compose/initdb/10_powersync_publication.sql
-      - name: Start PowerSync Service
-        run: docker compose -f compose.dev.yml up -d --wait powersync
-      - name: Smoke
-        run: bash scripts/smoke_powersync.sh
-      - name: Dump logs on completion
-        if: always()
-        # Mask `user:password@` in any connection URI the service logs at boot.
-        # The CI credentials are dev-only, but this keeps the pattern correct for
-        # when E16 runs this with real secrets.
-        run: docker compose -f compose.dev.yml logs --no-color | sed -E 's#(://[^:/@]+:)[^@]+@#\1***@#g'
-
-  # Nightly retention of the server-only idempotence journal (S13.2 / D2): the
-  # purge function is pure (commit owned by this entrypoint, ADR 0015) and the
-  # scheduler is THIS cron — APScheduler is deferred to the recurrences epic
-  # (ADR 0007 / F06). Same `powersync-smoke` template (Postgres + DATABASE_URL).
-  purge-sync-request-log:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-      - run: uv sync --frozen
-      # No `.env` step: this job starts only `postgres` (credentials hardcoded in
-      # compose.dev.yml) and overrides `DATABASE_URL` inline — the `${PS_*}` vars
-      # of the powersync service are never read here (cf. powersync-smoke, which
-      # does need .env because it starts powersync).
-      - name: Start Postgres
-        run: docker compose -f compose.dev.yml up -d --wait postgres
-      - name: Apply migrations (creates sync_request_log)
-        env:
-          DATABASE_URL: postgresql+asyncpg://prosperity:prosperity@localhost:5432/prosperity
-        run: uv run alembic upgrade head
-      - name: Purge expired rows (idempotent)
-        env:
-          DATABASE_URL: postgresql+asyncpg://prosperity:prosperity@localhost:5432/prosperity
-        # Mask `user:password@` in any URI the run might surface — the entrypoint
-        # logs only the deleted-row count, never the DSN, but the mask is the belt
-        # to that brace for when E16 runs this with real secrets.
-        run: uv run python -m backend.scripts.purge_sync_request_log 2>&1 | sed -E 's#(://[^:/@]+:)[^@]+@#\1***@#g'
+            reports/gate.json
+            reports/selftest.json
+            reports/trufflehog.json

@@ -1,0 +1,74 @@
+# CODEOWNERS : propriétaire de chaque chemin protégé de la gate (liste : quality/protected-paths.json).
+#
+# Ce fichier est de la documentation et un filet si un collaborateur arrive. Avec un seul
+# collaborateur, la revue CODEOWNERS native ne peut pas servir (un auteur ne peut pas approuver sa
+# propre PR) : l'approbation d'une modification de chemin protégé est le label `gate-change-approved`
+# posé par `sebc-dev` après le dernier push, vérifié par le juge hors PR (D-15).
+# Une entrée par motif de `quality/protected-paths.json` ; `quality/lock.test.ts` garde les deux cohérents.
+
+.github/** @sebc-dev
+**/CODEOWNERS @sebc-dev
+**/tsconfig*.json @sebc-dev
+**/eslint*.config.* @sebc-dev
+**/vitest.config.* @sebc-dev
+**/stryker.config.* @sebc-dev
+**/stryker.conf.* @sebc-dev
+**/.stryker.config.* @sebc-dev
+**/.stryker.conf.* @sebc-dev
+.dependency-cruiser* @sebc-dev
+knip.* @sebc-dev
+.knip.* @sebc-dev
+.jscpd.json @sebc-dev
+**/biome.json @sebc-dev
+**/biome.jsonc @sebc-dev
+lefthook* @sebc-dev
+.lefthook* @sebc-dev
+.config/lefthook* @sebc-dev
+.gitleaks.toml @sebc-dev
+**/.gitleaksignore @sebc-dev
+**/.semgrepignore @sebc-dev
+.semgrep.yml @sebc-dev
+.semgrep.yaml @sebc-dev
+.semgrep/** @sebc-dev
+**/osv-scanner.toml @sebc-dev
+zizmor.yml @sebc-dev
+zizmor.yaml @sebc-dev
+.zizmor.yml @sebc-dev
+.zizmor.yaml @sebc-dev
+.hadolint.yaml @sebc-dev
+.hadolint.yml @sebc-dev
+mise.toml @sebc-dev
+mise.lock @sebc-dev
+mise.*.toml @sebc-dev
+mise.*.lock @sebc-dev
+.mise.toml @sebc-dev
+.mise.*.toml @sebc-dev
+mise/** @sebc-dev
+.mise/** @sebc-dev
+.config/mise.toml @sebc-dev
+.config/mise.*.toml @sebc-dev
+.config/mise/** @sebc-dev
+.tool-versions @sebc-dev
+.nvmrc @sebc-dev
+.node-version @sebc-dev
+.python-version @sebc-dev
+package.json @sebc-dev
+pnpm-workspace.yaml @sebc-dev
+pnpm-lock.yaml @sebc-dev
+**/.npmrc @sebc-dev
+.pnpmfile.* @sebc-dev
+**/.gitignore @sebc-dev
+**/.gitattributes @sebc-dev
+test/setup/** @sebc-dev
+test/global-setup.ts @sebc-dev
+test/db.ts @sebc-dev
+test/meta.int.test.ts @sebc-dev
+quality/** @sebc-dev
+sonar-project.properties @sebc-dev
+semgrep/** @sebc-dev
+Containerfile @sebc-dev
+deploy/** @sebc-dev
+.claude/settings*.json @sebc-dev
+.claude/CLAUDE.md @sebc-dev
+CLAUDE.md @sebc-dev
+AGENTS.md @sebc-dev

@@ -1,0 +1,5 @@
+{
+  "check": "arch",
+  "rule": "no-circular",
+  "install": "frozen"
+}

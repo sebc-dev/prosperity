@@ -1,0 +1,5 @@
+{
+  "check": "integrity",
+  "rule": "threshold-lowered",
+  "install": "frozen"
+}

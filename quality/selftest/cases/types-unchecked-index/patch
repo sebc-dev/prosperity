@@ -1,0 +1,9 @@
+diff --git a/src/shared/selftest-index.ts b/src/shared/selftest-index.ts
+new file mode 100644
+--- /dev/null
++++ b/src/shared/selftest-index.ts
+@@ -0,0 +1,4 @@
++export function firstValue(values: number[]): number {
++  const first: number = values[0];
++  return first;
++}

@@ -1,0 +1,5 @@
+{
+  "check": "escape-hatches",
+  "rule": "@ts-expect-error",
+  "install": "frozen"
+}

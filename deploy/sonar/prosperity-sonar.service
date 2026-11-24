@@ -15,6 +15,8 @@ Description=Analyse SonarQube advisory de main (Prosperity, D-16)
 Type=oneshot
 WorkingDirectory=%h/prosperity-sonar
 EnvironmentFile=%h/.config/prosperity-sonar/env
+# Le PATH réduit de systemd ne contient pas ~/.local/bin : les tests et la gate appellent `mise` par le PATH.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 TimeoutStartSec=1h
 Nice=10
 ExecStart=/usr/bin/git fetch --no-tags --prune origin main

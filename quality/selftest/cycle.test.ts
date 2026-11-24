@@ -158,12 +158,22 @@ describe('runSelftest : installation et parallélisme', () => {
         { id: 'p-bad', ...lint, patch: newFilePatch('src/violation.txt', 'rule-b') },
         { id: 'p-link', ...lint, install: 'link', apply: applyViolation('rule-a') },
       ]);
+      // Barrière : chaque installation attend que l'autre ait démarré (plafond 20 s), au lieu
+      // d'une fenêtre fixe de 250 ms que la création d'un worktree sous charge dépassait (peak 1).
+      // Un runner séquentiel laisse la première attendre en vain : peak reste 1, le test échoue.
       let active = 0;
       let peak = 0;
+      let release: () => void = () => undefined;
+      const bothStarted = new Promise<void>((done) => {
+        release = done;
+      });
       const install = async (): Promise<InstallOutcome> => {
         active += 1;
         peak = Math.max(peak, active);
-        await new Promise((done) => setTimeout(done, 250));
+        if (active === 2) {
+          release();
+        }
+        await Promise.race([bothStarted, new Promise((done) => setTimeout(done, 20_000))]);
         active -= 1;
         return { ok: true, message: '' };
       };

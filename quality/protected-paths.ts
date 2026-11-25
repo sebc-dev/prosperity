@@ -38,8 +38,24 @@ export async function loadProtectedPaths(root: string): Promise<ProtectedPaths> 
   };
 }
 
+// `matchesGlob` ne fait jamais correspondre `*` ni `**` à un segment qui commence par un point
+// (`quality/**` ne couvrait pas `quality/checks/.evil.ts`). Le point de tête de chaque segment est
+// remplacé par ce marqueur, des deux côtés, avant une seconde comparaison : un fichier caché est
+// protégé comme les autres, et un glob qui nomme un fichier caché (`.github/**`) reste exact.
+const DOT_MARKER = '__dot__';
+
+function revealDotSegments(value: string): string {
+  return value
+    .split('/')
+    .map((segment) => (segment.startsWith('.') ? `${DOT_MARKER}${segment.slice(1)}` : segment))
+    .join('/');
+}
+
 /** Vrai quand le chemin (relatif à la racine, séparateur `/`) correspond à un des globs. */
 export function isProtected(relPath: string, globs: readonly string[]): boolean {
   const path = relPath.startsWith('./') ? relPath.slice(2) : relPath;
-  return globs.some((glob) => matchesGlob(path, glob));
+  const revealed = revealDotSegments(path);
+  return globs.some(
+    (glob) => matchesGlob(path, glob) || matchesGlob(revealed, revealDotSegments(glob)),
+  );
 }

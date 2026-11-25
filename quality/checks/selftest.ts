@@ -24,7 +24,9 @@ async function changedFiles(ctx: CheckContext): Promise<string[] | undefined> {
   if (ctx.base.startsWith('-')) {
     return undefined;
   }
-  const out = await git(ctx, ['diff', '--name-only', `${ctx.base}...HEAD`]);
+  // --no-renames : un fichier sorti d'un chemin protégé par renommage reste visible sous son ancien
+  // chemin.
+  const out = await git(ctx, ['diff', '--name-only', '--no-renames', `${ctx.base}...HEAD`]);
   return out?.split('\n').filter((line) => line !== '');
 }
 

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, realpath } from 'node:fs/promises';
+import { join, relative } from 'node:path';
 import { isRecord, runTool } from './tools.ts';
 
 // Accès aux deux côtés d'une comparaison d'intégrité (base et tête), partagé par
@@ -37,9 +37,18 @@ export async function listFiles(dir: string): Promise<Set<string>> {
   return new Set(listed.stdout.split('\0').filter((path) => path !== ''));
 }
 
+// Un lien symbolique (sur le fichier ou sur un dossier parent) n'est jamais lu à travers : son
+// contenu est remplacé par sa cible relative, si bien qu'un lien qui remplace un fichier protégé
+// change toujours d'empreinte, comme `deps-guard` refuse déjà les liens.
 async function readBytes(dir: string, path: string): Promise<Buffer | undefined> {
   try {
-    return await readFile(join(dir, path));
+    const full = join(dir, path);
+    const realDir = await realpath(dir);
+    const real = await realpath(full);
+    if (real !== join(realDir, path)) {
+      return Buffer.from(`symlink:${relative(realDir, real)}`, 'utf8');
+    }
+    return await readFile(full);
   } catch {
     return undefined;
   }

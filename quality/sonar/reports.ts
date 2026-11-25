@@ -40,6 +40,9 @@ async function coverageReport(root: string, coverage: Coverage): Promise<Failure
       ...projects.flatMap((name) => ['--project', name]),
       '--coverage.enabled',
       '--coverage.reporter=lcovonly',
+      // Sans cette option, Vitest n'écrit aucun rapport quand un test échoue : l'analyse advisory
+      // perdait alors tout le LCOV.
+      '--coverage.reportOnFailure',
       `--coverage.reportsDirectory=${REPORT_DIR}/coverage`,
     ],
     cwd: root,

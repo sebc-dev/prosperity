@@ -15,7 +15,8 @@ async function stagedProtected(): Promise<string[]> {
   const globs = paths.filter((glob) => !agentExempt.includes(glob));
   const staged = await runTool({
     command: 'git',
-    args: ['diff', '--cached', '--name-only', '--diff-filter=ACMRD', '-z'],
+    // --no-renames : un renommage hors d'un chemin protégé apparaît aussi sous son ancien chemin.
+    args: ['diff', '--cached', '--name-only', '--no-renames', '--diff-filter=ACMRD', '-z'],
     cwd: process.cwd(),
     timeoutMs: 30_000,
   });

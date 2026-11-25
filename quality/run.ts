@@ -77,6 +77,11 @@ async function discoverChecks(root: string): Promise<CheckDefinition[]> {
   const names = (await readdir(dir))
     .filter((name) => name.endsWith('.ts') && !name.endsWith('.test.ts'))
     .sort((a, b) => a.localeCompare(b));
+  // Un check caché échapperait à la relecture : il est refusé plutôt que chargé en silence.
+  const hidden = names.filter((name) => name.startsWith('.'));
+  if (hidden.length > 0) {
+    throw new Error(`quality/checks : fichier caché refusé (${hidden.join(', ')})`);
+  }
   const checks: CheckDefinition[] = [];
   for (const name of names) {
     const mod: unknown = await import(pathToFileURL(join(dir, name)).href);

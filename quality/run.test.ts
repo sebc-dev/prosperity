@@ -36,6 +36,11 @@ afterEach(async () => {
 });
 
 describe('computeVerdict', () => {
+  it('fait échouer un run sans aucun check, quel que soit le profil', () => {
+    expect(computeVerdict('full', [], true)).toBe('fail');
+    expect(computeVerdict('push', [], false)).toBe('fail');
+  });
+
   it('fait échouer le profil full en CI quand un check bloquant est skipped', () => {
     const skipped = result({ status: 'skipped', passed: false, skipped_reason: 'ci-only' });
     expect(computeVerdict('full', [skipped], true)).toBe('fail');

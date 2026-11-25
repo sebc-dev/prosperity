@@ -81,6 +81,10 @@ export function computeVerdict(
   results: readonly CheckResult[],
   inCi: boolean,
 ): 'pass' | 'fail' {
+  // Aucun check joué (sélection vide, dossier de checks vide) n'est jamais un succès.
+  if (results.length === 0) {
+    return 'fail';
+  }
   return results.some((result) => blocksVerdict(profile, result, inCi)) ? 'fail' : 'pass';
 }
 

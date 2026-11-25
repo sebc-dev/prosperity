@@ -4,10 +4,10 @@ current_phase: 2
 current_phase_name: Connecteur Claude et identité du foyer
 status: planning
 stopped_at: Phase 01 complete, ready to plan Phase 2
-last_updated: "2026-11-25T18:22:48.473Z"
+last_updated: "2026-11-25T19:14:56.960Z"
 last_activity: 2026-11-25
-last_activity_desc: Phase 01 complete, transitioned to Phase 2
-state_head: cf733e4b1f6368910aded323f8f3e9b57257624d
+last_activity_desc: "Phase 01 shipped as PR #308"
+state_head: 45c4472ab13c088907fef94f8a844a4c95415991
 progress:
   total_phases: 9
   completed_phases: 1
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-11-25)
 Phase: 2 — Connecteur Claude et identité du foyer
 Plan: Not started
 Status: Ready to plan
-Last activity: 2026-11-25 — Phase 01 complete, transitioned to Phase 2
+Last activity: 2026-11-25 -- Phase 01 shipped as PR #308
 
 Progress: [█░░░░░░░░░] 11%
 

@@ -9,15 +9,15 @@
 
 ### Quality gate & socle (QUAL)
 
-- [ ] **QUAL-01**: Une commande unique `pnpm quality` joue la gate complète, identique en pré-push et en CI ; la CI est l'unique juge (un seul check requis)
-- [ ] **QUAL-02**: La gate bloque sur typage strict (`tsc` strict, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`), lint type-aware sans avertissement, assertions de type interdites (`as` hors `as const`, `any`, `!`) et complexité plafonnée
-- [ ] **QUAL-03**: La gate bloque toute violation des frontières d'architecture (dependency-cruiser : domaine pur, accès cross-module par API publique, outils MCP sans accès direct à la base, aucun cycle), le code mort et les dépendances non déclarées (knip), et la duplication nouvelle (jscpd)
-- [ ] **QUAL-04**: La gate bloque sur les secrets (gitleaks), les règles Semgrep du projet (handler sans `Principal`, SQL concaténé, aléa non cryptographique pour un jeton), les CVE high/critical des dépendances, et les workflows CI non épinglés
-- [ ] **QUAL-05**: Le noyau financier est couvert par des tests de propriétés (fast-check) sur ses invariants, et le mutation testing (Stryker) bloque sous le seuil sur les fichiers de domaine modifiés ; couverture 100 % sur le domaine pur, plancher global à cliquet
-- [ ] **QUAL-06**: Un compteur d'échappatoires (`@ts-ignore`, `eslint-disable`, `.skip`, `as any`, `vi.mock(`…) à cliquet bloque toute hausse ; un job d'intégrité bloque toute baisse de seuil ou tout retrait d'assertion sans approbation humaine explicite
-- [ ] **QUAL-07**: Les chemins de configuration de la gate, de CI et de déploiement sont protégés contre la modification par un agent (CODEOWNERS, permissions agent, job d'intégrité)
-- [ ] **QUAL-08**: Les tests d'intégration tournent contre un vrai PostgreSQL 18 (Testcontainers), sans mock de repository, en ordre aléatoire
-- [ ] **QUAL-09**: Toute nouvelle dépendance exige une approbation humaine et un âge minimal de publication (politique supply-chain pnpm)
+- [x] **QUAL-01**: Une commande unique `pnpm quality` joue la gate complète, identique en pré-push et en CI ; la CI est l'unique juge (un seul check requis)
+- [x] **QUAL-02**: La gate bloque sur typage strict (`tsc` strict, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`), lint type-aware sans avertissement, assertions de type interdites (`as` hors `as const`, `any`, `!`) et complexité plafonnée
+- [x] **QUAL-03**: La gate bloque toute violation des frontières d'architecture (dependency-cruiser : domaine pur, accès cross-module par API publique, outils MCP sans accès direct à la base, aucun cycle), le code mort et les dépendances non déclarées (knip), et la duplication nouvelle (jscpd)
+- [x] **QUAL-04**: La gate bloque sur les secrets (gitleaks), les règles Semgrep du projet (handler sans `Principal`, SQL concaténé, aléa non cryptographique pour un jeton), les CVE high/critical des dépendances, et les workflows CI non épinglés
+- [x] **QUAL-05**: Le noyau financier est couvert par des tests de propriétés (fast-check) sur ses invariants, et le mutation testing (Stryker) bloque sous le seuil sur les fichiers de domaine modifiés ; couverture 100 % sur le domaine pur, plancher global à cliquet
+- [x] **QUAL-06**: Un compteur d'échappatoires (`@ts-ignore`, `eslint-disable`, `.skip`, `as any`, `vi.mock(`…) à cliquet bloque toute hausse ; un job d'intégrité bloque toute baisse de seuil ou tout retrait d'assertion sans approbation humaine explicite
+- [x] **QUAL-07**: Les chemins de configuration de la gate, de CI et de déploiement sont protégés contre la modification par un agent (CODEOWNERS, permissions agent, job d'intégrité)
+- [x] **QUAL-08**: Les tests d'intégration tournent contre un vrai PostgreSQL 18 (Testcontainers), sans mock de repository, en ordre aléatoire
+- [x] **QUAL-09**: Toute nouvelle dépendance exige une approbation humaine et un âge minimal de publication (politique supply-chain pnpm)
 
 ### Connecteur & authentification (CONN)
 
@@ -177,15 +177,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| QUAL-01 | Phase 1 | Pending |
-| QUAL-02 | Phase 1 | Pending |
-| QUAL-03 | Phase 1 | Pending |
-| QUAL-04 | Phase 1 | Pending |
-| QUAL-05 | Phase 1 | Pending |
-| QUAL-06 | Phase 1 | Pending |
-| QUAL-07 | Phase 1 | Pending |
-| QUAL-08 | Phase 1 | Pending |
-| QUAL-09 | Phase 1 | Pending |
+| QUAL-01 | Phase 1 | Complete |
+| QUAL-02 | Phase 1 | Complete |
+| QUAL-03 | Phase 1 | Complete |
+| QUAL-04 | Phase 1 | Complete |
+| QUAL-05 | Phase 1 | Complete |
+| QUAL-06 | Phase 1 | Complete |
+| QUAL-07 | Phase 1 | Complete |
+| QUAL-08 | Phase 1 | Complete |
+| QUAL-09 | Phase 1 | Complete |
 | CONN-01 | Phase 2 | Pending |
 | CONN-02 | Phase 2 | Pending |
 | CONN-03 | Phase 2 | Pending |

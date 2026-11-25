@@ -12,7 +12,7 @@ Chaque membre du foyer peut, en une phrase à Claude, **saisir** une dépense ou
 
 ### Validated
 
-(Aucune pour l'instant : à valider en livrant)
+- ✓ Quality gate bloquante pour le code écrit par des agents (`pnpm quality`, juge hors PR, chemins protégés, supply-chain, mutation, intégrité à cliquet ; QUAL-01 à QUAL-09) — Phase 1
 
 ### Active
 
@@ -71,8 +71,11 @@ Chaque membre du foyer peut, en une phrase à Claude, **saisir** une dépense ou
 | Politique d'écriture paramétrable par membre et par type d'action | Concilier fluidité (écriture directe) et sécurité (confirmation pour l'irréversible) | — Pending |
 | Cloisonnement strict des comptes personnels, identité par membre | Exigence héritée, non négociable avec des données de foyer réelles | — Pending |
 | Auto-hébergement homelab | Contrôle des données financières | — Pending |
-| Stack backend | À déterminer par la recherche (l'ancien choix Python/FastAPI/Postgres reste un candidat) | — Pending |
+| Stack backend | TypeScript mono-langage (Node 26, TS 6.0.3, SDK MCP v2, PostgreSQL 18, Kysely), retenu par la recherche | ✓ Socle livré en phase 1 |
 | Artefacts claude.ai vs MCP Apps pour les interfaces | À déterminer par la recherche | — Pending |
+| Statut requis `quality` publié par un juge hors PR (`quality-verdict`, application `prosperity-gate`, environnement `gate-verdict` restreint à `main`) | Une PR ne peut ni réécrire ni se juger elle-même | ✓ Phase 1 (UAT 2) |
+| Approbation humaine par label posé par un acteur de l'allowlist de `main` (D-15), commit signé (D-14) en durcissement futur | Simplicité ; résiduel « jeton administrateur partagé » accepté et documenté (T-01-27) | ✓ Phase 1, à durcir |
+| SonarQube en advisory nightly sur le homelab, jamais dans la CI (D-13, D-16) | Aucun runner auto-hébergé ni job GitHub vers le homelab | ✓ Phase 1 (UAT 3) |
 
 ## Evolution
 
@@ -92,4 +95,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-21 after initialization*
+*Last updated: 2026-11-25 after Phase 1*
